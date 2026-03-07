@@ -20,7 +20,9 @@ SoulForge combines a multi-agent system, deep code intelligence, and an embedded
 
 **Web Search** — Brave API → DuckDuckGo fallback for search, Jina Reader → Readability → regex for page fetching. Agent-loop mode for multi-step research. OS keychain secret storage.
 
-**Task Router** — Assign different models per task type (planning, coding, exploration, web search, semantic). Opus for architecture, Haiku for grep.
+**Context Compaction** — LLM-powered summarization of older conversation when context fills up. Shows before/after context percentages, preserves recent messages, supports deferred compaction during streaming. Auto-triggers at 70% context or manual via `/compact`.
+
+**Task Router** — Assign different models per task type (planning, coding, exploration, web search, compact, semantic). Opus for architecture, Haiku for grep.
 
 **7 LLM Providers** — Anthropic, OpenAI, xAI, Google, Ollama, AI Gateway, Proxy (CLIProxyAPI). Switch mid-conversation with `Ctrl+L`.
 

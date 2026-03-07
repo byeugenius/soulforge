@@ -38,7 +38,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .soulforge/
 
 # Improvement plans
-improvements/
+improvements
 
 # Benchmark artifacts
 bench/results-*.json

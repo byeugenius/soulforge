@@ -343,6 +343,27 @@ Tracks edited files, mentioned files, and conversation terms. These flow into re
 
 `resetConversationTracking()` clears all tracking state between tasks (important for benchmarking).
 
+### Context Compaction
+
+**File**: `src/hooks/useChat.ts` (`summarizeConversation`)
+
+When context usage exceeds 70% (or manually via `/compact`), the older portion of the conversation is summarized by an LLM and replaced with a structured summary.
+
+```
+1. Guard: skip if < 4 messages or < 2 older messages
+2. Split: keep last 4 messages verbatim, summarize the rest
+3. Summarize: LLM generates structured summary (Environment, Files Touched,
+   Tool Results, Key Decisions, Work Completed, Errors, Current State)
+4. Replace: coreMessages = [summary, ack, ...recentMessages]
+5. Report: "Context compacted: 25% -> 6%" shown as persistent chat message
+```
+
+**Task routing**: The compact task type has its own model slot — use a fast model for summarization.
+
+**Queue safety**: Messages queued during compaction drain after completion. If compaction is triggered during active streaming, it defers via `pendingCompactRef` until the generation settles, then auto-continues.
+
+**Auto-compact**: Triggers at 70% context usage with hysteresis reset at 40% to prevent repeated compaction.
+
 ---
 
 ## LLM Layer
@@ -377,6 +398,7 @@ interface TaskRouter {
   coding: string | null;      // File edits, implementation
   exploration: string | null; // Read-only research
   webSearch: string | null;   // Web search agent model
+  compact: string | null;     // Context compaction summarizer
   semantic: string | null;    // Repo map semantic summaries
   default: string | null;     // Fallback
 }
@@ -418,8 +440,9 @@ Zustand stores decouple UI state from component trees:
 | Component | Purpose |
 |-----------|---------|
 | `App.tsx` | Root — wires all state, keybindings, modals |
-| `InputBox.tsx` | Multiline input with paste collapse, fuzzy history (Ctrl+R), command autocomplete |
-| `MessageList.tsx` | Chat messages with markdown, syntax highlighting, tool call progress |
+| `InputBox.tsx` | Multiline input with paste collapse, fuzzy history (Ctrl+R), command autocomplete, compaction status |
+| `MessageList.tsx` | Chat messages with markdown, syntax highlighting, tool call progress, persistent system messages |
+| `ContextBar.tsx` | Live/estimated context usage with green/gray dot indicator and percentage |
 | `EditorPanel.tsx` | Embedded Neovim with screen rendering |
 | `CommandPicker.tsx` | Slash command palette |
 | `ToolCallDisplay.tsx` | Real-time tool execution visualization |
@@ -430,7 +453,7 @@ Zustand stores decouple UI state from component trees:
 
 **Files**: `src/core/sessions/manager.ts`, `src/core/sessions/rebuild.ts`
 
-Sessions are persisted to SQLite. On restore, `rebuildCoreMessages()` reconstructs AI SDK `CoreMessage[]` from stored `ChatMessage[]`, preserving tool call/result pairing for mid-conversation recovery.
+Sessions are persisted as JSONL files (one JSON object per message) with a `meta.json` per session. On restore, `rebuildCoreMessages()` reconstructs AI SDK `CoreMessage[]` from stored `ChatMessage[]`, preserving tool call/result pairing for mid-conversation recovery. System messages with `showInChat: true` (e.g. compaction results) are preserved across save/restore; ephemeral system messages are stripped.
 
 ---
 
@@ -449,7 +472,8 @@ src/
     ├── agents/                 # Forge, Code, Explore, WebSearch agents
     │   ├── agent-bus.ts        # Shared coordination bus
     │   ├── subagent-tools.ts   # Dispatch orchestration
-    │   └── step-utils.ts       # Per-step injection logic
+    │   ├── step-utils.ts       # Per-step injection logic
+    │   └── stream-options.ts   # Streaming configuration builder
     ├── context/
     │   └── manager.ts          # System prompt assembly
     ├── editor/                 # Neovim integration
@@ -474,5 +498,6 @@ src/
         ├── navigate.ts
         ├── analyze.ts
         ├── refactor.ts
+        ├── repo-map-intercept.ts  # Repo map tool interception
         └── ...
 ```
