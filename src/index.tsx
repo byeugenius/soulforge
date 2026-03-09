@@ -241,5 +241,10 @@ export async function start(opts: StartOptions): Promise<void> {
   });
   renderer = r;
 
+  // 20+ components use useKeyboard/useOnResize concurrently — raise the
+  // default EventEmitter limit (10) to suppress spurious leak warnings.
+  r.setMaxListeners(30);
+  r.keyInput.setMaxListeners(30);
+
   opts.createRoot(r).render(<AppRoot opts={opts} />);
 }

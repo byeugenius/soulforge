@@ -38,13 +38,14 @@ const exploreDoneTool = tool({
           file: z.string(),
           detail: z
             .string()
+            .min(30, "Detail must contain actual code, not a prose summary")
             .describe(
-              "PASTE the actual code: full function bodies, complete type definitions, entire relevant blocks. The parent makes decisions from this text alone — descriptions like 'it uses a map' are useless, paste the code.",
+              "PASTE the actual code: full function bodies, complete type definitions, entire relevant blocks. The parent makes decisions from this text alone.",
             ),
           lineNumbers: z.string().optional(),
         }),
       )
-      .describe("Each finding must contain pasteable code, not prose descriptions"),
+      .describe("Each finding with pasteable code"),
   }),
 });
 
@@ -55,6 +56,7 @@ interface ExploreAgentOptions {
   headers?: Record<string, string>;
   webSearchModel?: LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   repoMapContext?: string;
   repoMap?: import("../intelligence/repo-map.js").RepoMap;
 }
@@ -68,6 +70,7 @@ export function createExploreAgent(model: LanguageModel, options?: ExploreAgentO
   let tools = buildSubagentExploreTools({
     webSearchModel: options?.webSearchModel,
     onApproveWebSearch: options?.onApproveWebSearch,
+    onApproveFetchPage: options?.onApproveFetchPage,
     repoMap: options?.repoMap,
   });
   if (hasBus) {

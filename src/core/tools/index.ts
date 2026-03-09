@@ -84,6 +84,7 @@ export function buildTools(
     memoryManager?: MemoryManager;
     webSearchModel?: import("ai").LanguageModel;
     repoMap?: RepoMap;
+    onApproveFetchPage?: (url: string) => Promise<boolean>;
   },
 ) {
   const effectiveCwd = cwd ?? process.cwd();
@@ -186,7 +187,19 @@ export function buildTools(
       inputSchema: z.object({
         url: z.string().describe("URL to fetch and read"),
       }),
-      execute: deferExecute((args) => fetchPageTool.execute(args)),
+      execute: deferExecute(async (args) => {
+        if (opts?.onApproveFetchPage) {
+          const approved = await opts.onApproveFetchPage(args.url);
+          if (!approved) {
+            return {
+              success: false,
+              output: "Page fetch was denied by the user.",
+              error: "Fetch denied.",
+            };
+          }
+        }
+        return fetchPageTool.execute(args);
+      }),
     }),
 
     ...memoryTools,
@@ -635,6 +648,7 @@ export function buildRestrictedModeTools(
     memoryManager?: MemoryManager;
     webSearchModel?: import("ai").LanguageModel;
     repoMap?: RepoMap;
+    onApproveFetchPage?: (url: string) => Promise<boolean>;
   },
 ) {
   const all = buildTools(undefined, editorSettings, onApproveWebSearch, opts);
@@ -667,7 +681,11 @@ export function buildRestrictedModeTools(
 export function buildReadOnlyTools(
   editorSettings?: EditorIntegration,
   onApproveWebSearch?: (query: string) => Promise<boolean>,
-  opts?: { memoryManager?: MemoryManager; webSearchModel?: import("ai").LanguageModel },
+  opts?: {
+    memoryManager?: MemoryManager;
+    webSearchModel?: import("ai").LanguageModel;
+    onApproveFetchPage?: (url: string) => Promise<boolean>;
+  },
 ) {
   const all = buildTools(undefined, editorSettings, onApproveWebSearch, opts);
   return {
@@ -737,6 +755,7 @@ export function buildPlanModeTools(
     memoryManager?: MemoryManager;
     webSearchModel?: import("ai").LanguageModel;
     sessionId?: string;
+    onApproveFetchPage?: (url: string) => Promise<boolean>;
   },
 ) {
   const all = buildTools(cwd, editorSettings, onApproveWebSearch, opts);
@@ -774,6 +793,7 @@ export function buildCodeTools(
     codeExecution?: boolean;
     memoryManager?: MemoryManager;
     webSearchModel?: import("ai").LanguageModel;
+    onApproveFetchPage?: (url: string) => Promise<boolean>;
   },
 ) {
   return buildTools(cwd, editorSettings, onApproveWebSearch, opts);
@@ -798,6 +818,7 @@ function truncateBytes(output: string): string {
 export function buildSubagentExploreTools(opts?: {
   webSearchModel?: import("ai").LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   repoMap?: RepoMap;
 }) {
   const subagentCwd = process.cwd();
@@ -963,7 +984,19 @@ export function buildSubagentExploreTools(opts?: {
       inputSchema: z.object({
         url: z.string().describe("URL to fetch and read"),
       }),
-      execute: deferExecute((args) => fetchPageTool.execute(args)),
+      execute: deferExecute(async (args) => {
+        if (opts?.onApproveFetchPage) {
+          const approved = await opts.onApproveFetchPage(args.url);
+          if (!approved) {
+            return {
+              success: false,
+              output: "Page fetch was denied by the user.",
+              error: "Fetch denied.",
+            };
+          }
+        }
+        return fetchPageTool.execute(args);
+      }),
     }),
   };
 }
@@ -972,6 +1005,7 @@ export function buildSubagentExploreTools(opts?: {
 export function buildSubagentCodeTools(opts?: {
   webSearchModel?: import("ai").LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   repoMap?: RepoMap;
 }) {
   return {

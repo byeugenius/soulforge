@@ -351,9 +351,8 @@ export function useChat({
 
   // Interactive state
   const abortRef = useRef<AbortController | null>(null);
-  const webSearchQueueRef = useRef<{ query: string; resolve: (ok: boolean) => void }[]>([]);
-  const webSearchFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoApproveWebSearchRef = useRef(false);
+  const autoApproveWebAccessRef = useRef(false);
+  const webAccessMutexRef = useRef<Promise<void>>(Promise.resolve());
   const webSearchModelLabelRef = useRef<string | null>(null);
   const [activePlan, setActivePlanRaw] = useState<Plan | null>(initialState?.activePlan ?? null);
   const activePlanRef = useRef<Plan | null>(activePlan);
@@ -877,6 +876,37 @@ export function useChat({
     effectiveConfig.compaction?.resetThreshold,
   ]);
 
+  const promptWebAccess = useCallback((label: string): Promise<boolean> => {
+    if (autoApproveWebAccessRef.current) return Promise.resolve(true);
+    const result = webAccessMutexRef.current.then(() => {
+      if (autoApproveWebAccessRef.current) return true;
+      return new Promise<boolean>((resolve) => {
+        setPendingQuestion({
+          id: crypto.randomUUID(),
+          question: `Forge wants to access the web:\n\n${label}`,
+          options: [
+            { label: "Allow", value: "allow", description: "Allow this request" },
+            {
+              label: "Always Allow",
+              value: "always",
+              description: "Auto-approve all web access this session",
+            },
+            { label: "Deny", value: "deny", description: "Block this request" },
+          ],
+          allowSkip: false,
+          resolve: (answer: string) => {
+            setPendingQuestion(null);
+            const allowed = answer === "allow" || answer === "always";
+            if (answer === "always") autoApproveWebAccessRef.current = true;
+            resolve(allowed);
+          },
+        });
+      });
+    });
+    webAccessMutexRef.current = result.then(() => {});
+    return result;
+  }, []);
+
   // Interactive callbacks for plan/question tools
   const interactiveCallbacks = useMemo<InteractiveCallbacks>(
     () => ({
@@ -966,70 +996,10 @@ export function useChat({
           openEditor();
         }
       },
-      onWebSearchApproval: (query: string) => {
-        if (autoApproveWebSearchRef.current) return Promise.resolve(true);
-        return new Promise<boolean>((resolve) => {
-          webSearchQueueRef.current.push({ query, resolve });
-          if (webSearchFlushRef.current === null) {
-            webSearchFlushRef.current = setTimeout(() => {
-              webSearchFlushRef.current = null;
-              const batch = webSearchQueueRef.current.splice(0);
-              if (batch.length === 0) return;
-
-              const resolveAll = (answer: string) => {
-                setPendingQuestion(null);
-                const allowed = answer === "allow" || answer === "always";
-                if (answer === "always") autoApproveWebSearchRef.current = true;
-                for (const item of batch) item.resolve(allowed);
-              };
-
-              const modelNote = webSearchModelLabelRef.current
-                ? `\nvia search agent (${webSearchModelLabelRef.current})`
-                : "";
-
-              if (batch.length === 1 && batch[0]) {
-                const item = batch[0];
-                setPendingQuestion({
-                  id: crypto.randomUUID(),
-                  question: `Forge wants to search the web for:\n\n"${item.query}"${modelNote}\n\nAllow this search?`,
-                  options: [
-                    { label: "Allow", value: "allow", description: "Run this search" },
-                    {
-                      label: "Always Allow",
-                      value: "always",
-                      description: "Auto-approve searches this session",
-                    },
-                    { label: "Deny", value: "deny", description: "Skip the search" },
-                  ],
-                  allowSkip: false,
-                  resolve: resolveAll,
-                });
-              } else {
-                const listing = batch
-                  .map((item, i) => `${String(i + 1)}. "${item.query}"`)
-                  .join("\n");
-                setPendingQuestion({
-                  id: crypto.randomUUID(),
-                  question: `Forge wants to run ${String(batch.length)} web searches${modelNote}:\n\n${listing}\n\nAllow these searches?`,
-                  options: [
-                    { label: "Allow", value: "allow", description: "Run these searches" },
-                    {
-                      label: "Always Allow",
-                      value: "always",
-                      description: "Auto-approve searches this session",
-                    },
-                    { label: "Deny", value: "deny", description: "Skip these searches" },
-                  ],
-                  allowSkip: false,
-                  resolve: resolveAll,
-                });
-              }
-            }, 0);
-          }
-        });
-      },
+      onWebSearchApproval: (query: string) => promptWebAccess(`Search: "${query}"`),
+      onFetchPageApproval: (url: string) => promptWebAccess(`Fetch: ${url}`),
     }),
-    [openEditor, openEditorWithFile, cwd, setActivePlan],
+    [openEditor, openEditorWithFile, cwd, setActivePlan, promptWebAccess],
   );
 
   const handleSubmit = useCallback(
@@ -1162,11 +1132,12 @@ export function useChat({
           ? getShortModelLabel(webSearchModelId)
           : null;
 
-        // Web search: when disabled, null out both approval AND model so the tool is inert
+        // Web access: when disabled, null out both approval AND model so the tool is inert
         const webSearchEnabled = effectiveConfig.webSearch !== false;
         const webSearchApproval = webSearchEnabled
           ? interactiveCallbacks.onWebSearchApproval
           : undefined;
+        const fetchPageApproval = interactiveCallbacks.onFetchPageApproval;
         const effectiveWebSearchModel = webSearchEnabled ? webSearchModel : undefined;
 
         // Build Anthropic-specific providerOptions (thinking, effort, context management)
@@ -1187,6 +1158,7 @@ export function useChat({
           subagentModels,
           webSearchModel: effectiveWebSearchModel,
           onApproveWebSearch: webSearchApproval,
+          onApproveFetchPage: fetchPageApproval,
           providerOptions,
           headers,
           codeExecution: effectiveConfig.codeExecution,
@@ -1220,6 +1192,7 @@ export function useChat({
                           editorIntegration: effectiveConfig.editorIntegration,
                           subagentModels,
                           onApproveWebSearch: webSearchApproval,
+                          onApproveFetchPage: fetchPageApproval,
                           providerOptions: degraded.providerOptions,
                           headers: degraded.headers,
                           codeExecution: effectiveConfig.codeExecution,

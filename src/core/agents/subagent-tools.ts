@@ -34,6 +34,7 @@ interface SubagentModels {
   providerOptions?: ProviderOptions;
   headers?: Record<string, string>;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   readOnly?: boolean;
   repoMapContext?: string;
   repoMap?: RepoMap;
@@ -239,15 +240,16 @@ function buildFallbackResult(result: AgentResult): string {
   }
 
   const parts: string[] = [];
+  if (filesEdited.size > 0) parts.push(`Files edited: ${[...filesEdited].join(", ")}`);
+  if (filesRead.size > 0) parts.push(`Files examined: ${[...filesRead].join(", ")}`);
+
   const text = result.text.trim();
   if (text) {
     const cap = toolOutputs.length > 0 ? 4000 : 10000;
-    parts.push(text.length > cap ? `${text.slice(0, cap)}...` : text);
+    parts.push(text.length > cap ? `${text.slice(0, cap)} [truncated]` : text);
   }
-  if (filesEdited.size > 0) parts.push(`Files edited: ${[...filesEdited].join(", ")}`);
-  if (filesRead.size > 0) parts.push(`Files examined: ${[...filesRead].join(", ")}`);
   if (toolOutputs.length > 0) {
-    parts.push("Tool outputs:", ...toolOutputs);
+    parts.push("\nTool outputs:", ...toolOutputs);
   }
   return parts.join("\n") || "(no output)";
 }
@@ -256,21 +258,21 @@ function formatDoneResult(done: DoneToolResult): string {
   const parts: string[] = [done.summary];
 
   if (done.filesEdited && done.filesEdited.length > 0) {
-    parts.push("Files edited:", ...done.filesEdited.map((f) => `- ${f.file}: ${f.changes}`));
+    parts.push("\nFiles edited:", ...done.filesEdited.map((f) => `  ${f.file}: ${f.changes}`));
   }
   if (done.filesExamined && done.filesExamined.length > 0) {
-    parts.push(`Files examined: ${done.filesExamined.join(", ")}`);
+    parts.push(`\nFiles examined: ${done.filesExamined.join(", ")}`);
   }
   if (done.keyFindings && done.keyFindings.length > 0) {
     parts.push(
-      "Key findings:",
+      "\nKey findings:",
       ...done.keyFindings.map(
-        (f) => `- ${f.file}${f.lineNumbers ? `:${f.lineNumbers}` : ""}: ${f.detail}`,
+        (f) => `  ${f.file}${f.lineNumbers ? `:${f.lineNumbers}` : ""}: ${f.detail}`,
       ),
     );
   }
   if (done.verified != null) {
-    parts.push(`Verified: ${done.verified ? "yes" : "no"}`);
+    parts.push(`\nVerified: ${done.verified ? "yes" : "no"}`);
     if (done.verificationOutput) parts.push(done.verificationOutput);
   }
 
@@ -499,6 +501,7 @@ function createAgent(
     headers: models.headers,
     webSearchModel: models.webSearchModel,
     onApproveWebSearch: models.onApproveWebSearch,
+    onApproveFetchPage: models.onApproveFetchPage,
     repoMapContext: models.repoMapContext,
     repoMap: models.repoMap,
   };
@@ -758,8 +761,8 @@ export function buildSubagentTools(models: SubagentModels) {
             }),
           )
           .min(1)
-          .max(5)
-          .describe("Agent tasks to dispatch"),
+          .max(8)
+          .describe("Agent tasks to dispatch (system auto-merges to ≤5 when possible)"),
         objective: z
           .string()
           .optional()
@@ -787,6 +790,30 @@ export function buildSubagentTools(models: SubagentModels) {
                 return `Error: task "${t.id ?? "?"}" has no valid file paths in targetFiles. Every non-web task must reference specific files from the Repo Map. Got: [${t.targetFiles.join(", ")}]`;
               }
             }
+          }
+
+          const MAX_TASKS = 5;
+          if (args.tasks.length > MAX_TASKS) {
+            const mergeable = args.tasks.filter(
+              (t) => t.role === "explore" && !t.dependsOn?.length,
+            );
+            const pinned = args.tasks.filter(
+              (t) => t.role !== "explore" || (t.dependsOn?.length ?? 0) > 0,
+            );
+            if (pinned.length >= MAX_TASKS) {
+              return `Dispatch rejected: ${String(args.tasks.length)} tasks (max ${String(MAX_TASKS)}). Merge related tasks — split by file ownership, not concept.`;
+            }
+            const slots = MAX_TASKS - pinned.length;
+            mergeable.sort((a, b) => b.targetFiles.length - a.targetFiles.length);
+            while (mergeable.length > slots) {
+              const removed = mergeable.pop();
+              if (!removed || !mergeable[0]) break;
+              mergeable[0].task = `${mergeable[0].task}\n\nAlso: ${removed.task}`;
+              for (const f of removed.targetFiles) {
+                if (!mergeable[0].targetFiles.includes(f)) mergeable[0].targetFiles.push(f);
+              }
+            }
+            args = { ...args, tasks: [...pinned, ...mergeable] };
           }
 
           if (!args.force && cacheRef.current) {
@@ -1038,7 +1065,7 @@ export function buildSubagentTools(models: SubagentModels) {
           for (const r of results) {
             const status = r.success ? "✓" : "✗";
             sections.push(
-              `\n### ${status} Agent: ${r.agentId} (${r.role})\n**Task:** ${r.task}\n\n${r.result}`,
+              `\n### ${status} Agent: ${r.agentId} (${r.role})\nTask: ${r.task}\n\n${r.result}\n\n---`,
             );
           }
 
@@ -1105,6 +1132,7 @@ export function buildSubagentTools(models: SubagentModels) {
         let blankRun = 0;
         let inCodeBlock = false;
         let inStructuredSection = false;
+        let truncatedLines = 0;
 
         for (const line of lines) {
           if (line.startsWith("```")) inCodeBlock = !inCodeBlock;
@@ -1119,8 +1147,13 @@ export function buildSubagentTools(models: SubagentModels) {
             continue;
           }
           blankRun = 0;
-          const limit = inCodeBlock || inStructuredSection ? 1500 : 400;
-          compact.push(line.length > limit ? `${line.slice(0, limit)}...` : line);
+          const limit = inCodeBlock || inStructuredSection ? 1500 : 600;
+          if (line.length > limit) {
+            truncatedLines++;
+            compact.push(`${line.slice(0, limit)} [truncated]`);
+          } else {
+            compact.push(line);
+          }
         }
 
         if (
@@ -1156,6 +1189,12 @@ export function buildSubagentTools(models: SubagentModels) {
           }
           header.push("All file content from these reads is included below. Act on it directly.\n");
           compact.unshift(...header);
+        }
+
+        if (truncatedLines > 0) {
+          compact.push(
+            `\n[${String(truncatedLines)} lines compacted — use read_file/read_code on specific files if you need full content]`,
+          );
         }
 
         return { type: "text" as const, value: compact.join("\n") };

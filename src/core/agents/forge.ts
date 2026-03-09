@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type { ModelMessage, ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
 import { stepCountIs, ToolLoopAgent, tool } from "ai";
 import { z } from "zod";
@@ -18,10 +18,52 @@ import {
 } from "../tools/index.js";
 import { readFileTool } from "../tools/read-file.js";
 import { normalizePath } from "./agent-bus.js";
-import { repairToolCall, sanitizeToolInputsStep } from "./stream-options.js";
+import { repairToolCall, sanitizeMessages } from "./stream-options.js";
 import { buildSubagentTools, type SharedCacheRef } from "./subagent-tools.js";
 
 const RESTRICTED_MODES = new Set<ForgeMode>(["architect", "socratic", "challenge", "plan"]);
+
+const PLAN_NUDGE_STEP = 10;
+const PLAN_FORCE_STEP = 20;
+
+function hasPlanToolCall(messages: ModelMessage[]): boolean {
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type === "tool-call" && part.toolName === "plan") return true;
+    }
+  }
+  return false;
+}
+
+function buildForgePrepareStep(isPlanMode: boolean) {
+  // biome-ignore lint/suspicious/noExplicitAny: PrepareStepFunction generic is invariant
+  return ({ stepNumber, messages }: { stepNumber: number; messages: ModelMessage[] }): any => {
+    const sanitized = sanitizeMessages(messages);
+    const result: {
+      messages?: ModelMessage[];
+      activeTools?: string[];
+      toolChoice?: "required" | "auto";
+      system?: string;
+    } = {};
+
+    if (sanitized !== messages) result.messages = sanitized;
+
+    if (isPlanMode && stepNumber >= PLAN_NUDGE_STEP && !hasPlanToolCall(messages)) {
+      if (stepNumber >= PLAN_FORCE_STEP) {
+        result.activeTools = ["plan", "ask_user"];
+        result.toolChoice = "required";
+        result.system =
+          "You have done enough research. Call plan NOW with everything you have. Do not read more files.";
+      } else {
+        result.system =
+          "You have gathered substantial context. Start assembling the plan — call plan when ready.";
+      }
+    }
+
+    return Object.keys(result).length > 0 ? result : undefined;
+  };
+}
 
 interface ForgeAgentOptions {
   model: LanguageModel;
@@ -37,6 +79,7 @@ interface ForgeAgentOptions {
   };
   webSearchModel?: LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   providerOptions?: ProviderOptions;
   headers?: Record<string, string>;
   codeExecution?: boolean;
@@ -67,6 +110,7 @@ export function createForgeAgent({
   subagentModels,
   webSearchModel,
   onApproveWebSearch,
+  onApproveFetchPage,
   providerOptions,
   headers,
   codeExecution,
@@ -83,6 +127,7 @@ export function createForgeAgent({
     codeExecution,
     webSearchModel,
     repoMap,
+    onApproveFetchPage,
   });
 
   const repoMapContext = contextManager.isRepoMapReady()
@@ -98,6 +143,7 @@ export function createForgeAgent({
           providerOptions,
           headers,
           onApproveWebSearch,
+          onApproveFetchPage,
           readOnly: true,
           repoMapContext,
           repoMap,
@@ -115,6 +161,7 @@ export function createForgeAgent({
         providerOptions,
         headers,
         onApproveWebSearch,
+        onApproveFetchPage,
         repoMapContext,
         repoMap,
         sharedCacheRef,
@@ -170,7 +217,7 @@ export function createForgeAgent({
       };
     },
     stopWhen: stepCountIs(500),
-    prepareStep: sanitizeToolInputsStep,
+    prepareStep: buildForgePrepareStep(forgeMode === "plan"),
     experimental_repairToolCall: repairToolCall,
     ...(providerOptions && Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
     ...(headers ? { headers } : {}),

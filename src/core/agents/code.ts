@@ -39,6 +39,7 @@ const codeDoneTool = tool({
           file: z.string(),
           changes: z
             .string()
+            .min(20, "Changes must include actual code, not just a label")
             .describe(
               "Specific changes: new function signatures, modified types, added exports. Include the final code of key additions.",
             ),
@@ -57,6 +58,7 @@ interface CodeAgentOptions {
   headers?: Record<string, string>;
   webSearchModel?: LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
   repoMapContext?: string;
   repoMap?: import("../intelligence/repo-map.js").RepoMap;
 }
@@ -70,6 +72,7 @@ export function createCodeAgent(model: LanguageModel, options?: CodeAgentOptions
   let tools = buildSubagentCodeTools({
     webSearchModel: options?.webSearchModel,
     onApproveWebSearch: options?.onApproveWebSearch,
+    onApproveFetchPage: options?.onApproveFetchPage,
     repoMap: options?.repoMap,
   });
   if (hasBus) {

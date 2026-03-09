@@ -110,6 +110,7 @@ export interface InteractiveCallbacks {
   onAskUser: (question: string, options: QuestionOption[], allowSkip: boolean) => Promise<string>;
   onOpenEditor: (file?: string) => Promise<void>;
   onWebSearchApproval: (query: string) => Promise<boolean>;
+  onFetchPageApproval: (url: string) => Promise<boolean>;
 }
 
 export interface QueuedMessage {
