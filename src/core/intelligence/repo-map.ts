@@ -257,6 +257,7 @@ export class RepoMap {
     const dbPath = join(dbDir, "repomap.db");
     this.db = new Database(dbPath);
     this.db.run("PRAGMA journal_mode = WAL");
+    this.db.run("PRAGMA busy_timeout = 100");
     this.db.run("PRAGMA foreign_keys = ON");
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
@@ -697,7 +698,11 @@ export class RepoMap {
         insert.run(Number(src), Number(tgt), weight);
       }
     });
-    tx();
+    try {
+      tx();
+    } catch {
+      // database locked — edges will be rebuilt on next flush
+    }
   }
 
   private computePageRank(personalization?: Map<number, number>): void {
@@ -783,7 +788,11 @@ export class RepoMap {
         update.run(rank[i] ?? 0, ids[i] ?? 0);
       }
     });
-    tx();
+    try {
+      tx();
+    } catch {
+      // database locked — stale pagerank values are acceptable
+    }
   }
 
   private detectGit(): boolean {

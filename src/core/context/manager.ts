@@ -593,7 +593,8 @@ export class ContextManager {
     });
 
     if (this.repoMapEnabled && this.repoMapReady) {
-      const map = this.renderRepoMap();
+      const cached = this.repoMapCache?.content;
+      const map = cached ?? this.renderRepoMap();
       if (map) {
         sections.push({ section: "Repo map", chars: map.length, active: true });
       } else {
