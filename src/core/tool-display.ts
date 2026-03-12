@@ -83,9 +83,16 @@ export const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   plan: "ui",
   update_plan_step: "ui",
   ask_user: "ui",
+  task_list: "ui",
 
   // Code execution (sandboxed)
   code_execution: "execution",
+
+  // Repo map powered
+  soul_grep: "repo-map",
+  soul_find: "repo-map",
+  soul_analyze: "repo-map",
+  soul_impact: "repo-map",
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -175,8 +182,13 @@ const TOOL_ICON_MAP: Record<string, string> = {
   plan: "plan",
   update_plan_step: "check",
   ask_user: "question",
+  task_list: "plan",
   code_execution: "code",
   _repomap: "repomap",
+  soul_grep: "search",
+  soul_find: "search",
+  soul_analyze: "repomap",
+  soul_impact: "repomap",
 };
 
 export function toolIcon(name: string): string {
@@ -238,7 +250,12 @@ export const TOOL_LABELS: Record<string, string> = {
   plan: "Planning",
   update_plan_step: "Updating plan",
   ask_user: "Asking",
+  task_list: "Tasks",
   code_execution: "Executing",
+  soul_grep: "Searching",
+  soul_find: "Finding",
+  soul_analyze: "Analyzing",
+  soul_impact: "Impact analysis",
 };
 
 // ─── Tool Icon Colors ───
@@ -288,6 +305,11 @@ export const TOOL_ICON_COLORS: Record<string, string> = {
   plan: "#00BFFF",
   update_plan_step: "#00BFFF",
   ask_user: "#c89030",
+  task_list: "#00BFFF",
   editor_panel: "#5C9FD6",
   code_execution: "#c55",
+  soul_grep: "#2dd4bf",
+  soul_find: "#2dd4bf",
+  soul_analyze: "#2dd4bf",
+  soul_impact: "#2dd4bf",
 };

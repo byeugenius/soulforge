@@ -2,20 +2,17 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
 import { hasToolCall, stepCountIs, ToolLoopAgent, tool } from "ai";
 import { z } from "zod";
-import { buildToolGuidance } from "../context/manager.js";
 import { buildSubagentExploreTools, wrapWithBusCache } from "../tools/index.js";
 import type { AgentBus } from "./agent-bus.js";
 import { buildBusTools } from "./bus-tools.js";
 import { buildPrepareStep, buildSymbolLookup, tokenBudget } from "./step-utils.js";
 import { repairToolCall } from "./stream-options.js";
 
-function exploreBase(hasRepoMap: boolean): string {
+function exploreBase(): string {
   return [
     "Explore agent. Read-only codebase research.",
     "",
-    ...buildToolGuidance(hasRepoMap),
-    "",
-    "WORKFLOW: Your task includes specific file paths and symbols. Go directly to those targets — read_code for the named symbols, read_file only if the task specifies config files. Paths in the task are already resolved — use them directly. If the repo map is appended below, use it to navigate related code without extra discovery steps.",
+    "WORKFLOW: Your task includes specific file paths and symbols. Go directly to those targets — read_code for the named symbols, read_file only if the task specifies config files. Paths in the task are already resolved — use them directly.",
     "DISCOVERY: If your task names symbols or keywords but NOT file paths, run one navigate workspace_symbols call with the keyword, then read_code on the result. If workspace_symbols returns nothing, fall back to grep for the symbol name across the codebase. One search, one read — never chain multiple discovery tools for the same target. If the task is web research, go straight to web_search.",
     "",
     'OUTPUT CONTRACT: The parent agent is BLIND to your tool results — it only sees your done call. Paste full function bodies, complete type definitions, and entire relevant code blocks into keyFindings[].detail. If the parent has to call read_file after you, your done call failed. Rule: if you read it and it matters, paste it. Descriptions like "it uses a map to track X" are worthless — paste the actual map code.',
@@ -57,7 +54,6 @@ interface ExploreAgentOptions {
   webSearchModel?: LanguageModel;
   onApproveWebSearch?: (query: string) => Promise<boolean>;
   onApproveFetchPage?: (url: string) => Promise<boolean>;
-  repoMapContext?: string;
   repoMap?: import("../intelligence/repo-map.js").RepoMap;
 }
 
@@ -90,14 +86,10 @@ export function createExploreAgent(model: LanguageModel, options?: ExploreAgentO
     instructions: {
       role: "system" as const,
       content: (() => {
-        const hasMap = !!options?.repoMapContext;
-        const base = exploreBase(hasMap);
-        const withBus = hasBus
+        const base = exploreBase();
+        return hasBus
           ? `${base}\nCoordination: report_finding to share discoveries. Peer findings appear in tool results — check_findings for detail.`
           : base;
-        return hasMap
-          ? `${withBus}\n\nRepo map (ranked by importance, + = exported):\n${options.repoMapContext}`
-          : withBus;
       })(),
       providerOptions: ANTHROPIC_CACHE,
     },

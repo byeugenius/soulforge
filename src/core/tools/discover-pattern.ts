@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
+import { isForbidden } from "../security/forbidden.js";
 
 function lineCount(file: string): number | null {
   try {
@@ -40,10 +41,11 @@ export const discoverPatternTool = {
         };
       }
 
-      const interfaces = symbols.filter((s) => s.kind === "interface" || s.kind === "type");
-      const classes = symbols.filter((s) => s.kind === "class");
-      const functions = symbols.filter((s) => s.kind === "function");
-      const others = symbols.filter(
+      const safeSymbols = symbols.filter((s) => isForbidden(s.location.file) === null);
+      const interfaces = safeSymbols.filter((s) => s.kind === "interface" || s.kind === "type");
+      const classes = safeSymbols.filter((s) => s.kind === "class");
+      const functions = safeSymbols.filter((s) => s.kind === "function");
+      const others = safeSymbols.filter(
         (s) => !["interface", "type", "class", "function"].includes(s.kind),
       );
 
@@ -107,7 +109,7 @@ export const discoverPatternTool = {
         }
       }
 
-      const uniqueFiles = [...new Set(symbols.map((s) => s.location.file))].slice(0, 5);
+      const uniqueFiles = [...new Set(safeSymbols.map((s) => s.location.file))].slice(0, 5);
       parts.push(`\n## Related files (${String(uniqueFiles.length)})`);
       const fileExports = await Promise.all(
         uniqueFiles.map(async (f) => {

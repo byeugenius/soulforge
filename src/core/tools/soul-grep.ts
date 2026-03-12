@@ -1,0 +1,186 @@
+import { spawn } from "node:child_process";
+import type { ToolResult } from "../../types";
+import type { RepoMap } from "../intelligence/repo-map.js";
+import { isForbidden } from "../security/forbidden.js";
+import { getVendoredPath } from "../setup/install.js";
+import { enrichWithSymbolContext } from "./grep.js";
+
+const ENRICHMENT_TIMEOUT_MS = 2000;
+
+interface SoulGrepArgs {
+  pattern: string;
+  path?: string;
+  glob?: string;
+  count?: boolean;
+  wordBoundary?: boolean;
+  maxCount?: number;
+}
+
+export const soulGrepTool = {
+  name: "soul_grep",
+  description:
+    "Token-efficient search with counting and word-boundary modes. " +
+    "Use count mode for aggregate analysis (variable frequency, pattern prevalence) — returns compact counts, not raw matches. " +
+    "Use wordBoundary for precise identifier matching (avoids substring false positives). " +
+    "Non-count mode includes symbol context (enclosing function/class for each match). " +
+    "Respects .gitignore by default (node_modules excluded). To search node_modules, pass path: 'node_modules/pkg'. " +
+    "For finding symbol definitions, prefer navigate. For raw text search, use grep.",
+  createExecute: (repoMap?: RepoMap) => {
+    return async (args: SoulGrepArgs): Promise<ToolResult> => {
+      const { pattern, count, wordBoundary } = args;
+      const searchPath = args.path ?? ".";
+
+      if (count && wordBoundary && repoMap?.isReady && !args.path && !args.glob) {
+        const intercept = tryRepoMapCount(repoMap, pattern);
+        if (intercept) return intercept;
+      }
+
+      const rgBin = getVendoredPath("rg") ?? "rg";
+      const rgArgs: string[] = ["--color=never", "--max-filesize=256K"];
+
+      if (wordBoundary) rgArgs.push("--word-regexp");
+
+      if (count) {
+        rgArgs.push("--count");
+        if (args.glob) rgArgs.push("--glob", args.glob);
+        rgArgs.push(pattern, searchPath);
+        return runCount(rgBin, rgArgs);
+      }
+
+      rgArgs.push("--line-number");
+      rgArgs.push(`--max-count=${String(args.maxCount ?? 50)}`);
+      if (args.glob) rgArgs.push("--glob", args.glob);
+      rgArgs.push(pattern, searchPath);
+      return runSearch(rgBin, rgArgs);
+    };
+  },
+};
+
+function tryRepoMapCount(repoMap: RepoMap, pattern: string): ToolResult | null {
+  if (/[^a-zA-Z0-9_$]/.test(pattern)) return null;
+
+  const freq = repoMap.getIdentifierFrequency(500);
+  const match = freq.find((f) => f.name === pattern);
+  if (!match) return null;
+
+  const symbols = repoMap.findSymbols(pattern);
+  const lines = [
+    `${pattern}: referenced in ${String(match.fileCount)} files (from repo map index)`,
+  ];
+
+  if (symbols.length > 0) {
+    lines.push("");
+    lines.push(`Defined in ${String(symbols.length)} location(s):`);
+    for (const sym of symbols.slice(0, 10)) {
+      if (isForbidden(sym.path) !== null) continue;
+      lines.push(`  ${sym.path} (${sym.kind}, pagerank: ${sym.pagerank.toFixed(3)})`);
+    }
+  }
+
+  const nearby = freq.filter((f) => f.name !== pattern).slice(0, 5);
+  if (nearby.length > 0) {
+    lines.push("");
+    lines.push("Top identifiers for comparison:");
+    for (const n of nearby) {
+      lines.push(`  ${n.name} — ${String(n.fileCount)} files`);
+    }
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+function isFileForbidden(filePath: string): boolean {
+  return isForbidden(filePath) !== null;
+}
+
+function filterForbiddenLines(output: string): string {
+  if (output === "No matches found.") return output;
+  const lines = output.split("\n");
+  const filtered = lines.filter((line) => {
+    const fileMatch = line.match(/^(.+?):\d+:/);
+    if (!fileMatch?.[1]) return true;
+    return !isFileForbidden(fileMatch[1]);
+  });
+  return filtered.length > 0 ? filtered.join("\n") : "No matches found.";
+}
+
+function runCount(bin: string, args: string[]): Promise<ToolResult> {
+  return new Promise((resolve) => {
+    const proc = spawn(bin, args, { cwd: process.cwd(), timeout: 15_000 });
+    const chunks: string[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d.toString()));
+
+    proc.on("close", (code: number | null) => {
+      if (code !== 0 && code !== 1) {
+        resolve({ success: false, output: "ripgrep failed", error: `exit ${String(code)}` });
+        return;
+      }
+
+      const raw = chunks.join("");
+      if (!raw.trim()) {
+        resolve({ success: true, output: "0 matches." });
+        return;
+      }
+
+      const entries: Array<{ file: string; count: number }> = [];
+      let total = 0;
+      for (const line of raw.split("\n")) {
+        const m = line.match(/^(.+):(\d+)$/);
+        if (m?.[1] && m[2]) {
+          if (isFileForbidden(m[1])) continue;
+          const c = parseInt(m[2], 10);
+          entries.push({ file: m[1], count: c });
+          total += c;
+        }
+      }
+
+      entries.sort((a, b) => b.count - a.count);
+
+      const top = entries.slice(0, 25);
+      const lines = [
+        `${String(total)} matches across ${String(entries.length)} files`,
+        "",
+        ...top.map((e) => `  ${String(e.count).padStart(5)}  ${e.file}`),
+      ];
+      if (entries.length > 25) {
+        lines.push(`  ... and ${String(entries.length - 25)} more files`);
+      }
+
+      resolve({ success: true, output: lines.join("\n") });
+    });
+
+    proc.on("error", (err: Error) => {
+      resolve({ success: false, output: err.message, error: err.message });
+    });
+  });
+}
+
+async function runSearch(bin: string, args: string[]): Promise<ToolResult> {
+  const rawOutput = await new Promise<string>((resolve) => {
+    const proc = spawn(bin, args, { cwd: process.cwd(), timeout: 10_000 });
+    const chunks: string[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d.toString()));
+
+    proc.on("close", (code: number | null) => {
+      const output = chunks.join("");
+      if (code === 0 || code === 1) {
+        resolve(output || "No matches found.");
+      } else {
+        resolve(output || "No matches found.");
+      }
+    });
+
+    proc.on("error", () => {
+      resolve("No matches found.");
+    });
+  });
+
+  const sanitized = filterForbiddenLines(rawOutput);
+
+  const enriched = await Promise.race([
+    enrichWithSymbolContext(sanitized).catch(() => sanitized),
+    new Promise<string>((r) => setTimeout(() => r(sanitized), ENRICHMENT_TIMEOUT_MS)),
+  ]);
+
+  return { success: true, output: enriched };
+}

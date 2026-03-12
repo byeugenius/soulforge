@@ -31,6 +31,7 @@ import { SessionManager } from "../core/sessions/manager.js";
 import { createThinkingParser } from "../core/thinking-parser.js";
 import { onFileEdited } from "../core/tools/file-events.js";
 import { planFileName } from "../core/tools/index.js";
+import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
 import { useStatusBarStore } from "../stores/statusbar.js";
 import type {
@@ -510,6 +511,7 @@ export function useChat({
     prevCompactionStrategy.current = effectiveConfig.compaction?.strategy;
     const strategy = effectiveConfig.compaction?.strategy ?? "v1";
     if (visible) useStatusBarStore.getState().setCompactionStrategy(strategy);
+    logCompaction("strategy-change", `Strategy → ${strategy}`);
     if (strategy === "v2") {
       workingStateRef.current = new WorkingStateManager(effectiveConfig.compaction);
     } else {
@@ -676,6 +678,7 @@ export function useChat({
             headers,
             skipLlm: compactionCfg?.llmExtraction === false,
           });
+          wsm.reset();
         } else {
           // ─── V1: Full LLM batch summarization ───
           const formatMessage = (m: ModelMessage, charLimit: number) => {
@@ -824,9 +827,23 @@ export function useChat({
             showInChat: true,
           },
         ]);
+
+        logCompaction("compact", `${beforePct}% → ${afterPct}%`, {
+          model: modelLabel,
+          strategy: isV2 ? "v2" : "v1",
+          slotsBefore:
+            isV2 && workingStateRef.current ? workingStateRef.current.slotCount() : undefined,
+          contextBefore: `${beforePct}%`,
+          contextAfter: `${afterPct}%`,
+          messagesBefore: currentCore.length,
+          messagesAfter: newMessages.length,
+          summaryLength: summary.length,
+          summarySnippet: summary.slice(0, 2000),
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logBackgroundError("compact", msg);
+        logCompaction("error", msg);
         setMessages((prev) => [
           ...prev,
           {
@@ -868,6 +885,10 @@ export function useChat({
     const resetAt = effectiveConfig.compaction?.resetThreshold ?? 0.4;
     if (pct > triggerAt && !autoSummarizedRef.current && coreMessagesRef.current.length >= 6) {
       autoSummarizedRef.current = true;
+      logCompaction("auto-trigger", `Context at ${Math.round(pct * 100)}%`, {
+        contextBefore: `${Math.round(pct * 100)}%`,
+        messagesBefore: coreMessagesRef.current.length,
+      });
       summarizeConversation();
     }
     if (pct < resetAt) {

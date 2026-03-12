@@ -29,6 +29,7 @@ import { PlanReviewPrompt } from "./PlanReviewPrompt.js";
 import { QuestionPrompt } from "./QuestionPrompt.js";
 import { StreamSegmentList } from "./StreamSegmentList.js";
 import { SystemBanner } from "./SystemBanner.js";
+import { TaskProgress, useTaskList } from "./TaskProgress.js";
 
 export interface TabInstanceProps {
   tabId: string;
@@ -188,6 +189,7 @@ export function TabInstance({
   const reasoningExpanded = useUIStore((s) => s.reasoningExpanded);
 
   const showPlanProgress = !!chat.activePlan;
+  const tasks = useTaskList();
 
   const hasChangedFiles = useMemo(() => {
     for (let i = chat.messages.length - 1; i >= 0; i--) {
@@ -383,7 +385,12 @@ export function TabInstance({
           </box>
           {showPlanProgress && chat.activePlan && (
             <box flexShrink={0} paddingX={1}>
-              <PlanProgress plan={chat.activePlan} />
+              <PlanProgress plan={chat.activePlan} tasks={tasks} />
+            </box>
+          )}
+          {!showPlanProgress && tasks.length > 0 && (
+            <box flexShrink={0} paddingX={1}>
+              <TaskProgress />
             </box>
           )}
           {hasChangedFiles && (
@@ -396,7 +403,12 @@ export function TabInstance({
         <>
           {showPlanProgress && chat.activePlan && (
             <box flexShrink={0} paddingX={1}>
-              <PlanProgress plan={chat.activePlan} />
+              <PlanProgress plan={chat.activePlan} tasks={tasks} />
+            </box>
+          )}
+          {!showPlanProgress && tasks.length > 0 && (
+            <box flexShrink={0} paddingX={1}>
+              <TaskProgress />
             </box>
           )}
           {hasChangedFiles && (
@@ -404,20 +416,22 @@ export function TabInstance({
               <ChangedFilesBar messages={chat.messages} />
             </box>
           )}
-          <InputBox
-            onSubmit={handleInputSubmit}
-            isLoading={chat.isLoading}
-            isCompacting={chat.isCompacting}
-            isFocused={isFocused}
-            cwd={cwd}
-            onExit={onExit}
-            onQueue={(msg) =>
-              chat.setMessageQueue((prev) =>
-                prev.length >= 5 ? prev : [...prev, { content: msg, queuedAt: Date.now() }],
-              )
-            }
-            queueCount={chat.messageQueue.length}
-          />
+          <box flexShrink={0} zIndex={10}>
+            <InputBox
+              onSubmit={handleInputSubmit}
+              isLoading={chat.isLoading}
+              isCompacting={chat.isCompacting}
+              isFocused={isFocused}
+              cwd={cwd}
+              onExit={onExit}
+              onQueue={(msg) =>
+                chat.setMessageQueue((prev) =>
+                  prev.length >= 5 ? prev : [...prev, { content: msg, queuedAt: Date.now() }],
+                )
+              }
+              queueCount={chat.messageQueue.length}
+            />
+          </box>
         </>
       )}
     </box>

@@ -19,7 +19,8 @@ export type ModalName =
   | "repoMapStatus"
   | "setup"
   | "webSearchSettings"
-  | "lspStatus";
+  | "lspStatus"
+  | "compactionLog";
 
 type Modals = Record<ModalName, boolean>;
 
@@ -40,6 +41,7 @@ const INITIAL_MODALS: Modals = {
   setup: false,
   webSearchSettings: false,
   lspStatus: false,
+  compactionLog: false,
 };
 
 interface UIState {

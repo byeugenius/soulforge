@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import type { SymbolKind } from "../intelligence/types.js";
+import { isForbidden } from "../security/forbidden.js";
 
 type ReadTarget = "function" | "class" | "type" | "interface" | "variable" | "enum" | "scope";
 
@@ -22,6 +23,14 @@ export const readCodeTool = {
     try {
       const router = getIntelligenceRouter(process.cwd());
       const file = resolve(args.file);
+      const blocked = isForbidden(file);
+      if (blocked) {
+        return {
+          success: false,
+          output: `Access denied: "${file}" matches forbidden pattern "${blocked}"`,
+          error: "forbidden",
+        };
+      }
       const language = router.detectLanguage(file);
 
       if (args.target === "scope") {

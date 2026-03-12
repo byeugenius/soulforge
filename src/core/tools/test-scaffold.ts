@@ -3,6 +3,7 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import { isForbidden } from "../security/forbidden.js";
+import { emitFileEdited } from "./file-events.js";
 
 type TestFramework = "vitest" | "jest" | "bun" | "pytest" | "go" | "cargo";
 
@@ -161,6 +162,7 @@ export const testScaffoldTool = {
       }
       mkdirSync(dirname(resolvedOutput), { recursive: true });
       writeFileSync(resolvedOutput, content, "utf-8");
+      emitFileEdited(resolvedOutput, content);
 
       return {
         success: true,

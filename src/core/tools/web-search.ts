@@ -45,6 +45,7 @@ function formatSearchArgs(tc: { toolName: string; input?: unknown }): string {
 export function buildWebSearchTool(opts?: {
   webSearchModel?: LanguageModel;
   onApprove?: (query: string) => Promise<boolean>;
+  onApproveFetchPage?: (url: string) => Promise<boolean>;
 }) {
   const { webSearchModel, onApprove } = opts ?? {};
 
@@ -105,7 +106,9 @@ export function buildWebSearchTool(opts?: {
         };
 
         try {
-          const agent = createWebSearchAgent(webSearchModel);
+          const agent = createWebSearchAgent(webSearchModel, {
+            onApproveFetchPage: opts?.onApproveFetchPage,
+          });
           const combinedSignal = abortSignal
             ? AbortSignal.any([abortSignal, AbortSignal.timeout(120_000)])
             : AbortSignal.timeout(120_000);

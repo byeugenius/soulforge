@@ -16,6 +16,7 @@ import {
 import { icon, setNerdFont } from "../core/icons.js";
 import { getModelContextInfo, getShortModelLabel } from "../core/llm/models.js";
 import { SessionManager } from "../core/sessions/manager.js";
+import { clearTasks } from "../core/tools/task-list.js";
 import type { ChatInstance, TokenUsage } from "../hooks/useChat.js";
 import type { UseTabsReturn } from "../hooks/useTabs.js";
 import { restart } from "../index.js";
@@ -43,6 +44,7 @@ export interface CommandContext {
   openSessions: () => void;
   openHelp: () => void;
   openErrorLog: () => void;
+  openCompactionLog: () => void;
   cwd: string;
   refreshGit: () => void;
   setForgeMode: (mode: ForgeMode) => void;
@@ -1150,6 +1152,7 @@ async function handleCommandInner(input: string, ctx: CommandContext): Promise<v
         subagentOutput: 0,
       });
       ctx.chat.setMessageQueue([]);
+      clearTasks();
       break;
     case "/editor":
     case "/edit":
@@ -1183,6 +1186,9 @@ async function handleCommandInner(input: string, ctx: CommandContext): Promise<v
       break;
     case "/errors":
       ctx.openErrorLog();
+      break;
+    case "/compact-v2-logs":
+      ctx.openCompactionLog();
       break;
     case "/skills":
       ctx.openSkills();

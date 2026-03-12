@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
+import { isForbidden } from "../security/forbidden.js";
 
 type AnalyzeAction =
   | "diagnostics"
@@ -32,6 +33,16 @@ export const analyzeTool = {
     try {
       const router = getIntelligenceRouter(process.cwd());
       const file = args.file ? resolve(args.file) : undefined;
+      if (file) {
+        const blocked = isForbidden(file);
+        if (blocked) {
+          return {
+            success: false,
+            output: `Access denied: "${file}" matches forbidden pattern "${blocked}"`,
+            error: "forbidden",
+          };
+        }
+      }
       const language = router.detectLanguage(file);
 
       switch (args.action) {

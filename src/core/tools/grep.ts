@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types";
 import type { FileOutline, SymbolInfo } from "../intelligence/types.js";
+import { isForbidden } from "../security/forbidden.js";
 import { getVendoredPath } from "../setup/install.js";
 
 interface GrepArgs {
@@ -65,16 +66,27 @@ export const grepTool = {
       });
     });
 
+    const filtered =
+      rawOutput === "No matches found."
+        ? rawOutput
+        : rawOutput
+            .split("\n")
+            .filter((line) => {
+              const m = line.match(/^(.+?):\d+:/);
+              return !m?.[1] || isForbidden(m[1]) === null;
+            })
+            .join("\n") || "No matches found.";
+
     const enriched = await Promise.race([
-      enrichWithSymbolContext(rawOutput).catch(() => rawOutput),
-      new Promise<string>((res) => setTimeout(() => res(rawOutput), ENRICHMENT_TIMEOUT_MS)),
+      enrichWithSymbolContext(filtered).catch(() => filtered),
+      new Promise<string>((res) => setTimeout(() => res(filtered), ENRICHMENT_TIMEOUT_MS)),
     ]);
 
     return { success: true, output: enriched };
   },
 };
 
-async function enrichWithSymbolContext(output: string): Promise<string> {
+export async function enrichWithSymbolContext(output: string): Promise<string> {
   if (output === "No matches found.") return output;
 
   const { getIntelligenceRouter } = await import("../intelligence/index.js");

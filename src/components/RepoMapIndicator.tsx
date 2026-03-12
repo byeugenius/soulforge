@@ -6,8 +6,6 @@ import { SPINNER_FRAMES } from "./shared.js";
 
 function buildContent(
   status: string,
-  files: number,
-  symbols: number,
   progress: string,
   spinnerIdx: number,
   semStatus: string,
@@ -22,10 +20,7 @@ function buildContent(
 
   const parts: TextChunk[] = [];
   if (status === "ready") {
-    parts.push(
-      fgStyle("#555")(icon("code")),
-      fgStyle("#4a7")(` ${String(files)}f ${String(symbols)}s`),
-    );
+    parts.push(fgStyle("#555")(icon("code")), fgStyle("#4a7")(" map"));
   } else if (status === "error") {
     parts.push(fgStyle("#555")(icon("code")), fgStyle("#f44")(" err"));
   } else {
@@ -36,8 +31,7 @@ function buildContent(
     const label = semProgress ? ` ${frame} ${semProgress}` : ` ${frame} sem`;
     parts.push(fgStyle("#b87333")(label));
   } else if (semStatus === "ready") {
-    const mode = semProgress.startsWith("ast") ? "ast" : "sem";
-    parts.push(fgStyle("#555")(` ${mode} `), fgStyle("#4a7")("✓"));
+    parts.push(fgStyle("#555")("+"), fgStyle("#4a7")("sem"));
   }
 
   return new StyledText(parts);
@@ -73,14 +67,12 @@ export function RepoMapIndicator() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const { status, files, symbols, scanProgress, semStatus, semProgress } = stateRef.current;
+      const { status, scanProgress, semStatus, semProgress } = stateRef.current;
       if (status === "scanning" || semStatus === "generating") spinnerRef.current++;
       try {
         if (textRef.current)
           textRef.current.content = buildContent(
             status,
-            files,
-            symbols,
             scanProgress,
             spinnerRef.current,
             semStatus,
@@ -91,12 +83,12 @@ export function RepoMapIndicator() {
     return () => clearInterval(timer);
   }, []);
 
-  const { status, files, symbols, scanProgress, semStatus, semProgress } = stateRef.current;
+  const { status, scanProgress, semStatus, semProgress } = stateRef.current;
   return (
     <text
       ref={textRef}
       truncate
-      content={buildContent(status, files, symbols, scanProgress, 0, semStatus, semProgress)}
+      content={buildContent(status, scanProgress, 0, semStatus, semProgress)}
     />
   );
 }

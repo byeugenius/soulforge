@@ -35,6 +35,12 @@ const TOOL_GUIDANCE_LOW_LEVEL_WITH_MAP = [
   "- `grep` → string literals, log messages, non-code patterns (check Repo Map dependency counts first)",
   "- `glob` → finding files by pattern when not in the Repo Map",
   "- `shell` → only when `project` can't handle custom flags or non-standard commands",
+  "",
+  "**Repo Map tools** — zero-token codebase analysis (no LLM cost):",
+  "- `soul_grep` → count-mode search with word boundary + symbol context (faster than grep for counts)",
+  "- `soul_find` → fuzzy file/symbol discovery ranked by PageRank + cochange (faster than glob for exploration)",
+  "- `soul_analyze` → identifier frequency, unused exports, file profile (deps/dependents/blast radius)",
+  "- `soul_impact` → dependency graph queries: dependents, dependencies, cochanges, blast radius",
 ];
 
 const TOOL_GUIDANCE_LOW_LEVEL_NO_MAP = [
@@ -43,6 +49,7 @@ const TOOL_GUIDANCE_LOW_LEVEL_NO_MAP = [
   "- `grep` → string literals, log messages, non-code patterns, symbol searches",
   "- `glob` → finding files by name or pattern",
   "- `shell` → only when `project` can't handle custom flags or non-standard commands",
+  "- `soul_grep`, `soul_find`, `soul_analyze`, `soul_impact` — available when Repo Map is ready",
 ];
 
 const DISPATCH_GUIDANCE_BASE = [

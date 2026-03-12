@@ -85,7 +85,7 @@ function buildContent(
   if (compact?.active) {
     const spinner = COMPACT_FRAMES[compact.frame % COMPACT_FRAMES.length] ?? "◐";
     chunks.push(fgStyle("#5af")(` ${spinner} compacting`));
-  } else if (compact?.strategy === "v2" && compact.v2Slots > 0) {
+  } else if (compact?.strategy === "v2") {
     chunks.push(fgStyle("#336")(` v2:${String(compact.v2Slots)}`));
   }
   return new StyledText(chunks);

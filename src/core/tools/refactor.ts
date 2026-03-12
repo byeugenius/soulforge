@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import type { FileEdit, FormatEdit, RefactorResult } from "../intelligence/types.js";
+import { isForbidden } from "../security/forbidden.js";
+import { emitFileEdited } from "./file-events.js";
 
 type RefactorAction =
   | "extract_function"
@@ -23,6 +25,7 @@ interface RefactorArgs {
 function applyEdits(edits: FileEdit[]): void {
   for (const edit of edits) {
     writeFileSync(edit.file, edit.newContent, "utf-8");
+    emitFileEdited(edit.file, edit.newContent);
   }
 }
 
@@ -89,6 +92,16 @@ export const refactorTool = {
     try {
       const router = getIntelligenceRouter(process.cwd());
       const file = args.file ? resolve(args.file) : undefined;
+      if (file) {
+        const blocked = isForbidden(file);
+        if (blocked) {
+          return {
+            success: false,
+            output: `Access denied: "${file}" matches forbidden pattern "${blocked}"`,
+            error: "forbidden",
+          };
+        }
+      }
       const language = router.detectLanguage(file);
       const shouldApply = args.apply ?? true;
 
@@ -316,7 +329,6 @@ function applyFormatEdits(formatEdit: FormatEdit): void {
   const content = readFileSync(formatEdit.file, "utf-8");
   const lines = content.split("\n");
 
-  // Apply edits in reverse order to preserve offsets
   const sorted = [...formatEdit.edits].sort((a, b) => {
     if (a.startLine !== b.startLine) return b.startLine - a.startLine;
     return b.startCol - a.startCol;
@@ -340,4 +352,5 @@ function applyFormatEdits(formatEdit: FormatEdit): void {
   }
 
   writeFileSync(formatEdit.file, result, "utf-8");
+  emitFileEdited(formatEdit.file, result);
 }

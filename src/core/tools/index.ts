@@ -10,6 +10,7 @@ import { MemoryManager } from "../memory/manager.js";
 import { analyzeTool } from "./analyze.js";
 import { discoverPatternTool } from "./discover-pattern.js";
 import { editFileTool } from "./edit-file";
+import { undoEditTool } from "./edit-stack.js";
 import {
   editorActionsTool,
   editorDefinitionTool,
@@ -37,8 +38,10 @@ import {
 } from "./git.js";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
+import { listDirTool } from "./list-dir.js";
 import { createMemoryTools } from "./memory.js";
 import { moveSymbolTool } from "./move-symbol.js";
+import { multiEditTool } from "./multi-edit.js";
 import { navigateTool } from "./navigate.js";
 import { projectTool } from "./project.js";
 import { readCodeTool } from "./read-code.js";
@@ -52,6 +55,11 @@ import {
   tryInterceptNavigate,
 } from "./repo-map-intercept.js";
 import { shellTool } from "./shell";
+import { soulAnalyzeTool } from "./soul-analyze.js";
+import { soulFindTool } from "./soul-find.js";
+import { soulGrepTool } from "./soul-grep.js";
+import { soulImpactTool } from "./soul-impact.js";
+import { taskListTool } from "./task-list.js";
 import { testScaffoldTool } from "./test-scaffold.js";
 import { buildWebSearchTool } from "./web-search";
 
@@ -124,6 +132,116 @@ export function buildTools(
       execute: deferExecute((args) => editFileTool.execute(args)),
     }),
 
+    undo_edit: tool({
+      description: undoEditTool.description,
+      inputSchema: z.object({
+        path: z.string().describe("File path to undo"),
+        steps: z.number().optional().describe("Number of edits to undo (default 1, max 10)"),
+      }),
+      execute: deferExecute((args) => undoEditTool.execute(args)),
+    }),
+
+    multi_edit: tool({
+      description: multiEditTool.description,
+      inputSchema: z.object({
+        path: z.string().describe("File path to edit"),
+        edits: z
+          .array(
+            z.object({
+              oldString: z.string().describe("Exact string to replace"),
+              newString: z.string().describe("Replacement string"),
+              lineStart: z.number().optional().describe("Line hint (1-indexed)"),
+            }),
+          )
+          .describe("Array of edits to apply atomically"),
+      }),
+      execute: deferExecute((args) => multiEditTool.execute(args)),
+    }),
+
+    task_list: tool({
+      description: taskListTool.description,
+      inputSchema: z.object({
+        action: z.enum(["add", "update", "remove", "list", "clear"]).describe("Task action"),
+        title: z.string().optional().describe("Single task title (for add/update)"),
+        titles: z.array(z.string()).optional().describe("Batch add — multiple task titles at once"),
+        id: z.number().optional().describe("Task ID (for update/remove)"),
+        status: z
+          .enum(["pending", "in-progress", "done", "blocked"])
+          .optional()
+          .describe("Task status (for add/update)"),
+      }),
+      execute: deferExecute((args) => taskListTool.execute(args)),
+    }),
+
+    list_dir: tool({
+      description: listDirTool.description,
+      inputSchema: z.object({
+        path: z.string().optional().describe("Directory path (defaults to cwd)"),
+      }),
+      execute: deferExecute((args) => listDirTool.execute(args, opts?.repoMap)),
+    }),
+
+    soul_grep: tool({
+      description: soulGrepTool.description,
+      inputSchema: z.object({
+        pattern: z.string().describe("Regex or literal search pattern"),
+        path: z.string().optional().describe("Directory to search"),
+        glob: z.string().optional().describe("File glob filter (e.g. '*.ts')"),
+        count: z
+          .boolean()
+          .optional()
+          .describe(
+            "Aggregate count mode — returns per-file match counts and total. " +
+              "Use for frequency analysis, variable counting, pattern prevalence.",
+          ),
+        wordBoundary: z
+          .boolean()
+          .optional()
+          .describe(
+            "Whole-word matching (\\bpattern\\b). Prevents substring false positives. " +
+              "Essential for counting variable/identifier occurrences.",
+          ),
+      }),
+      execute: deferExecute(soulGrepTool.createExecute(opts?.repoMap)),
+    }),
+
+    soul_find: tool({
+      description: soulFindTool.description,
+      inputSchema: z.object({
+        query: z.string().describe("Fuzzy search query — file name, symbol name, or concept"),
+        type: z
+          .enum(["test", "component", "config", "types", "style"])
+          .optional()
+          .describe("Filter by file category"),
+        limit: z.number().optional().describe("Max results (default 20)"),
+      }),
+      execute: deferExecute(soulFindTool.createExecute(opts?.repoMap)),
+    }),
+
+    soul_analyze: tool({
+      description: soulAnalyzeTool.description,
+      inputSchema: z.object({
+        action: z
+          .enum(["identifier_frequency", "unused_exports", "file_profile"])
+          .describe("Analysis action"),
+        file: z.string().optional().describe("File path (required for file_profile)"),
+        name: z.string().optional().describe("Identifier name (for identifier_frequency lookup)"),
+        limit: z.number().optional().describe("Max results"),
+      }),
+      execute: deferExecute(soulAnalyzeTool.createExecute(opts?.repoMap)),
+    }),
+
+    soul_impact: tool({
+      description: soulImpactTool.description,
+      inputSchema: z.object({
+        action: z
+          .enum(["dependents", "dependencies", "cochanges", "blast_radius"])
+          .describe("Impact action"),
+        file: z.string().describe("File path to analyze"),
+      }),
+      execute: deferExecute(soulImpactTool.createExecute(opts?.repoMap)),
+    }),
+
     shell: tool({
       description: shellTool.description,
       inputSchema: z.object({
@@ -180,6 +298,7 @@ export function buildTools(
     web_search: buildWebSearchTool({
       webSearchModel: opts?.webSearchModel,
       onApprove: onApproveWebSearch,
+      onApproveFetchPage: opts?.onApproveFetchPage,
     }),
 
     fetch_page: tool({
@@ -613,6 +732,11 @@ export const RESTRICTED_TOOL_NAMES: string[] = [
   "read_file",
   "grep",
   "glob",
+  "soul_grep",
+  "soul_find",
+  "soul_analyze",
+  "soul_impact",
+  "list_dir",
   "web_search",
   "editor_read",
   "editor_navigate",
@@ -674,6 +798,10 @@ export function buildRestrictedModeTools(
     memory_write: all.memory_write,
     memory_list: all.memory_list,
     memory_search: all.memory_search,
+    ...(all.soul_grep ? { soul_grep: all.soul_grep } : {}),
+    ...(all.soul_find ? { soul_find: all.soul_find } : {}),
+    ...(all.soul_analyze ? { soul_analyze: all.soul_analyze } : {}),
+    ...(all.soul_impact ? { soul_impact: all.soul_impact } : {}),
   };
 }
 
@@ -708,6 +836,10 @@ export function buildReadOnlyTools(
     memory_read: all.memory_read,
     memory_list: all.memory_list,
     memory_search: all.memory_search,
+    ...(all.soul_grep ? { soul_grep: all.soul_grep } : {}),
+    ...(all.soul_find ? { soul_find: all.soul_find } : {}),
+    ...(all.soul_analyze ? { soul_analyze: all.soul_analyze } : {}),
+    ...(all.soul_impact ? { soul_impact: all.soul_impact } : {}),
   };
 }
 
@@ -718,6 +850,10 @@ export const PLAN_EXECUTION_TOOL_NAMES: string[] = [
   "read_file",
   "read_code",
   "edit_file",
+  "undo_edit",
+  "multi_edit",
+  "task_list",
+  "list_dir",
   "shell",
   "project",
   "grep",
@@ -740,6 +876,10 @@ export const PLAN_EXECUTION_TOOL_NAMES: string[] = [
   "move_symbol",
   "update_plan_step",
   "editor_panel",
+  "soul_grep",
+  "soul_find",
+  "soul_analyze",
+  "soul_impact",
 ];
 
 export function planFileName(sessionId?: string): string {
@@ -781,6 +921,10 @@ export function buildPlanModeTools(
     memory_read: all.memory_read,
     memory_list: all.memory_list,
     memory_search: all.memory_search,
+    ...(all.soul_grep ? { soul_grep: all.soul_grep } : {}),
+    ...(all.soul_find ? { soul_find: all.soul_find } : {}),
+    ...(all.soul_analyze ? { soul_analyze: all.soul_analyze } : {}),
+    ...(all.soul_impact ? { soul_impact: all.soul_impact } : {}),
   };
 }
 
@@ -977,6 +1121,7 @@ export function buildSubagentExploreTools(opts?: {
     web_search: buildWebSearchTool({
       webSearchModel: opts?.webSearchModel,
       onApprove: opts?.onApproveWebSearch,
+      onApproveFetchPage: opts?.onApproveFetchPage,
     }),
 
     fetch_page: tool({
@@ -998,6 +1143,87 @@ export function buildSubagentExploreTools(opts?: {
         return fetchPageTool.execute(args);
       }),
     }),
+
+    task_list: tool({
+      description: taskListTool.description,
+      inputSchema: z.object({
+        action: z.enum(["add", "update", "remove", "list", "clear"]).describe("Task action"),
+        title: z.string().optional().describe("Single task title (for add/update)"),
+        titles: z.array(z.string()).optional().describe("Batch add — multiple task titles at once"),
+        id: z.number().optional().describe("Task ID (for update/remove)"),
+        status: z
+          .enum(["pending", "in-progress", "done", "blocked"])
+          .optional()
+          .describe("Task status (for add/update)"),
+      }),
+      execute: deferExecute((args) => taskListTool.execute(args)),
+    }),
+
+    list_dir: tool({
+      description: listDirTool.description,
+      inputSchema: z.object({
+        path: z.string().optional().describe("Directory path (defaults to cwd)"),
+      }),
+      execute: deferExecute((args) => listDirTool.execute(args, opts?.repoMap)),
+    }),
+
+    ...(opts?.repoMap
+      ? {
+          soul_grep: tool({
+            description: soulGrepTool.description,
+            inputSchema: z.object({
+              pattern: z.string().describe("Search pattern"),
+              path: z.string().optional().describe("Directory to search"),
+              count: z.boolean().optional().describe("Count mode — returns match counts per file"),
+              wordBoundary: z.boolean().optional().describe("Match whole words only"),
+            }),
+            execute: deferExecute((args) => {
+              const exec = soulGrepTool.createExecute(opts.repoMap);
+              return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));
+            }),
+          }),
+          soul_find: tool({
+            description: soulFindTool.description,
+            inputSchema: z.object({
+              query: z.string().describe("Fuzzy search query"),
+              type: z.string().optional().describe("File type filter"),
+              limit: z.number().optional().describe("Max results (default 20)"),
+            }),
+            execute: deferExecute((args) => {
+              const exec = soulFindTool.createExecute(opts.repoMap);
+              return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));
+            }),
+          }),
+          soul_analyze: tool({
+            description: soulAnalyzeTool.description,
+            inputSchema: z.object({
+              action: z
+                .enum(["identifier_frequency", "unused_exports", "file_profile"])
+                .describe("Analysis action"),
+              file: z.string().optional().describe("File path (for file_profile)"),
+              limit: z.number().optional().describe("Max results"),
+            }),
+            execute: deferExecute((args) => {
+              const exec = soulAnalyzeTool.createExecute(opts.repoMap);
+              return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));
+            }),
+          }),
+          soul_impact: tool({
+            description: soulImpactTool.description,
+            inputSchema: z.object({
+              action: z
+                .enum(["dependents", "dependencies", "cochanges", "blast_radius"])
+                .describe("Impact action"),
+              file: z.string().describe("File path to analyze"),
+              limit: z.number().optional().describe("Max results"),
+            }),
+            execute: deferExecute((args) => {
+              const exec = soulImpactTool.createExecute(opts.repoMap);
+              return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));
+            }),
+          }),
+        }
+      : {}),
   };
 }
 
@@ -1019,6 +1245,23 @@ export function buildSubagentCodeTools(opts?: {
         newString: z.string().describe("Replacement string"),
       }),
       execute: deferExecute((args) => editFileTool.execute(args)),
+    }),
+
+    multi_edit: tool({
+      description: multiEditTool.description,
+      inputSchema: z.object({
+        path: z.string().describe("File path to edit"),
+        edits: z
+          .array(
+            z.object({
+              oldString: z.string().describe("Exact string to replace"),
+              newString: z.string().describe("Replacement string"),
+              lineStart: z.number().optional().describe("Line hint (1-indexed)"),
+            }),
+          )
+          .describe("Array of edits to apply atomically"),
+      }),
+      execute: deferExecute((args) => multiEditTool.execute(args)),
     }),
 
     rename_symbol: tool({
@@ -1302,6 +1545,62 @@ export function wrapWithBusCache(
     };
   }
 
+  // Wrap multi_edit with the same bus coordination as edit_file
+  const multiEdit = tools.multi_edit;
+  if (multiEdit?.execute) {
+    const origMultiEdit = multiEdit.execute as (
+      args: {
+        path: string;
+        edits: Array<{ oldString: string; newString: string; lineStart?: number }>;
+      },
+      opts?: unknown,
+    ) => Promise<unknown>;
+
+    wrapped.multi_edit = {
+      ...multiEdit,
+      execute: (async (
+        args: {
+          path: string;
+          edits: Array<{ oldString: string; newString: string; lineStart?: number }>;
+        },
+        opts: unknown,
+      ) => {
+        const normalized = normalizePath(args.path);
+        const { release, owner } = await bus.acquireEditLock(agentId, normalized);
+        try {
+          const result = await origMultiEdit(args, opts);
+          const isOk =
+            result &&
+            typeof result === "object" &&
+            (result as Record<string, unknown>).success === true;
+          if (isOk) {
+            try {
+              const fresh = readFileSync(resolve(normalized), "utf-8");
+              bus.updateFile(normalized, fresh, agentId);
+            } catch {
+              bus.invalidateFile(normalized);
+            }
+          } else {
+            bus.invalidateFile(normalized);
+          }
+          bus.recordFileEdit(agentId, normalized);
+
+          if (owner && owner !== agentId && isOk) {
+            const text = typeof result === "string" ? result : JSON.stringify(result);
+            return `⚠ Note: ${owner} also edited ${normalized}. Your multi_edit succeeded (different region). Verify with read_file if needed.\n\n${text}`;
+          }
+          if (owner && owner !== agentId && !isOk) {
+            const text = typeof result === "string" ? result : JSON.stringify(result);
+            return `⚠ Multi-edit failed — ${owner} modified ${normalized} before you. Re-read the file to see current content and adapt your edits.\n\n${text}`;
+          }
+          return result;
+        } finally {
+          release();
+        }
+      }) as WrappableTool["execute"],
+    };
+  }
+
   const NAVIGATE_CACHEABLE = new Set([
     "definition",
     "references",
@@ -1380,6 +1679,43 @@ export function wrapWithBusCache(
     {
       name: "web_search",
       keyFn: (a) => JSON.stringify(["web_search", String(a.query ?? "")]),
+    },
+    {
+      name: "list_dir",
+      keyFn: (a) => JSON.stringify(["list_dir", normalizePath(String(a.path ?? "."))]),
+    },
+    {
+      name: "soul_grep",
+      keyFn: (a) =>
+        JSON.stringify([
+          "soul_grep",
+          String(a.pattern ?? ""),
+          String(a.path ?? "."),
+          String(a.count ?? ""),
+          String(a.wordBoundary ?? ""),
+        ]),
+    },
+    {
+      name: "soul_find",
+      keyFn: (a) => JSON.stringify(["soul_find", String(a.query ?? ""), String(a.type ?? "")]),
+    },
+    {
+      name: "soul_analyze",
+      keyFn: (a) =>
+        JSON.stringify([
+          "soul_analyze",
+          String(a.action ?? ""),
+          normalizePath(String(a.file ?? "")),
+        ]),
+    },
+    {
+      name: "soul_impact",
+      keyFn: (a) =>
+        JSON.stringify([
+          "soul_impact",
+          String(a.action ?? ""),
+          normalizePath(String(a.file ?? "")),
+        ]),
     },
   ];
 

@@ -19,7 +19,10 @@ Strategy:
 
 Output a clear, well-structured summary of your findings. Include source URLs for key facts.`;
 
-export function createWebSearchAgent(model: LanguageModel) {
+export function createWebSearchAgent(
+  model: LanguageModel,
+  opts?: { onApproveFetchPage?: (url: string) => Promise<boolean> },
+) {
   return new ToolLoopAgent({
     id: "web-search",
     model,
@@ -37,7 +40,15 @@ export function createWebSearchAgent(model: LanguageModel) {
         inputSchema: z.object({
           url: z.string().describe("URL to fetch"),
         }),
-        execute: (args) => fetchPageTool.execute(args),
+        execute: async (args) => {
+          if (opts?.onApproveFetchPage) {
+            const approved = await opts.onApproveFetchPage(args.url);
+            if (!approved) {
+              return { success: false, output: "Page fetch denied by user.", error: "denied" };
+            }
+          }
+          return fetchPageTool.execute(args);
+        },
       }),
     },
     instructions: WEB_SEARCH_INSTRUCTIONS,

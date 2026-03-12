@@ -17,6 +17,7 @@ import {
   RESTRICTED_TOOL_NAMES,
 } from "../tools/index.js";
 import { readFileTool } from "../tools/read-file.js";
+import { renderTaskList } from "../tools/task-list.js";
 import { normalizePath } from "./agent-bus.js";
 import { repairToolCall, sanitizeMessages } from "./stream-options.js";
 import { buildSubagentTools, type SharedCacheRef } from "./subagent-tools.js";
@@ -59,6 +60,12 @@ function buildForgePrepareStep(isPlanMode: boolean) {
         result.system =
           "You have gathered substantial context. Start assembling the plan — call plan when ready.";
       }
+    }
+
+    // Inject task list so it survives compaction and is always visible
+    const taskBlock = renderTaskList();
+    if (taskBlock) {
+      result.system = `${result.system ?? ""}\n\n${taskBlock}`.trim();
     }
 
     return Object.keys(result).length > 0 ? result : undefined;
@@ -130,10 +137,6 @@ export function createForgeAgent({
     onApproveFetchPage,
   });
 
-  const repoMapContext = contextManager.isRepoMapReady()
-    ? contextManager.renderRepoMap() || undefined
-    : undefined;
-
   const subagentTools = isRestricted
     ? {
         dispatch: buildSubagentTools({
@@ -145,7 +148,6 @@ export function createForgeAgent({
           onApproveWebSearch,
           onApproveFetchPage,
           readOnly: true,
-          repoMapContext,
           repoMap,
           sharedCacheRef,
           agentFeatures,
@@ -162,7 +164,6 @@ export function createForgeAgent({
         headers,
         onApproveWebSearch,
         onApproveFetchPage,
-        repoMapContext,
         repoMap,
         sharedCacheRef,
         agentFeatures,

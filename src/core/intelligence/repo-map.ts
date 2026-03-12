@@ -1680,6 +1680,99 @@ export class RepoMap {
     return results;
   }
 
+  getFileDependents(relPath: string): Array<{ path: string; weight: number }> {
+    if (!this.ready) return [];
+    const fileRow = this.db
+      .query<{ id: number }, [string]>("SELECT id FROM files WHERE path = ?")
+      .get(relPath);
+    if (!fileRow) return [];
+    return this.db
+      .query<{ path: string; weight: number }, [number]>(
+        `SELECT f.path, e.weight FROM edges e
+         JOIN files f ON f.id = e.source_file_id
+         WHERE e.target_file_id = ?
+         ORDER BY e.weight DESC LIMIT 30`,
+      )
+      .all(fileRow.id);
+  }
+
+  getFileDependencies(relPath: string): Array<{ path: string; weight: number }> {
+    if (!this.ready) return [];
+    const fileRow = this.db
+      .query<{ id: number }, [string]>("SELECT id FROM files WHERE path = ?")
+      .get(relPath);
+    if (!fileRow) return [];
+    return this.db
+      .query<{ path: string; weight: number }, [number]>(
+        `SELECT f.path, e.weight FROM edges e
+         JOIN files f ON f.id = e.target_file_id
+         WHERE e.source_file_id = ?
+         ORDER BY e.weight DESC LIMIT 30`,
+      )
+      .all(fileRow.id);
+  }
+
+  getFileCoChanges(relPath: string): Array<{ path: string; count: number }> {
+    if (!this.ready) return [];
+    const fileRow = this.db
+      .query<{ id: number }, [string]>("SELECT id FROM files WHERE path = ?")
+      .get(relPath);
+    if (!fileRow) return [];
+    const rows = this.db
+      .query<{ path: string; total: number }, [number, number]>(
+        `SELECT f.path, sub.total FROM (
+           SELECT file_id_b AS partner_id, SUM(count) AS total FROM cochanges WHERE file_id_a = ?
+           UNION ALL
+           SELECT file_id_a AS partner_id, SUM(count) AS total FROM cochanges WHERE file_id_b = ?
+         ) sub
+         JOIN files f ON f.id = sub.partner_id
+         ORDER BY sub.total DESC LIMIT 20`,
+      )
+      .all(fileRow.id, fileRow.id);
+    return rows.map((r) => ({ path: r.path, count: r.total }));
+  }
+
+  getIdentifierFrequency(limit = 25): Array<{ name: string; fileCount: number }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<{ name: string; fileCount: number }, [number]>(
+        `SELECT name, COUNT(DISTINCT file_id) AS fileCount FROM refs
+         GROUP BY name ORDER BY fileCount DESC LIMIT ?`,
+      )
+      .all(limit);
+  }
+
+  getUnusedExports(): Array<{ name: string; path: string; kind: string }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<{ name: string; path: string; kind: string }, []>(
+        `SELECT s.name, f.path, s.kind FROM symbols s
+         JOIN files f ON f.id = s.file_id
+         WHERE s.is_exported = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM refs r WHERE r.name = s.name AND r.file_id != s.file_id
+         )
+         ORDER BY f.pagerank DESC
+         LIMIT 50`,
+      )
+      .all();
+  }
+
+  getFileBlastRadius(relPath: string): number {
+    if (!this.ready) return 0;
+    const fileRow = this.db
+      .query<{ id: number }, [string]>("SELECT id FROM files WHERE path = ?")
+      .get(relPath);
+    if (!fileRow) return 0;
+    return (
+      this.db
+        .query<{ c: number }, [number]>(
+          "SELECT COUNT(DISTINCT source_file_id) AS c FROM edges WHERE target_file_id = ?",
+        )
+        .get(fileRow.id)?.c ?? 0
+    );
+  }
+
   getStats(): { files: number; symbols: number; edges: number; summaries: number } {
     const files = this.db.query<{ c: number }, []>("SELECT COUNT(*) as c FROM files").get()?.c ?? 0;
     const symbols =
@@ -1693,6 +1786,92 @@ export class RepoMap {
         )
         .get(source)?.c ?? 0;
     return { files, symbols, edges, summaries };
+  }
+
+  /**
+   * List immediate children of a directory from the indexed files table.
+   * Returns files with metadata (language, lines, symbols, pagerank).
+   * Also detects subdirectories by looking for paths with deeper segments.
+   */
+  listDirectory(dirPath: string): Array<{
+    name: string;
+    type: "file" | "dir";
+    language?: string;
+    lines?: number;
+    symbols?: number;
+    importance?: number;
+  }> | null {
+    if (!this.ready) return null;
+
+    // Normalize: ensure trailing slash for prefix matching, handle root
+    const prefix = dirPath === "." || dirPath === "" ? "" : dirPath.replace(/\/$/, "") + "/";
+
+    // Query files directly in this directory (no deeper nesting)
+    const files = this.db
+      .query<
+        {
+          path: string;
+          language: string;
+          line_count: number;
+          symbol_count: number;
+          pagerank: number;
+        },
+        [string, string]
+      >(
+        `SELECT path, language, line_count, symbol_count, pagerank
+           FROM files
+           WHERE path LIKE ? AND path NOT LIKE ?
+           ORDER BY pagerank DESC`,
+      )
+      .all(`${prefix}%`, `${prefix}%/%`);
+
+    // Also detect subdirectories by finding distinct first-level segments
+    const dirSegments = new Set<string>();
+    const deepRows = this.db
+      .query<{ path: string }, [string]>(`SELECT DISTINCT path FROM files WHERE path LIKE ?`)
+      .all(`${prefix}%`);
+
+    for (const row of deepRows) {
+      const rest = row.path.slice(prefix.length);
+      const slashIdx = rest.indexOf("/");
+      if (slashIdx > 0) {
+        dirSegments.add(rest.slice(0, slashIdx));
+      }
+    }
+
+    // Remove dirs that also appear as files (shouldn't happen, but defensive)
+    const fileNames = new Set(files.map((f) => f.path.slice(prefix.length)));
+    for (const name of fileNames) {
+      dirSegments.delete(name);
+    }
+
+    const result: Array<{
+      name: string;
+      type: "file" | "dir";
+      language?: string;
+      lines?: number;
+      symbols?: number;
+      importance?: number;
+    }> = [];
+
+    // Directories first
+    for (const dir of [...dirSegments].sort()) {
+      result.push({ name: dir, type: "dir" });
+    }
+
+    // Then files
+    for (const f of files) {
+      result.push({
+        name: f.path.slice(prefix.length),
+        type: "file",
+        language: f.language,
+        lines: f.line_count,
+        symbols: f.symbol_count,
+        importance: Math.round(f.pagerank * 1000) / 1000,
+      });
+    }
+
+    return result;
   }
 
   clear(): void {

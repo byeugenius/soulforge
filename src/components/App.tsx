@@ -38,6 +38,7 @@ import { type ModalName, selectIsAnyModalOpen, useUIStore } from "../stores/ui.j
 import type { AppConfig, ChatMessage, EditorIntegration } from "../types/index.js";
 import { BrandTag } from "./BrandTag.js";
 import { CommandPicker } from "./CommandPicker.js";
+import { CompactionLog } from "./CompactionLog.js";
 import { ContextBar } from "./ContextBar.js";
 import { handleCommand } from "./commands.js";
 import { EditorPanel } from "./EditorPanel.js";
@@ -588,6 +589,25 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
             setExitSessionId(meta.id);
             savedSessionIdRef.current = meta.id;
           }
+          import("../core/memory/auto-extract.js")
+            .then(({ autoExtractAndSave }) => {
+              if (!activeChat) return;
+              const mm = contextManager.getMemoryManager();
+              const convText = activeChat.messages
+                .filter((m: ChatMessage) => m.role === "user" || m.role === "assistant")
+                .map((m: ChatMessage) => `${m.role}: ${m.content}`)
+                .join("\n");
+              if (convText.length < 500) return;
+              return import("../core/llm/provider.js").then(({ resolveModel }) => {
+                const modelId =
+                  activeChat.activeModel && activeChat.activeModel !== "none"
+                    ? activeChat.activeModel
+                    : "none";
+                if (modelId === "none") return;
+                return autoExtractAndSave(mm, convText, resolveModel(modelId));
+              });
+            })
+            .catch(() => {});
         } catch (err) {
           logBackgroundError(
             "shutdown",
@@ -795,6 +815,7 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
         openProviderSettings: () => uiState.openModal("providerSettings"),
         openWebSearchSettings: () => uiState.openModal("webSearchSettings"),
         openLspStatus: () => uiState.openModal("lspStatus"),
+        openCompactionLog: () => uiState.openModal("compactionLog"),
         openCommandPicker: (pickerConfig) => uiState.openCommandPicker(pickerConfig),
         openInfoPopup: (popupConfig) => uiState.openInfoPopup(popupConfig),
         toggleChanges: () => uiState.toggleChangesExpanded(),
@@ -1251,6 +1272,8 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
       <RepoMapStatusPopup visible={modals.repoMapStatus} onClose={getCloser("repoMapStatus")} />
 
       <LspStatusPopup visible={modals.lspStatus} onClose={getCloser("lspStatus")} />
+
+      <CompactionLog visible={modals.compactionLog} onClose={getCloser("compactionLog")} />
     </box>
   );
 }

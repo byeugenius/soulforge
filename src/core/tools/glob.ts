@@ -1,5 +1,6 @@
 import { execSync, spawn } from "node:child_process";
 import type { ToolResult } from "../../types";
+import { isForbidden } from "../security/forbidden.js";
 
 interface GlobArgs {
   pattern: string;
@@ -58,6 +59,15 @@ function runFind(pattern: string, basePath: string): Promise<ToolResult> {
   });
 }
 
+function filterForbidden(result: ToolResult): ToolResult {
+  if (!result.success || result.output === "No files found.") return result;
+  const filtered = result.output
+    .split("\n")
+    .filter((line) => !line.trim() || isForbidden(line.trim()) === null)
+    .join("\n");
+  return { ...result, output: filtered || "No files found." };
+}
+
 export const globTool = {
   name: "glob",
   description: "Find files matching a glob pattern.",
@@ -68,8 +78,8 @@ export const globTool = {
     const fdBin = getFdBin();
     if (fdBin) {
       const result = await runFd(fdBin, pattern, basePath);
-      if (result) return result;
+      if (result) return filterForbidden(result);
     }
-    return runFind(pattern, basePath);
+    return filterForbidden(await runFind(pattern, basePath));
   },
 };

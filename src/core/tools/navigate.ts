@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import type { CallHierarchyItem, SourceLocation, SymbolInfo } from "../intelligence/types.js";
+import { isForbidden } from "../security/forbidden.js";
 
 type NavigateAction =
   | "definition"
@@ -167,10 +168,29 @@ export const navigateTool = {
       let file = args.file ? resolve(args.file) : undefined;
       const symbol = args.symbol;
 
+      if (file) {
+        const blocked = isForbidden(file);
+        if (blocked) {
+          return {
+            success: false,
+            output: `Access denied: "${file}" matches forbidden pattern "${blocked}"`,
+            error: "forbidden",
+          };
+        }
+      }
+
       if (!file && FILE_REQUIRED_ACTIONS.has(args.action) && symbol) {
         const resolved = await autoResolveFile(router, symbol, repoMap);
         if (resolved && "resolved" in resolved) {
           file = resolved.resolved;
+          const resolvedBlocked = isForbidden(file);
+          if (resolvedBlocked) {
+            return {
+              success: false,
+              output: `Access denied: resolved file "${file}" matches forbidden pattern "${resolvedBlocked}"`,
+              error: "forbidden",
+            };
+          }
         } else if (resolved && "candidates" in resolved) {
           const cwd = process.cwd();
           const display = resolved.candidates.map((c) =>

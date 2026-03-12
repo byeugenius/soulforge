@@ -333,10 +333,17 @@ const EMPTY_DISPATCH: DispatchDisplayData = {
   stats: new Map(),
 };
 
+interface ParsedTask {
+  agentId: string;
+  role?: string;
+  task?: string;
+}
+
 function useDispatchDisplay(
   parentId: string | null,
   maxSteps: number,
   fallbackTotal: number,
+  seedTasks?: ParsedTask[],
 ): DispatchDisplayData {
   const stepsRef = useRef<SubagentStep[]>([]);
   const progressRef = useRef<MultiAgentState | null>(null);
@@ -349,12 +356,29 @@ function useDispatchDisplay(
 
   const [, setTick] = useState(0);
 
+  const seedTasksRef = useRef(seedTasks);
+  seedTasksRef.current = seedTasks;
+
   useEffect(() => {
     if (!parentId) return;
     stepsRef.current = [];
-    progressRef.current = null;
     statsRef.current = new Map();
     dirtyRef.current = false;
+
+    const seeds = seedTasksRef.current;
+    if (seeds && seeds.length > 0) {
+      const agents = new Map<string, AgentInfo>();
+      for (const t of seeds) {
+        agents.set(t.agentId, {
+          role: t.role ?? "explore",
+          task: t.task ?? "",
+          state: "pending",
+        });
+      }
+      progressRef.current = { totalAgents: seeds.length, agents, findingCount: 0 };
+    } else {
+      progressRef.current = null;
+    }
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleTick = () => {
@@ -840,8 +864,15 @@ const ToolRow = memo(
       if (tc.toolName !== "dispatch" || !tc.args) return null;
       try {
         const parsed = JSON.parse(tc.args);
-        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 1) {
-          return { totalAgents: parsed.tasks.length as number };
+        if (Array.isArray(parsed.tasks) && parsed.tasks.length >= 1) {
+          const tasks = (
+            parsed.tasks as Array<{ agentId?: string; role?: string; task?: string }>
+          ).map((t, i) => ({
+            agentId: t.agentId ?? `agent-${String(i)}`,
+            role: t.role,
+            task: t.task,
+          }));
+          return { totalAgents: parsed.tasks.length as number, tasks };
         }
       } catch {
         // partial JSON during streaming
@@ -855,7 +886,7 @@ const ToolRow = memo(
       steps: allChildSteps,
       progress: multiProgress,
       stats: liveStats,
-    } = useDispatchDisplay(dispatchId, 15, multiAgentInfo?.totalAgents ?? 0);
+    } = useDispatchDisplay(dispatchId, 15, multiAgentInfo?.totalAgents ?? 0, multiAgentInfo?.tasks);
 
     const isRepoMapHit = useMemo(() => {
       if (!tc.result) return false;
@@ -895,21 +926,25 @@ const ToolRow = memo(
     }, [tc.toolName, tc.state, tc.args]);
 
     let suffix = "";
-    if (isMultiAgent && multiProgress) {
-      const done = [...multiProgress.agents.values()].filter(
-        (a) => a.state === "done" || a.state === "error",
-      ).length;
+    if (isMultiAgent) {
+      const total = multiProgress?.totalAgents ?? multiAgentInfo?.totalAgents ?? 0;
+      const done = multiProgress
+        ? [...multiProgress.agents.values()].filter(
+            (a) => a.state === "done" || a.state === "error",
+          ).length
+        : 0;
       if (tc.state === "running") {
+        const agentLabel = total > 0 ? ` · ${String(done)}/${String(total)} agents` : "";
         if (seconds != null && seconds > 0) {
-          suffix = ` ${formatDuration(seconds)} · ${String(done)}/${String(multiProgress.totalAgents)} agents`;
+          suffix = ` ${formatDuration(seconds)}${agentLabel}`;
         } else {
-          suffix = ` ${String(done)}/${String(multiProgress.totalAgents)} agents`;
+          suffix = agentLabel;
         }
-        if (multiProgress.findingCount > 0) {
+        if (multiProgress && multiProgress.findingCount > 0) {
           suffix += ` · ${String(multiProgress.findingCount)} findings`;
         }
       } else if (tc.state === "done") {
-        suffix = ` → ${String(done)}/${String(multiProgress.totalAgents)} agents`;
+        suffix = ` → ${String(done)}/${String(total)} agents`;
       }
     } else if (tc.state === "running" && seconds != null && seconds > 0) {
       suffix = ` ${formatDuration(seconds)}`;
@@ -1084,7 +1119,7 @@ const ToolRow = memo(
     prev.diffStyle === next.diffStyle,
 );
 
-const QUIET_TOOLS = new Set(["update_plan_step", "ask_user"]);
+const QUIET_TOOLS = new Set(["update_plan_step", "ask_user", "task_list"]);
 
 interface Props {
   calls: LiveToolCall[];

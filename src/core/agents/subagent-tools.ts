@@ -36,7 +36,6 @@ interface SubagentModels {
   onApproveWebSearch?: (query: string) => Promise<boolean>;
   onApproveFetchPage?: (url: string) => Promise<boolean>;
   readOnly?: boolean;
-  repoMapContext?: string;
   repoMap?: RepoMap;
   sharedCacheRef?: SharedCacheRef;
   agentFeatures?: AgentFeatures;
@@ -502,7 +501,6 @@ function createAgent(
     webSearchModel: models.webSearchModel,
     onApproveWebSearch: models.onApproveWebSearch,
     onApproveFetchPage: models.onApproveFetchPage,
-    repoMapContext: models.repoMapContext,
     repoMap: models.repoMap,
   };
   const agent = useExplore ? createExploreAgent(model, opts) : createCodeAgent(model, opts);

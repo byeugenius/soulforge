@@ -4,6 +4,7 @@ import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import type { Language } from "../intelligence/types.js";
 import { isForbidden } from "../security/forbidden.js";
+import { emitFileEdited } from "./file-events.js";
 
 interface PendingWrite {
   path: string;
@@ -29,6 +30,7 @@ class WriteTransaction {
       const dir = dirname(w.path);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       writeFileSync(w.path, w.content, "utf-8");
+      emitFileEdited(w.path, w.content);
     }
     this.committed = true;
   }

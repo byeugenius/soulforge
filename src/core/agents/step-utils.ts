@@ -1,5 +1,6 @@
 import type { ModelMessage, ProviderOptions } from "@ai-sdk/provider-utils";
 import type { PrepareStepFunction, StopCondition } from "ai";
+import { renderTaskList } from "../tools/task-list.js";
 import type { AgentBus } from "./agent-bus.js";
 
 const ANTHROPIC_CACHE: ProviderOptions = {
@@ -27,6 +28,10 @@ const READ_TOOLS = new Set([
   "analyze",
   "web_search",
   "fetch_page",
+  "soul_grep",
+  "soul_find",
+  "soul_analyze",
+  "soul_impact",
   "check_findings",
   "check_peers",
   "check_agent_result",
@@ -40,7 +45,7 @@ const BUDGET_WARNING_THRESHOLD_CODE = 120_000;
 const FORCE_DONE_THRESHOLD_EXPLORE = 70_000;
 const FORCE_DONE_THRESHOLD_CODE = 135_000;
 
-const KEEP_RECENT_MESSAGES = 6;
+const KEEP_RECENT_MESSAGES = 4;
 
 const SUMMARIZABLE_TOOLS = new Set([
   "read_file",
@@ -53,9 +58,14 @@ const SUMMARIZABLE_TOOLS = new Set([
   "fetch_page",
   "shell",
   "dispatch",
+  "list_dir",
+  "soul_grep",
+  "soul_find",
+  "soul_analyze",
+  "soul_impact",
 ]);
 
-const EDIT_TOOLS = new Set(["edit_file", "write_file", "create_file"]);
+const EDIT_TOOLS = new Set(["edit_file", "multi_edit", "write_file", "create_file"]);
 
 function extractText(output: unknown): string {
   if (typeof output === "string") return output;
@@ -96,6 +106,18 @@ function buildSummary(toolName: string, text: string, symbolHint?: string): stri
     const filesMatch = text.match(/### Files Edited\n([\s\S]*?)(?:\n###|$)/);
     if (filesMatch) return `[pruned] dispatch completed — ${filesMatch[1]?.trim()}`;
     return `[pruned] dispatch completed — ${String(charCount)} chars of output`;
+  }
+  if (toolName === "list_dir") {
+    const entryMatch = text.match(/(\d+) entries/);
+    return `[pruned] ${entryMatch ? entryMatch[1] : String(lineCount)} entries`;
+  }
+  if (toolName === "soul_grep" || toolName === "soul_find") {
+    const matchCount = (text.match(/\n/g) || []).length;
+    return `[pruned] ${String(matchCount)} results`;
+  }
+  if (toolName === "soul_analyze" || toolName === "soul_impact") {
+    const firstLine = text.split("\n")[0] ?? "";
+    return `[pruned] ${firstLine.slice(0, 120)}`;
   }
   return `[pruned] ${String(lineCount)} lines, ${String(charCount)} chars`;
 }
@@ -268,6 +290,12 @@ export function buildPrepareStep({
         const existing = result.system ?? "";
         result.system = `${existing}\n\n--- Peer findings (new) ---\n${unseen}`.trim();
       }
+    }
+
+    // Inject task list so it survives compaction
+    const taskBlock = renderTaskList();
+    if (taskBlock) {
+      result.system = `${result.system ?? ""}\n\n${taskBlock}`.trim();
     }
 
     return Object.keys(result).length > 0 ? result : undefined;

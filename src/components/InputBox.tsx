@@ -55,6 +55,7 @@ const CMD_DEFS: Array<{ cmd: string; ic: string; desc: string }> = [
   { cmd: "/editor", ic: "pencil", desc: "Toggle editor panel" },
   { cmd: "/editor-settings", ic: "cog", desc: "Toggle editor/LSP integrations" },
   { cmd: "/errors", ic: "error", desc: "Browse error log" },
+  { cmd: "/compact-v2-logs", ic: "plan", desc: "View compaction events" },
   { cmd: "/font", ic: "pencil", desc: "Show/set terminal font" },
   { cmd: "/git", ic: "git", desc: "Git menu" },
   { cmd: "/help", ic: "help", desc: "Show available commands" },

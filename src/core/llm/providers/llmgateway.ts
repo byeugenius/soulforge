@@ -8,14 +8,19 @@ export const llmgateway: ProviderDefinition = {
   icon: "󰒍", // nf-md-cloud_sync U+F048D
   grouped: true,
 
-  createModel(modelId: LLMGatewayModelId): ReturnType<typeof createLLMGateway> {
+  createModel(modelId) {
     if (!process.env.LLM_GATEWAY_API_KEY) {
       throw new Error("LLM_GATEWAY_API_KEY is not set");
     }
+
     const provider = createLLMGateway({
       apiKey: process.env.LLM_GATEWAY_API_KEY,
     });
-    return provider(modelId); // Temporary workaround for type mismatch
+
+    // LLMGatewayChatModelId is a union of literal model IDs, not exported.
+    // We accept arbitrary model IDs at runtime so cast is needed.
+    // biome-ignore lint/suspicious/noExplicitAny: model ID union not exported from SDK
+    return provider.chat(modelId as any);
   },
 
   async fetchModels(): Promise<ProviderModelInfo[] | null> {

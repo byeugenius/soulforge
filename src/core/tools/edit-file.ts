@@ -24,7 +24,25 @@ function formatMetricDelta(label: string, before: number, after: number): string
  * Returns the corrected oldStr/newStr with the file's actual indentation,
  * or null if no match is possible.
  */
-function fuzzyWhitespaceMatch(
+export function buildRichEditError(
+  content: string,
+  _oldStr: string,
+  lineHint?: number,
+): { output: string } {
+  const lines = content.split("\n");
+  const center = lineHint ? Math.min(lineHint - 1, lines.length - 1) : Math.floor(lines.length / 2);
+  const start = Math.max(0, center - 5);
+  const end = Math.min(lines.length, center + 6);
+  const snippet = lines
+    .slice(start, end)
+    .map((l, i) => `${String(start + i + 1).padStart(4)} │ ${l}`)
+    .join("\n");
+  return {
+    output: `old_string not found in file (re-read performed — content below is current):\n${snippet}`,
+  };
+}
+
+export function fuzzyWhitespaceMatch(
   content: string,
   oldStr: string,
   newStr: string,
