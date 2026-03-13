@@ -63,6 +63,8 @@ const SUMMARIZABLE_TOOLS = new Set([
   "soul_find",
   "soul_analyze",
   "soul_impact",
+  "memory_search",
+  "memory_list",
 ]);
 
 const EDIT_TOOLS = new Set(["edit_file", "multi_edit", "write_file", "create_file"]);
@@ -118,6 +120,10 @@ function buildSummary(toolName: string, text: string, symbolHint?: string): stri
   if (toolName === "soul_analyze" || toolName === "soul_impact") {
     const firstLine = text.split("\n")[0] ?? "";
     return `[pruned] ${firstLine.slice(0, 120)}`;
+  }
+  if (toolName === "memory_search" || toolName === "memory_list") {
+    const count = text.trim().split("\n").length;
+    return `[pruned] ${String(count)} memories`;
   }
   return `[pruned] ${String(lineCount)} lines, ${String(charCount)} chars`;
 }
@@ -218,30 +224,41 @@ export function buildPrepareStep({
     const pathMap = symbolLookup ? buildToolCallPathMap(messages) : undefined;
 
     // Sanitize non-dict tool-call inputs to prevent Anthropic API rejections
-    for (const msg of messages) {
+    let sanitizedMessages: ModelMessage[] | undefined;
+    for (let mi = 0; mi < messages.length; mi++) {
+      const msg = messages[mi];
+      if (!msg) continue;
       if (msg.role !== "assistant" || typeof msg.content === "string") continue;
       if (!Array.isArray(msg.content)) continue;
+      let clonedContent: typeof msg.content | undefined;
       for (let i = 0; i < msg.content.length; i++) {
         const part = msg.content[i] as (typeof msg.content)[number];
         if (part.type !== "tool-call") continue;
         const input = (part as { input: unknown }).input;
         if (typeof input === "object" && input !== null && !Array.isArray(input)) continue;
-        (msg.content as unknown[])[i] = { ...part, input: {} };
+        if (!clonedContent) clonedContent = [...msg.content];
+        (clonedContent as unknown[])[i] = { ...part, input: {} };
+      }
+      if (clonedContent) {
+        if (!sanitizedMessages) sanitizedMessages = [...messages];
+        sanitizedMessages[mi] = { ...msg, content: clonedContent } as ModelMessage;
       }
     }
+    if (sanitizedMessages) result.messages = sanitizedMessages;
 
     if (stepNumber === 0) {
       result.toolChoice = "required";
     }
 
     if (stepNumber > 0 && messages.length >= 2) {
-      for (const msg of messages) {
+      const msgs = result.messages ?? messages;
+      for (const msg of msgs) {
         if (msg.providerOptions?.anthropic) {
           const { anthropic: _, ...rest } = msg.providerOptions;
           msg.providerOptions = Object.keys(rest).length > 0 ? rest : undefined;
         }
       }
-      const target = messages[messages.length - 2];
+      const target = msgs[msgs.length - 2];
       if (target) {
         target.providerOptions = { ...target.providerOptions, ...ANTHROPIC_CACHE };
       }

@@ -60,7 +60,7 @@ import { SessionPicker } from "./SessionPicker.js";
 import { SetupGuide } from "./SetupGuide.js";
 import { SkillSearch } from "./SkillSearch.js";
 import type { ConfigScope } from "./shared.js";
-import { BRAND_SEGMENTS, BRAND_TEXT, garble, WORDMARK as SHUTDOWN_WORDMARK } from "./splash.js";
+import { garble, WORDMARK as SHUTDOWN_WORDMARK } from "./splash.js";
 import { TabBar } from "./TabBar.js";
 import { TabInstance } from "./TabInstance.js";
 import { TokenDisplay } from "./TokenDisplay.js";
@@ -82,6 +82,8 @@ function truncate(str: string, max: number): string {
 
 const ABORT_ON_LOADING = new Set(["/clear", "/compact", "/plan"]);
 
+const SHUTDOWN_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 const SHUTDOWN_STEPS = [
   "Quenching active flames…",
   "Forging session to disk…",
@@ -91,83 +93,48 @@ const SHUTDOWN_STEPS = [
 
 function ShutdownSplash({
   phase,
-  ghostTick,
   sessionId,
   height,
 }: {
   phase: number;
-  ghostTick: number;
   sessionId: string | null;
   height: number;
 }) {
   const shortId = sessionId?.slice(0, 8);
-  const [revealLine, setRevealLine] = useState(-1);
-  const [glitchLines, setGlitchLines] = useState<string[]>(() =>
-    SHUTDOWN_WORDMARK.map((l) => garble(l)),
-  );
-  const [showBrand, setShowBrand] = useState(false);
-  const [brandReveal, setBrandReveal] = useState(0);
-  const brandText = BRAND_TEXT;
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    let frame = 0;
-    const timer = setInterval(() => {
-      frame++;
-      if (frame <= 3) {
-        setGlitchLines(SHUTDOWN_WORDMARK.map((l) => garble(l)));
-      }
-      if (frame === 2) setRevealLine(0);
-      if (frame === 4) setRevealLine(1);
-      if (frame === 6) setRevealLine(2);
-      if (frame === 8) {
-        setShowBrand(true);
-      }
-      if (frame > 8 && frame <= 8 + brandText.length) {
-        setBrandReveal(frame - 8);
-      }
-      if (frame > 8 + brandText.length) {
-        clearInterval(timer);
-      }
-    }, 60);
+    const timer = setInterval(() => setTick((t) => t + 1), 80);
     return () => clearInterval(timer);
   }, []);
+
+  const ghostFade = ["▓", "▒", "░", " ", " ", "░", "▒", "▓"];
+  const fadeIdx = Math.min(tick, ghostFade.length - 1);
+  const ghostChar = tick < ghostFade.length ? ghostFade[fadeIdx] : icon("ghost");
+  const spin = SHUTDOWN_SPINNER[tick % SHUTDOWN_SPINNER.length];
 
   return (
     <box flexDirection="column" height={height} justifyContent="center" alignItems="center">
       <text fg="#9B30FF" attributes={TextAttributes.BOLD}>
-        {ghostTick % 4 === 3 ? " " : icon("ghost")}
+        {ghostChar}
       </text>
       <text fg="#4a1a6b" attributes={TextAttributes.DIM}>
         ∿~∿
       </text>
       <box height={1} />
-      {SHUTDOWN_WORDMARK.map((line, i) => (
-        <text
-          key={line}
-          fg={i === revealLine ? "#FF0040" : "#9B30FF"}
-          attributes={TextAttributes.BOLD}
-        >
-          {i <= revealLine ? line : (glitchLines[i] ?? garble(line))}
+      {SHUTDOWN_WORDMARK.map((line) => (
+        <text key={line} fg="#9B30FF" attributes={TextAttributes.BOLD}>
+          {tick < 4 ? garble(line) : line}
         </text>
       ))}
-      {showBrand && (
-        <text>
-          {BRAND_SEGMENTS.map((s) => (
-            <span key={s.text} fg={s.color}>
-              {s.text}
-            </span>
-          ))}
-          {brandReveal < brandText.length && <span fg="#FF0040">█</span>}
-        </text>
-      )}
       <box height={1} />
-      <box flexDirection="column" gap={0} alignItems="center" height={SHUTDOWN_STEPS.length + 2}>
+      <box flexDirection="column" gap={0} alignItems="center" height={SHUTDOWN_STEPS.length + 3}>
         {SHUTDOWN_STEPS.map((label, i) => {
           if (i > phase) return null;
           const done = i < phase;
           return (
             <box key={label} gap={1} flexDirection="row">
-              <text fg={done ? "#4a7" : "#8B5CF6"}>{done ? "✓" : "◌"}</text>
+              <text fg={done ? "#4a7" : "#9B30FF"}>{done ? "✓" : spin}</text>
               <text fg={done ? "#555" : "#aaa"}>{label}</text>
             </box>
           );
@@ -195,6 +162,7 @@ interface Props {
   resumeSessionId?: string;
   bootProviders: ProviderStatus[];
   bootPrereqs: PrerequisiteStatus[];
+  preloadedContextManager?: ContextManager;
 }
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal protocol responses
@@ -208,17 +176,18 @@ function nativeCopy(text: string): void {
   proc.stdin.end();
 }
 
-export function App({ config, projectConfig, resumeSessionId, bootProviders, bootPrereqs }: Props) {
+export function App({
+  config,
+  projectConfig,
+  resumeSessionId,
+  bootProviders,
+  bootPrereqs,
+  preloadedContextManager,
+}: Props) {
   const renderer = useRenderer();
   const { height: termHeight, width: termWidth } = useTerminalDimensions();
   const [shutdownPhase, setShutdownPhase] = useState(-1);
   const savedSessionIdRef = useRef<string | null>(null);
-  const [shutdownGhostTick, setShutdownGhostTick] = useState(0);
-  useEffect(() => {
-    if (shutdownPhase < 0) return;
-    const timer = setInterval(() => setShutdownGhostTick((t) => t + 1), 400);
-    return () => clearInterval(timer);
-  }, [shutdownPhase]);
 
   // Strip Kitty keyboard protocol query responses (\x1b[?<n>u) from stdin.
   // These leak when Neovim queries the terminal's protocol state.
@@ -428,7 +397,10 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
     initForbidden(cwd);
   }, []);
 
-  const contextManager = useMemo(() => new ContextManager(cwd), [cwd]);
+  const contextManager = useMemo(
+    () => preloadedContextManager ?? new ContextManager(cwd),
+    [cwd, preloadedContextManager],
+  );
   const sessionManager = useMemo(() => new SessionManager(cwd), [cwd]);
 
   const restoreSessionMemory = useCallback((_sessionId: string) => {
@@ -589,25 +561,6 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
             setExitSessionId(meta.id);
             savedSessionIdRef.current = meta.id;
           }
-          import("../core/memory/auto-extract.js")
-            .then(({ autoExtractAndSave }) => {
-              if (!activeChat) return;
-              const mm = contextManager.getMemoryManager();
-              const convText = activeChat.messages
-                .filter((m: ChatMessage) => m.role === "user" || m.role === "assistant")
-                .map((m: ChatMessage) => `${m.role}: ${m.content}`)
-                .join("\n");
-              if (convText.length < 500) return;
-              return import("../core/llm/provider.js").then(({ resolveModel }) => {
-                const modelId =
-                  activeChat.activeModel && activeChat.activeModel !== "none"
-                    ? activeChat.activeModel
-                    : "none";
-                if (modelId === "none") return;
-                return autoExtractAndSave(mm, convText, resolveModel(modelId));
-              });
-            })
-            .catch(() => {});
         } catch (err) {
           logBackgroundError(
             "shutdown",
@@ -959,7 +912,6 @@ export function App({ config, projectConfig, resumeSessionId, bootProviders, boo
     return (
       <ShutdownSplash
         phase={shutdownPhase}
-        ghostTick={shutdownGhostTick}
         sessionId={savedSessionIdRef.current}
         height={termHeight}
       />

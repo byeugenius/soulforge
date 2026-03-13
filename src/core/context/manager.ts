@@ -188,6 +188,33 @@ export class ContextManager {
     }
   }
 
+  /**
+   * Async factory that yields to the event loop between heavy sync steps.
+   * Use this from boot to keep the spinner alive during DB init.
+   */
+  /**
+   * Async factory that yields to the event loop between heavy sync steps.
+   * Use this from boot to keep the spinner alive during DB init.
+   */
+  static async createAsync(cwd: string, onStep?: (label: string) => void): Promise<ContextManager> {
+    const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+    onStep?.("Opening the memory vaults…");
+    const memoryManager = new MemoryManager(cwd);
+    await tick();
+
+    onStep?.("Mapping the codebase…");
+    const repoMap = new RepoMap(cwd);
+    await tick();
+
+    onStep?.("Wiring up the forge…");
+    const cm = new ContextManager(cwd, { repoMap, memoryManager });
+    cm.isChild = false;
+    cm.wireRepoMapCallbacks();
+    cm.startRepoMapScan();
+    return cm;
+  }
+
   getSharedResources(): SharedContextResources {
     return { repoMap: this.repoMap, memoryManager: this.memoryManager };
   }

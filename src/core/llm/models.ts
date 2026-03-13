@@ -249,6 +249,38 @@ interface OpenAIModelEntry {
   type?: string;
 }
 
+interface AnthropicModelEntry {
+  id: string;
+  type: string;
+  display_name?: string;
+  context_window?: number;
+}
+
+/**
+ * Fetch context window sizes from Anthropic's /v1/models API.
+ * Returns a map of modelId → context_window tokens.
+ * Falls back gracefully if ANTHROPIC_API_KEY is unavailable or the call fails.
+ */
+async function fetchAnthropicContextWindows(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return map;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models", {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+    });
+    if (!res.ok) return map;
+    const data = (await res.json()) as { data: AnthropicModelEntry[] };
+    for (const m of data.data) {
+      if (m.context_window) map.set(m.id, m.context_window);
+    }
+  } catch {}
+  return map;
+}
+
 const groupedCache = new Map<string, { result: GroupedModelsResult; ts: number }>();
 
 export function getCachedGroupedModels(providerId: string): GroupedModelsResult | null {
@@ -480,12 +512,20 @@ async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
     if (!res.ok) throw new Error(`Proxy API ${String(res.status)}`);
 
     const data = (await res.json()) as { data: OpenAIModelEntry[] };
+
+    // Enrich with context windows from Anthropic's API
+    const ctxWindows = await fetchAnthropicContextWindows();
+
     const grouped: Record<string, ProviderModelInfo[]> = {};
 
     for (const m of data.data) {
       const group = inferModelGroup(m.id);
       if (!grouped[group]) grouped[group] = [];
-      grouped[group].push({ id: m.id, name: m.id });
+      grouped[group].push({
+        id: m.id,
+        name: m.id,
+        contextWindow: ctxWindows.get(m.id),
+      });
     }
 
     const subProviders: SubProvider[] = Object.keys(grouped)

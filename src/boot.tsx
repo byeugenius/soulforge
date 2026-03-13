@@ -66,24 +66,79 @@ function center(row: number, text: string, style = ""): void {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-const bootStart = performance.now();
+const bootStartWall = Date.now();
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-function status(msg: string): void {
-  const elapsed = ((performance.now() - bootStart) / 1000).toFixed(1);
-  const full = `${msg}  ${DIM}${elapsed}s${RST}`;
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping ANSI
-  const plain = full.replace(/\x1b\[[^m]*m/g, "");
-  const c = Math.max(1, Math.floor((cols - plain.length) / 2) + 1);
+// Spinner runs in a child process so it stays alive even when the main
+// event loop is blocked by Bun's synchronous module resolution (~3s).
+const spinnerProc = Bun.spawn(
+  [
+    "bun",
+    "-e",
+    `
+const RST = "\\x1b[0m";
+const PURPLE = "\\x1b[38;2;155;48;255m";
+const MUTED = "\\x1b[38;2;85;85;85m";
+const DIM = "\\x1b[2m";
+const SPINNER = ${JSON.stringify(SPINNER)};
+const row = ${ROW.status};
+const cols = ${cols};
+const bootStart = ${bootStartWall};
+const at = (r, c) => "\\x1b[" + r + ";" + c + "H";
+
+let msgs = ["loading…"];
+let msgIdx = 0;
+let spinIdx = 0;
+let msgSetAt = Date.now();
+
+process.stdin.setEncoding("utf-8");
+let buf = "";
+process.stdin.on("data", (chunk) => {
+  buf += chunk;
+  let nl;
+  while ((nl = buf.indexOf("\\n")) !== -1) {
+    const line = buf.slice(0, nl);
+    buf = buf.slice(nl + 1);
+    if (line === "EXIT") { process.exit(0); }
+    try { msgs = JSON.parse(line); msgIdx = 0; msgSetAt = Date.now(); } catch {}
+  }
+});
+
+setInterval(() => {
+  spinIdx++;
+  const now = Date.now();
+  if (msgs.length > 1 && now - msgSetAt > 1200) {
+    msgIdx = (msgIdx + 1) % msgs.length;
+    msgSetAt = now;
+  }
+  const elapsed = ((now - bootStart) / 1000).toFixed(1);
+  const msg = msgs[msgIdx % msgs.length] || msgs[0];
+  const frame = SPINNER[spinIdx % SPINNER.length];
+  const full = frame + " " + msg + "  " + elapsed + "s";
+  const c = Math.max(1, Math.floor((cols - full.length) / 2) + 1);
   process.stdout.write(
-    `${at(ROW.status, 1)}\x1b[2K${at(ROW.status, c)}${MUTED}${msg}  ${DIM}${elapsed}s${RST}`,
+    at(row, 1) + "\\x1b[2K" + at(row, c) + PURPLE + frame + RST + " " + MUTED + msg + "  " + DIM + elapsed + "s" + RST
   );
+}, 80);
+`,
+  ],
+  { stdin: "pipe", stdout: "inherit", stderr: "ignore" },
+);
+
+function status(...msgs: string[]): void {
+  spinnerProc.stdin.write(`${JSON.stringify(msgs)}\n`);
+}
+
+function stopSpinner(): void {
+  spinnerProc.stdin.write("EXIT\n");
+  spinnerProc.stdin.end();
 }
 
 // ─── Hide cursor, clear screen ───
 
 process.stdout.write("\x1b[?25l\x1b[2J\x1b[H");
 
-// ─── Kick off module loading immediately (runs during animation) ───
+// ─── Kick off light module loading during animation ───
 
 const earlyModules = Promise.all([
   import("./config/index.js"),
@@ -171,9 +226,12 @@ for (let w = 2; w <= divW; w += 3) {
 const divCol = Math.max(1, Math.floor((cols - divW) / 2) + 1);
 process.stdout.write(`${at(ROW.div, divCol)}${FAINT}${"─".repeat(divW)}${RST}`);
 
-// ─── Real loading (modules should be ready from earlyModules) ───
+// ─── Real loading ───
+// App.tsx pulls in the entire tool/hook/AI SDK module graph (~3s).
+// Kick it off here so the spinner (child process) shows progress.
 
-status("loading modules…");
+status("Gathering soul fragments…", "Unpacking the forge…");
+const appReady = import("./components/App.js");
 const [configMod, detectMod, iconsMod, installMod] = await earlyModules;
 
 const { loadConfig, loadProjectConfig } = configMod;
@@ -195,15 +253,20 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-status("loading config…");
+status("Reading the scrolls…");
 const config = loadConfig();
 const projectConfig = loadProjectConfig(process.cwd());
 initNerdFont(config.nerdFont);
 
-status("detecting neovim…");
+// Pre-init ContextManager async — yields between heavy sync steps so the spinner stays alive.
+const contextManagerReady = import("./core/context/manager.js").then(({ ContextManager }) =>
+  ContextManager.createAsync(process.cwd(), (step) => status(step)),
+);
+
+status("Summoning the editor spirit…");
 let nvim = detectNeovim();
 if (!nvim) {
-  status("installing neovim…");
+  status("Forging Neovim from scratch…", "This only happens once…");
   try {
     const path = await installNeovim();
     nvim = { path, version: "0.11.1" };
@@ -216,7 +279,7 @@ if (nvim) {
 }
 
 if (!getVendoredPath("rg")) {
-  status("installing ripgrep…");
+  status("Sharpening the search blade…");
   installRipgrep().catch((err) => {
     logBackgroundError(
       "boot",
@@ -225,7 +288,7 @@ if (!getVendoredPath("rg")) {
   });
 }
 
-status("checking providers…");
+status("Reaching out to the LLM gods…", "Negotiating API keys…");
 const { checkProviders } = await import("./core/llm/provider.js");
 const { checkPrerequisites } = await import("./core/setup/prerequisites.js");
 const [bootProviders, bootPrereqs] = await Promise.all([
@@ -233,7 +296,7 @@ const [bootProviders, bootPrereqs] = await Promise.all([
   Promise.resolve(checkPrerequisites()),
 ]);
 
-status("warming up intelligence…");
+status("Kicking the neurons awake…", "Waking the tree-sitter…");
 import("./core/intelligence/index.js")
   .then(({ warmupIntelligence }) => warmupIntelligence(process.cwd(), config.codeIntelligence))
   .catch((err) => {
@@ -243,15 +306,17 @@ import("./core/intelligence/index.js")
     );
   });
 
-status("loading UI framework…");
+status("Assembling the forge…", "Almost there…", "Sharpening the tools…");
+const [{ App }, contextManager] = await Promise.all([appReady, contextManagerReady]);
+// Instant — App.tsx already pulled these into the module cache
 const { createCliRenderer } = await import("@opentui/core");
 const { createRoot } = await import("@opentui/react");
-
-status("loading app…");
-const { App } = await import("./components/App.js");
 const { start } = await import("./index.js");
 
+status("Igniting…");
+
 clearInterval(wispTimer);
+stopSpinner();
 process.stdout.write("\x1b[?25h\x1b[2J\x1b[H");
 
 await start({
@@ -263,4 +328,5 @@ await start({
   resumeSessionId,
   bootProviders,
   bootPrereqs,
+  contextManager,
 });

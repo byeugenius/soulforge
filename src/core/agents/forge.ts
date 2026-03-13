@@ -202,18 +202,9 @@ export function createForgeAgent({
       content: contextManager.buildSystemPrompt(),
       providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
     },
-    prepareCall: ({ options, ...settings }) => {
-      const recalled = options?.userMessage
-        ? contextManager.getMemoryManager().autoRecall(options.userMessage)
-        : null;
-
+    prepareCall: ({ options: _options, ...settings }) => {
       return {
         ...settings,
-        ...(recalled
-          ? {
-              instructions: `${settings.instructions}\n\n### Auto-Recalled Memories (matching this message)\n${recalled}`,
-            }
-          : {}),
         ...(activeToolOverride ? { activeTools: activeToolOverride } : {}),
       };
     },

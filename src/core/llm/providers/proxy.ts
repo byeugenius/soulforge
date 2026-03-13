@@ -39,6 +39,12 @@ export const proxy: ProviderDefinition = {
   ],
 
   contextWindows: [
+    ["claude-opus-4-6", 1_000_000],
+    ["claude-sonnet-4-6", 1_000_000],
+    ["claude-sonnet-4-5", 1_000_000],
+    ["claude-opus-4-5", 1_000_000],
+    ["claude-sonnet-4", 1_000_000],
+    ["claude-opus-4", 1_000_000],
     ["claude-opus", 200_000],
     ["claude-sonnet", 200_000],
     ["claude-haiku", 200_000],

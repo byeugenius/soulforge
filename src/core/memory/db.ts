@@ -1,29 +1,14 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type {
-  MemoryCategory,
-  MemoryIndex,
-  MemoryRecord,
-  MemoryScope,
-  MemorySummary,
-} from "./types.js";
+import type { MemoryCategory, MemoryIndex, MemoryRecord, MemoryScope } from "./types.js";
 
 interface RawRow {
   id: string;
   title: string;
-  content: string;
   category: string;
   tags: string;
   created_at: string;
-  updated_at: string;
-}
-
-interface RawSummaryRow {
-  id: string;
-  title: string;
-  category: string;
-  tags: string;
   updated_at: string;
 }
 
@@ -52,21 +37,66 @@ export class MemoryDB {
   }
 
   private init(): void {
+    const existing = this.db
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories'",
+      )
+      .get();
+
+    if (existing) {
+      const hasContent = existing.sql.toLowerCase().includes("content text");
+      if (hasContent) {
+        this.migrateDropContent();
+      }
+    } else {
+      this.db.run(`
+        CREATE TABLE memories (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          category TEXT NOT NULL CHECK(category IN ('decision','convention','preference','architecture','pattern','fact','checkpoint')),
+          tags TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+        CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
+      `);
+    }
+
+    this.ensureFts();
+  }
+
+  private migrateDropContent(): void {
+    this.db.run("DROP TABLE IF EXISTS memories_fts");
+    this.db.run("DROP TRIGGER IF EXISTS memories_ai");
+    this.db.run("DROP TRIGGER IF EXISTS memories_ad");
+    this.db.run("DROP TRIGGER IF EXISTS memories_au");
+
     this.db.run(`
-      CREATE TABLE IF NOT EXISTS memories (
+      CREATE TABLE memories_new (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        category TEXT NOT NULL CHECK(category IN ('decision','convention','preference','architecture','pattern','fact')),
+        category TEXT NOT NULL CHECK(category IN ('decision','convention','preference','architecture','pattern','fact','checkpoint')),
         tags TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
-      CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
+      )
     `);
 
+    this.db.run(`
+      INSERT INTO memories_new (id, title, category, tags, created_at, updated_at)
+      SELECT id, title, category, tags, created_at, updated_at FROM memories
+    `);
+
+    this.db.run("DROP TABLE memories");
+    this.db.run("ALTER TABLE memories_new RENAME TO memories");
+
+    this.db.run("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)");
+    this.db.run("CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at)");
+  }
+
+  private ensureFts(): void {
     const hasFts = this.db
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_fts'",
@@ -76,29 +106,29 @@ export class MemoryDB {
     if (!hasFts) {
       this.db.run(`
         CREATE VIRTUAL TABLE memories_fts USING fts5(
-          title, content, tags,
+          title, tags,
           content='memories', content_rowid='rowid'
         );
 
         CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
-          INSERT INTO memories_fts(rowid, title, content, tags)
-          VALUES (new.rowid, new.title, new.content, new.tags);
+          INSERT INTO memories_fts(rowid, title, tags)
+          VALUES (new.rowid, new.title, new.tags);
         END;
 
         CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, title, content, tags)
-          VALUES ('delete', old.rowid, old.title, old.content, old.tags);
+          INSERT INTO memories_fts(memories_fts, rowid, title, tags)
+          VALUES ('delete', old.rowid, old.title, old.tags);
         END;
 
         CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
-          INSERT INTO memories_fts(memories_fts, rowid, title, content, tags)
-          VALUES ('delete', old.rowid, old.title, old.content, old.tags);
-          INSERT INTO memories_fts(rowid, title, content, tags)
-          VALUES (new.rowid, new.title, new.content, new.tags);
+          INSERT INTO memories_fts(memories_fts, rowid, title, tags)
+          VALUES ('delete', old.rowid, old.title, old.tags);
+          INSERT INTO memories_fts(rowid, title, tags)
+          VALUES (new.rowid, new.title, new.tags);
         END;
 
-        INSERT INTO memories_fts(rowid, title, content, tags)
-        SELECT rowid, title, content, tags FROM memories;
+        INSERT INTO memories_fts(rowid, title, tags)
+        SELECT rowid, title, tags FROM memories;
       `);
     }
   }
@@ -111,18 +141,17 @@ export class MemoryDB {
     const tags = JSON.stringify(record.tags ?? []);
 
     const row = this.db
-      .query<RawRow, [string, string, string, string, string, string, string]>(
-        `INSERT INTO memories (id, title, content, category, tags, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+      .query<RawRow, [string, string, string, string, string, string]>(
+        `INSERT INTO memories (id, title, category, tags, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
-           content = excluded.content,
            category = excluded.category,
            tags = excluded.tags,
            updated_at = excluded.updated_at
          RETURNING *`,
       )
-      .get(id, record.title, record.content, record.category, tags, now, now);
+      .get(id, record.title, record.category, tags, now, now);
 
     if (!row) throw new Error(`Failed to write memory ${id}`);
     return toRecord(row);
@@ -133,8 +162,8 @@ export class MemoryDB {
     return row ? toRecord(row) : null;
   }
 
-  list(opts?: { category?: MemoryCategory; tag?: string }): MemorySummary[] {
-    let sql = "SELECT id, title, category, tags, updated_at FROM memories";
+  list(opts?: { category?: MemoryCategory; tag?: string }): MemoryRecord[] {
+    let sql = "SELECT * FROM memories";
     const conditions: string[] = [];
     const params: string[] = [];
 
@@ -150,37 +179,13 @@ export class MemoryDB {
     if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
     sql += " ORDER BY updated_at DESC";
 
-    const rows = this.db.query<RawSummaryRow, string[]>(sql).all(...params);
-    return rows.map(toSummary);
+    const rows = this.db.query<RawRow, string[]>(sql).all(...params);
+    return rows.map(toRecord);
   }
 
-  search(query: string, limit = 20): MemorySummary[] {
+  search(query: string, limit = 20): MemoryRecord[] {
     const words = query.split(/\s+/).filter(Boolean);
     if (words.length === 0) return this.list();
-
-    const ftsQuery = words.map((w) => `"${w.replace(/"/g, "")}"`).join(" OR ");
-
-    try {
-      const rows = this.db
-        .query<RawSummaryRow, [string, number]>(
-          `SELECT m.id, m.title, m.category, m.tags, m.updated_at
-           FROM memories_fts f
-           JOIN memories m ON m.rowid = f.rowid
-           WHERE memories_fts MATCH ?
-           ORDER BY rank
-           LIMIT ?`,
-        )
-        .all(ftsQuery, limit);
-
-      return rows.map(toSummary);
-    } catch {
-      return this.list();
-    }
-  }
-
-  searchFull(query: string, limit = 5): MemoryRecord[] {
-    const words = query.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return [];
 
     const ftsQuery = words.map((w) => `"${w.replace(/"/g, "")}"`).join(" OR ");
 
@@ -198,13 +203,50 @@ export class MemoryDB {
 
       return rows.map(toRecord);
     } catch {
-      return [];
+      return this.list();
     }
   }
 
   delete(id: string): boolean {
     const result = this.db.query("DELETE FROM memories WHERE id = ?").run(id);
     return result.changes > 0;
+  }
+
+  deleteAll(): number {
+    const count =
+      this.db.query<{ c: number }, []>("SELECT COUNT(*) as c FROM memories").get()?.c ?? 0;
+    if (count > 0) {
+      this.db.run("DELETE FROM memories");
+      this.db.run("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')");
+    }
+    return count;
+  }
+
+  deleteByCategory(category: MemoryCategory): number {
+    const count =
+      this.db
+        .query<{ c: number }, [string]>("SELECT COUNT(*) as c FROM memories WHERE category = ?")
+        .get(category)?.c ?? 0;
+    if (count > 0) this.db.query("DELETE FROM memories WHERE category = ?").run(category);
+    return count;
+  }
+
+  deleteStaleCheckpoints(maxAgeDays = 7): number {
+    const cutoff = `-${String(maxAgeDays)} days`;
+    const count =
+      this.db
+        .query<{ c: number }, [string]>(
+          "SELECT COUNT(*) as c FROM memories WHERE category = 'checkpoint' AND updated_at < datetime('now', ?)",
+        )
+        .get(cutoff)?.c ?? 0;
+    if (count > 0) {
+      this.db
+        .query(
+          "DELETE FROM memories WHERE category = 'checkpoint' AND updated_at < datetime('now', ?)",
+        )
+        .run(cutoff);
+    }
+    return count;
   }
 
   getIndex(): MemoryIndex {
@@ -239,14 +281,6 @@ export class MemoryDB {
 }
 
 function toRecord(row: RawRow): MemoryRecord {
-  return {
-    ...row,
-    category: row.category as MemoryCategory,
-    tags: JSON.parse(row.tags) as string[],
-  };
-}
-
-function toSummary(row: RawSummaryRow): MemorySummary {
   return {
     ...row,
     category: row.category as MemoryCategory,

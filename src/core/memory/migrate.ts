@@ -33,10 +33,12 @@ export function migrateOldMemory(memoryDir: string, db: MemoryDB): { migrated: n
       const lines = readFileSync(decisionsPath, "utf-8").split("\n").filter(Boolean);
       for (const line of lines) {
         const d = JSON.parse(line) as OldDecision;
+        const title = d.rationale
+          ? `${d.summary} — ${d.rationale}`.slice(0, 120)
+          : d.summary.slice(0, 120);
         db.write({
           id: d.id,
-          title: d.summary,
-          content: d.rationale,
+          title,
           category: "decision",
           tags: d.tags ?? [],
         });
@@ -50,9 +52,9 @@ export function migrateOldMemory(memoryDir: string, db: MemoryDB): { migrated: n
     try {
       const invariants = JSON.parse(readFileSync(invariantsPath, "utf-8")) as OldInvariant[];
       for (const inv of invariants) {
+        const title = `${inv.name}: ${inv.rule}${inv.scope ? ` (${inv.scope})` : ""}`.slice(0, 120);
         db.write({
-          title: inv.name,
-          content: `${inv.rule}${inv.scope ? ` (scope: ${inv.scope})` : ""}`,
+          title,
           category: "convention",
           tags: inv.scope ? [inv.scope] : [],
         });
@@ -66,9 +68,13 @@ export function migrateOldMemory(memoryDir: string, db: MemoryDB): { migrated: n
     try {
       const constraints = JSON.parse(readFileSync(constraintsPath, "utf-8")) as OldConstraint[];
       for (const c of constraints) {
+        const title =
+          `${c.name}: ${c.metric} ≤ ${String(c.limit)}${c.scope ? ` (${c.scope})` : ""} [${c.action}]`.slice(
+            0,
+            120,
+          );
         db.write({
-          title: c.name,
-          content: `${c.metric} ≤ ${String(c.limit)}${c.scope ? ` (${c.scope})` : ""} [${c.action}]`,
+          title,
           category: "convention",
           tags: c.scope ? [c.scope] : [],
         });

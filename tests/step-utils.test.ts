@@ -710,7 +710,7 @@ describe("symbol enrichment", () => {
 		);
 		const summary = resultText(result!.messages!, 1);
 		expect(summary).toBe("[pruned] 100 lines");
-		const part = (msgs[0]!.content as Array<{ input: unknown }>)[0];
+		const part = (result!.messages![0]!.content as Array<{ input: unknown }>)[0];
 		expect(part?.input).toEqual({});
 	});
 });
@@ -841,12 +841,14 @@ describe("buildPrepareStep — input sanitization", () => {
 			},
 			toolResult([{ id: "bad", name: "read_file", output: "result" }]),
 		];
-		callPrepareStep(
+		const result = callPrepareStep(
 			{ role: "explore", allTools: TOOLS },
 			{ stepNumber: 1, messages: msgs },
 		);
-		const part = (msgs[0]!.content as Array<{ input: unknown }>)[0];
+		const part = (result!.messages![0]!.content as Array<{ input: unknown }>)[0];
 		expect(part?.input).toEqual({});
+		const origPart = (msgs[0]!.content as Array<{ input: unknown }>)[0];
+		expect(origPart?.input).toBe("not-a-dict");
 	});
 
 	it("preserves valid dict inputs", () => {

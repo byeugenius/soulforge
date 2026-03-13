@@ -71,7 +71,6 @@ export const TOOL_CATEGORIES: Record<string, ToolCategory> = {
 
   // Memory
   memory_write: "memory",
-  memory_read: "memory",
   memory_list: "memory",
   memory_search: "memory",
   memory_delete: "memory",
@@ -146,7 +145,6 @@ const TOOL_ICON_MAP: Record<string, string> = {
   web_search: "globe",
   fetch_page: "file",
   memory_write: "bookmark",
-  memory_read: "bookmark",
   memory_list: "bookmark",
   memory_search: "search",
   memory_delete: "trash_alt",
@@ -214,7 +212,6 @@ export const TOOL_LABELS: Record<string, string> = {
   web_search: "Searching web",
   fetch_page: "Fetching page",
   memory_write: "Recording",
-  memory_read: "Recalling",
   memory_list: "Listing memories",
   memory_search: "Searching memory",
   memory_delete: "Forgetting",
@@ -270,7 +267,6 @@ export const TOOL_ICON_COLORS: Record<string, string> = {
   web_search: "#5CBBF6",
   fetch_page: "#5CBBF6",
   memory_write: "#b87333",
-  memory_read: "#b87333",
   memory_list: "#b87333",
   memory_search: "#b87333",
   memory_delete: "#b87333",

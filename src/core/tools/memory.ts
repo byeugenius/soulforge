@@ -13,13 +13,12 @@ const categorySchema = z
 export function createMemoryTools(manager: MemoryManager) {
   const memory_write = tool({
     description:
-      "Write or update a memory. Use for recording decisions, conventions, patterns, preferences, architecture notes, facts, or task checkpoints (progress snapshots for long multi-step work).",
+      "Save a short memory (title-only, max 120 chars). Use for decisions, conventions, preferences, patterns, facts, or checkpoints (progress snapshots for long tasks). Title IS the memory — be specific and concise.",
     inputSchema: z.object({
       scope: scopeSchema.optional().describe("Memory scope (defaults to configured write scope)"),
-      title: z.string().describe("Short descriptive title"),
-      content: z.string().describe("Full content of the memory"),
+      title: z.string().max(120).describe("The memory itself — concise, specific, max 120 chars"),
       category: categorySchema,
-      tags: z.array(z.string()).optional().describe("Tags for categorization"),
+      tags: z.array(z.string()).optional().describe("1-3 short keyword tags"),
       id: z.string().optional().describe("Existing memory ID to update"),
     }),
     execute: async (args) => {
@@ -35,55 +34,13 @@ export function createMemoryTools(manager: MemoryManager) {
         const scope = resolvedScope as MemoryScope;
         const record = manager.write(scope, {
           title: args.title,
-          content: args.content,
           category: args.category as MemoryCategory,
           tags: args.tags ?? [],
           ...(args.id ? { id: args.id } : {}),
         });
         return {
           success: true,
-          output: `Memory ${args.id ? "updated" : "created"}: "${record.title}" (${record.id.slice(0, 8)}, ${scope})`,
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { success: false, output: msg, error: msg };
-      }
-    },
-  });
-
-  const memory_read = tool({
-    description: "Read the full content of a specific memory by ID.",
-    inputSchema: z.object({
-      id: z.string().describe("Memory ID"),
-      scope: scopeSchema
-        .optional()
-        .describe("Memory scope (defaults to configured read scope; tries all scopes when 'all')"),
-    }),
-    execute: async (args) => {
-      try {
-        const readScope = args.scope ?? manager.scopeConfig.readScope;
-        if (readScope === "none") {
-          return {
-            success: false,
-            output: "Memory reads are disabled (scope: none)",
-            error: "disabled",
-          };
-        }
-        const scopes: MemoryScope[] =
-          readScope === "all" || (readScope as string) === "both"
-            ? ["project", "global"]
-            : [readScope as MemoryScope];
-        let record = null;
-        for (const s of scopes) {
-          record = manager.read(s, args.id);
-          if (record) break;
-        }
-        if (!record) {
-          return { success: false, output: `Memory not found: ${args.id}`, error: "not_found" };
-        }
-        return {
-          success: true,
-          output: JSON.stringify(record, null, 2),
+          output: `Saved: "${record.title}" (${record.id.slice(0, 8)}, ${scope})`,
         };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -111,7 +68,9 @@ export function createMemoryTools(manager: MemoryManager) {
         if (results.length === 0) {
           return { success: true, output: "No memories found." };
         }
-        const lines = results.map((m) => `[${m.scope}] ${m.id} | ${m.category} | ${m.title}`);
+        const lines = results.map(
+          (m) => `[${m.scope}] ${m.id.slice(0, 8)} | ${m.category} | ${m.title}`,
+        );
         return { success: true, output: lines.join("\n") };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -121,7 +80,7 @@ export function createMemoryTools(manager: MemoryManager) {
   });
 
   const memory_search = tool({
-    description: "Full-text search across memories.",
+    description: "Search memories by keyword.",
     inputSchema: z.object({
       query: z.string().describe("Search query"),
       scope: scopeOrBothSchema
@@ -140,7 +99,9 @@ export function createMemoryTools(manager: MemoryManager) {
         if (results.length === 0) {
           return { success: true, output: "No matching memories found." };
         }
-        const lines = results.map((m) => `[${m.scope}] ${m.id} | ${m.category} | ${m.title}`);
+        const lines = results.map(
+          (m) => `[${m.scope}] ${m.id.slice(0, 8)} | ${m.category} | ${m.title}`,
+        );
         return { success: true, output: lines.join("\n") };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -178,13 +139,12 @@ export function createMemoryTools(manager: MemoryManager) {
     },
   });
 
-  return { memory_write, memory_read, memory_list, memory_search, memory_delete };
+  return { memory_write, memory_list, memory_search, memory_delete };
 }
 
-export const MEMORY_READ_ONLY_TOOLS = ["memory_read", "memory_list", "memory_search"] as const;
+export const MEMORY_READ_ONLY_TOOLS = ["memory_list", "memory_search"] as const;
 export const MEMORY_ALL_TOOLS = [
   "memory_write",
-  "memory_read",
   "memory_list",
   "memory_search",
   "memory_delete",

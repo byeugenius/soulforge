@@ -27,18 +27,9 @@ export const MEMORY_CATEGORIES: MemoryCategory[] = [
 export interface MemoryRecord {
   id: string;
   title: string;
-  content: string;
   category: MemoryCategory;
   tags: string[];
   created_at: string;
-  updated_at: string;
-}
-
-export interface MemorySummary {
-  id: string;
-  title: string;
-  category: MemoryCategory;
-  tags: string[];
   updated_at: string;
 }
 

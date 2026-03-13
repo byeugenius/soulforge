@@ -1618,25 +1618,26 @@ export function useChat({
           timestamp: Date.now(),
         }));
 
-        let allMsgs: ChatMessage[] = [];
         setMessages((prev) => {
-          allMsgs = [...prev, assistantMsg, ...errorMsgs];
+          const allMsgs = [...prev, assistantMsg, ...errorMsgs];
+          queueMicrotask(() => {
+            const snapshot = getWorkspaceSnapshot?.();
+            if (snapshot) {
+              try {
+                const { meta, tabMessages } = buildSessionMeta({
+                  sessionId: sessionIdRef.current,
+                  title: SessionManager.deriveTitle(allMsgs),
+                  cwd,
+                  snapshot,
+                  currentTabMessages: allMsgs.filter((m) => m.role !== "system" || m.showInChat),
+                });
+                sessionManager.saveSession(meta, tabMessages);
+              } catch {
+                // best-effort — exit save is the final fallback
+              }
+            }
+          });
           return allMsgs;
-        });
-
-        // Save session async — don't block React state updates
-        queueMicrotask(() => {
-          const snapshot = getWorkspaceSnapshot?.();
-          if (snapshot) {
-            const { meta, tabMessages } = buildSessionMeta({
-              sessionId: sessionIdRef.current,
-              title: SessionManager.deriveTitle(allMsgs),
-              cwd,
-              snapshot,
-              currentTabMessages: allMsgs.filter((m) => m.role !== "system" || m.showInChat),
-            });
-            sessionManager.saveSession(meta, tabMessages);
-          }
         });
 
         setCoreMessages((prev) => [...prev, ...responseMessages]);

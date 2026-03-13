@@ -3,6 +3,7 @@ import type { createRoot as CreateRoot } from "@opentui/react";
 import { useCallback, useEffect, useState } from "react";
 import type { App as AppComponent } from "./components/App.js";
 import { BRAND_PURPLE, BRAND_RED, garble } from "./components/splash.js";
+import type { ContextManager } from "./core/context/manager.js";
 import { icon } from "./core/icons.js";
 import { disposeIntelligenceRouter } from "./core/intelligence/index.js";
 import { deactivateCurrentProvider, type ProviderStatus } from "./core/llm/provider.js";
@@ -90,11 +91,13 @@ process.on("SIGTERM", () => {
 // ─── Restart splash (React component) ───
 
 const RESTART_STEPS = [
-  "quenching active flames…",
-  "reloading config…",
-  "checking providers…",
-  "reforging…",
+  "Quenching active flames…",
+  "Rereading the scrolls…",
+  "Consulting the LLM gods…",
+  "Reforging the soul…",
 ];
+
+const RESTART_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function RestartSplash({ onComplete }: { onComplete: () => void }) {
   const [phase, setPhase] = useState(0);
@@ -102,12 +105,14 @@ function RestartSplash({ onComplete }: { onComplete: () => void }) {
   const [ghostFrame, setGhostFrame] = useState(ghost);
   const [typeIdx, setTypeIdx] = useState(0);
   const [wordmark, setWordmark] = useState(garble("SOULFORGE"));
-  const label = "restarting";
+  const [spinIdx, setSpinIdx] = useState(0);
+  const label = "Restarting";
 
   useEffect(() => {
     let step = 0;
     const timer = setInterval(() => {
       step++;
+      setSpinIdx((s) => s + 1);
       // Ghost fade out: frames 1-4
       if (step === 1) setGhostFrame("▓");
       if (step === 2) setGhostFrame("▒");
@@ -141,6 +146,7 @@ function RestartSplash({ onComplete }: { onComplete: () => void }) {
 
   const visibleLabel = label.slice(0, typeIdx);
   const cursor = typeIdx < label.length ? "█" : "";
+  const spin = RESTART_SPINNER[spinIdx % RESTART_SPINNER.length];
 
   return (
     <box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
@@ -155,7 +161,16 @@ function RestartSplash({ onComplete }: { onComplete: () => void }) {
       <box height={1} />
       <text fg="#333">{"─".repeat(30)}</text>
       <box height={1} />
-      <text fg="#444">{RESTART_STEPS[phase] ?? ""}</text>
+      {RESTART_STEPS.map((step, i) => {
+        if (i > phase) return null;
+        const done = i < phase;
+        return (
+          <box key={step} gap={1} flexDirection="row">
+            <text fg={done ? "#4a7" : BRAND_PURPLE}>{done ? "✓" : spin}</text>
+            <text fg={done ? "#555" : "#aaa"}>{step}</text>
+          </box>
+        );
+      })}
       <box height={1} />
       <text fg={BRAND_PURPLE} attributes={TextAttributes.BOLD}>
         {wordmark}
@@ -175,6 +190,7 @@ interface StartOptions {
   resumeSessionId?: string;
   bootProviders: ProviderStatus[];
   bootPrereqs: PrerequisiteStatus[];
+  contextManager?: ContextManager;
 }
 
 function AppRoot({ opts }: { opts: StartOptions }) {
@@ -184,6 +200,7 @@ function AppRoot({ opts }: { opts: StartOptions }) {
   const [freshProjectConfig, setFreshProjectConfig] = useState(opts.projectConfig);
   const [freshProviders, setFreshProviders] = useState(opts.bootProviders);
   const [freshPrereqs, setFreshPrereqs] = useState(opts.bootPrereqs);
+  const [contextManager, setContextManager] = useState(opts.contextManager);
 
   useEffect(() => {
     triggerRestart = () => setRestarting(true);
@@ -213,6 +230,7 @@ function AppRoot({ opts }: { opts: StartOptions }) {
       setFreshProviders(newProviders);
       setFreshPrereqs(newPrereqs);
     } catch {}
+    setContextManager(undefined);
     setExitSessionId(null);
     setAppKey((k) => k + 1);
     setRestarting(false);
@@ -230,6 +248,7 @@ function AppRoot({ opts }: { opts: StartOptions }) {
       resumeSessionId={appKey === 0 ? opts.resumeSessionId : undefined}
       bootProviders={freshProviders}
       bootPrereqs={freshPrereqs}
+      preloadedContextManager={contextManager}
     />
   );
 }

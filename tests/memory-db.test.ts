@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { MemoryDB } from "../src/core/memory/db.js";
 
-/**
- * Tests for MemoryDB using in-memory SQLite.
- * This is the persistence layer for all agent memories.
- * Bugs here = lost memories, corrupt state, search failures.
- */
-
 let db: MemoryDB;
 
 beforeEach(() => {
@@ -21,7 +15,6 @@ describe("MemoryDB — write & read", () => {
   it("writes and reads back a record", () => {
     const record = db.write({
       title: "Test memory",
-      content: "Some content",
       category: "fact",
       tags: ["test"],
     });
@@ -32,21 +25,18 @@ describe("MemoryDB — write & read", () => {
     const read = db.read(record.id);
     expect(read).not.toBeNull();
     expect(read!.title).toBe("Test memory");
-    expect(read!.content).toBe("Some content");
   });
 
   it("upserts on duplicate id", () => {
     const r1 = db.write({
       id: "fixed-id",
       title: "Version 1",
-      content: "Old",
       category: "fact",
       tags: [],
     });
     const r2 = db.write({
       id: "fixed-id",
       title: "Version 2",
-      content: "New",
       category: "fact",
       tags: [],
     });
@@ -55,7 +45,6 @@ describe("MemoryDB — write & read", () => {
 
     const read = db.read("fixed-id");
     expect(read!.title).toBe("Version 2");
-    expect(read!.content).toBe("New");
   });
 
   it("returns null for nonexistent id", () => {
@@ -63,63 +52,53 @@ describe("MemoryDB — write & read", () => {
   });
 
   it("handles all valid categories", () => {
-    const categories = ["decision", "convention", "preference", "architecture", "pattern", "fact"] as const;
+    const categories = [
+      "decision", "convention", "preference", "architecture", "pattern", "fact", "checkpoint",
+    ] as const;
     for (const cat of categories) {
-      const r = db.write({ title: cat, content: "x", category: cat, tags: [] });
+      const r = db.write({ title: cat, category: cat, tags: [] });
       expect(r.category).toBe(cat);
     }
   });
 
   it("rejects invalid category", () => {
     expect(() =>
-      db.write({ title: "Bad", content: "x", category: "invalid" as "fact", tags: [] }),
+      db.write({ title: "Bad", category: "invalid" as "fact", tags: [] }),
     ).toThrow();
   });
 
   it("handles empty tags", () => {
-    const r = db.write({ title: "No tags", content: "x", category: "fact", tags: [] });
+    const r = db.write({ title: "No tags", category: "fact", tags: [] });
     expect(r.tags).toEqual([]);
   });
 
   it("handles multiple tags", () => {
     const r = db.write({
       title: "Tagged",
-      content: "x",
       category: "fact",
       tags: ["a", "b", "c"],
     });
     expect(r.tags).toEqual(["a", "b", "c"]);
   });
 
-  it("handles unicode content", () => {
+  it("handles unicode title", () => {
     const r = db.write({
-      title: "日本語テスト",
-      content: "内容 🎉 résumé",
+      title: "日本語テスト 🎉 résumé",
       category: "fact",
       tags: ["émoji"],
     });
     const read = db.read(r.id);
-    expect(read!.title).toBe("日本語テスト");
-    expect(read!.content).toContain("🎉");
+    expect(read!.title).toBe("日本語テスト 🎉 résumé");
   });
 
-  it("handles very long content", () => {
-    const content = "x".repeat(100_000);
-    const r = db.write({ title: "Long", content, category: "fact", tags: [] });
-    const read = db.read(r.id);
-    expect(read!.content.length).toBe(100_000);
-  });
-
-  it("handles content with SQL injection attempt", () => {
+  it("handles title with SQL injection attempt", () => {
     const r = db.write({
       title: "'; DROP TABLE memories; --",
-      content: "Robert'); DROP TABLE memories;--",
       category: "fact",
       tags: ["'; DROP TABLE"],
     });
     const read = db.read(r.id);
     expect(read!.title).toBe("'; DROP TABLE memories; --");
-    // Table should still work
     const list = db.list();
     expect(list.length).toBeGreaterThan(0);
   });
@@ -127,7 +106,7 @@ describe("MemoryDB — write & read", () => {
 
 describe("MemoryDB — delete", () => {
   it("deletes existing record", () => {
-    const r = db.write({ title: "To delete", content: "x", category: "fact", tags: [] });
+    const r = db.write({ title: "To delete", category: "fact", tags: [] });
     expect(db.delete(r.id)).toBe(true);
     expect(db.read(r.id)).toBeNull();
   });
@@ -139,7 +118,6 @@ describe("MemoryDB — delete", () => {
   it("removes from FTS index after delete", () => {
     const r = db.write({
       title: "Searchable unique_keyword_xyz",
-      content: "content",
       category: "fact",
       tags: [],
     });
@@ -151,32 +129,32 @@ describe("MemoryDB — delete", () => {
 
 describe("MemoryDB — list", () => {
   it("lists all records", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: [] });
-    db.write({ title: "B", content: "y", category: "decision", tags: [] });
+    db.write({ title: "A", category: "fact", tags: [] });
+    db.write({ title: "B", category: "decision", tags: [] });
     const list = db.list();
     expect(list.length).toBe(2);
   });
 
   it("filters by category", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: [] });
-    db.write({ title: "B", content: "y", category: "decision", tags: [] });
+    db.write({ title: "A", category: "fact", tags: [] });
+    db.write({ title: "B", category: "decision", tags: [] });
     const facts = db.list({ category: "fact" });
     expect(facts.length).toBe(1);
     expect(facts[0]!.title).toBe("A");
   });
 
   it("filters by tag", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: ["important"] });
-    db.write({ title: "B", content: "y", category: "fact", tags: ["trivial"] });
+    db.write({ title: "A", category: "fact", tags: ["important"] });
+    db.write({ title: "B", category: "fact", tags: ["trivial"] });
     const important = db.list({ tag: "important" });
     expect(important.length).toBe(1);
     expect(important[0]!.title).toBe("A");
   });
 
   it("filters by both category and tag", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: ["important"] });
-    db.write({ title: "B", content: "y", category: "decision", tags: ["important"] });
-    db.write({ title: "C", content: "z", category: "fact", tags: ["trivial"] });
+    db.write({ title: "A", category: "fact", tags: ["important"] });
+    db.write({ title: "B", category: "decision", tags: ["important"] });
+    db.write({ title: "C", category: "fact", tags: ["trivial"] });
     const result = db.list({ category: "fact", tag: "important" });
     expect(result.length).toBe(1);
     expect(result[0]!.title).toBe("A");
@@ -187,8 +165,8 @@ describe("MemoryDB — list", () => {
   });
 
   it("orders by updated_at DESC", () => {
-    db.write({ id: "old", title: "Old", content: "x", category: "fact", tags: [] });
-    db.write({ id: "new", title: "New", content: "y", category: "fact", tags: [] });
+    db.write({ id: "old", title: "Old", category: "fact", tags: [] });
+    db.write({ id: "new", title: "New", category: "fact", tags: [] });
     const list = db.list();
     expect(list[0]!.title).toBe("New");
   });
@@ -196,79 +174,58 @@ describe("MemoryDB — list", () => {
 
 describe("MemoryDB — search (FTS)", () => {
   it("finds by title keyword", () => {
-    db.write({ title: "TypeScript conventions", content: "x", category: "convention", tags: [] });
-    db.write({ title: "Python patterns", content: "y", category: "pattern", tags: [] });
+    db.write({ title: "TypeScript conventions", category: "convention", tags: [] });
+    db.write({ title: "Python patterns", category: "pattern", tags: [] });
     const results = db.search("TypeScript");
     expect(results.length).toBe(1);
     expect(results[0]!.title).toContain("TypeScript");
   });
 
-  it("finds by content keyword", () => {
-    db.write({ title: "A", content: "Use bun instead of node", category: "convention", tags: [] });
-    const results = db.search("bun");
-    expect(results.length).toBe(1);
-  });
-
   it("finds by tag keyword", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: ["performance"] });
+    db.write({ title: "A", category: "fact", tags: ["performance"] });
     const results = db.search("performance");
     expect(results.length).toBe(1);
   });
 
   it("handles multi-word query (OR)", () => {
-    db.write({ title: "TypeScript guide", content: "x", category: "fact", tags: [] });
-    db.write({ title: "Python guide", content: "y", category: "fact", tags: [] });
-    db.write({ title: "Unrelated", content: "z", category: "fact", tags: [] });
+    db.write({ title: "TypeScript guide", category: "fact", tags: [] });
+    db.write({ title: "Python guide", category: "fact", tags: [] });
+    db.write({ title: "Unrelated", category: "fact", tags: [] });
     const results = db.search("TypeScript Python");
     expect(results.length).toBe(2);
   });
 
   it("returns empty for no matches", () => {
-    db.write({ title: "Something", content: "x", category: "fact", tags: [] });
+    db.write({ title: "Something", category: "fact", tags: [] });
     const results = db.search("xyznonexistent");
     expect(results.length).toBe(0);
   });
 
   it("respects limit", () => {
     for (let i = 0; i < 10; i++) {
-      db.write({ title: `Item keyword ${i}`, content: "x", category: "fact", tags: [] });
+      db.write({ title: `Item keyword ${i}`, category: "fact", tags: [] });
     }
     const results = db.search("keyword", 3);
     expect(results.length).toBe(3);
   });
 
   it("falls back to list() on empty query", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: [] });
+    db.write({ title: "A", category: "fact", tags: [] });
     const results = db.search("");
     expect(results.length).toBe(1);
   });
 
   it("handles quotes in search safely", () => {
-    db.write({ title: 'Say "hello"', content: "x", category: "fact", tags: [] });
+    db.write({ title: 'Say "hello"', category: "fact", tags: [] });
     expect(() => db.search('"hello"')).not.toThrow();
-  });
-});
-
-describe("MemoryDB — searchFull", () => {
-  it("returns full records with content", () => {
-    db.write({ title: "Full record", content: "detailed content here", category: "fact", tags: ["a"] });
-    const results = db.searchFull("detailed");
-    expect(results.length).toBe(1);
-    expect(results[0]!.content).toBe("detailed content here");
-    expect(results[0]!.tags).toEqual(["a"]);
-  });
-
-  it("returns empty for empty query", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: [] });
-    expect(db.searchFull("")).toEqual([]);
   });
 });
 
 describe("MemoryDB — getIndex", () => {
   it("returns correct totals", () => {
-    db.write({ title: "A", content: "x", category: "fact", tags: [] });
-    db.write({ title: "B", content: "y", category: "decision", tags: [] });
-    db.write({ title: "C", content: "z", category: "fact", tags: [] });
+    db.write({ title: "A", category: "fact", tags: [] });
+    db.write({ title: "B", category: "decision", tags: [] });
+    db.write({ title: "C", category: "fact", tags: [] });
     const idx = db.getIndex();
     expect(idx.total).toBe(3);
     expect(idx.byCategory.fact).toBe(2);
@@ -278,7 +235,7 @@ describe("MemoryDB — getIndex", () => {
 
   it("returns recent titles (up to 5)", () => {
     for (let i = 0; i < 7; i++) {
-      db.write({ title: `Item ${i}`, content: "x", category: "fact", tags: [] });
+      db.write({ title: `Item ${i}`, category: "fact", tags: [] });
     }
     const idx = db.getIndex();
     expect(idx.recent.length).toBe(5);
@@ -292,17 +249,64 @@ describe("MemoryDB — getIndex", () => {
   });
 });
 
+describe("MemoryDB — bulk delete", () => {
+  it("deleteAll removes all records", () => {
+    db.write({ title: "A", category: "fact", tags: [] });
+    db.write({ title: "B", category: "decision", tags: [] });
+    db.write({ title: "C", category: "convention", tags: [] });
+    const cleared = db.deleteAll();
+    expect(cleared).toBe(3);
+    expect(db.list().length).toBe(0);
+  });
+
+  it("deleteAll clears FTS index", () => {
+    db.write({ title: "Unique searchterm", category: "fact", tags: [] });
+    db.deleteAll();
+    const results = db.search("searchterm");
+    expect(results.length).toBe(0);
+  });
+
+  it("deleteAll returns 0 on empty db", () => {
+    expect(db.deleteAll()).toBe(0);
+  });
+
+  it("deleteByCategory only removes matching category", () => {
+    db.write({ title: "A", category: "fact", tags: [] });
+    db.write({ title: "B", category: "decision", tags: [] });
+    db.write({ title: "C", category: "fact", tags: [] });
+    const cleared = db.deleteByCategory("fact");
+    expect(cleared).toBe(2);
+    expect(db.list().length).toBe(1);
+    expect(db.list()[0]!.category).toBe("decision");
+  });
+
+  it("deleteStaleCheckpoints removes old checkpoints only", () => {
+    db.write({ title: "Fresh fact", category: "fact", tags: [] });
+    db.write({ title: "Fresh checkpoint", category: "checkpoint", tags: [] });
+    const cleared = db.deleteStaleCheckpoints(0);
+    expect(cleared).toBe(0);
+    expect(db.list().length).toBe(2);
+  });
+
+  it("deleteStaleCheckpoints preserves non-checkpoint categories", () => {
+    db.write({ title: "A decision", category: "decision", tags: [] });
+    db.write({ title: "A checkpoint", category: "checkpoint", tags: [] });
+    db.deleteStaleCheckpoints(0);
+    expect(db.list().length).toBe(2);
+  });
+});
+
 describe("MemoryDB — stress", () => {
   it("handles 500 writes without error", () => {
     for (let i = 0; i < 500; i++) {
-      db.write({ title: `Record ${i}`, content: `Content ${i}`, category: "fact", tags: [`tag${i % 10}`] });
+      db.write({ title: `Record ${i}`, category: "fact", tags: [`tag${i % 10}`] });
     }
     expect(db.list().length).toBe(500);
   });
 
   it("search after many writes still works", () => {
     for (let i = 0; i < 100; i++) {
-      db.write({ title: `Record ${i}`, content: `Content about topic${i}`, category: "fact", tags: [] });
+      db.write({ title: `Record about topic${i}`, category: "fact", tags: [] });
     }
     const results = db.search("topic50");
     expect(results.length).toBeGreaterThan(0);
@@ -310,7 +314,7 @@ describe("MemoryDB — stress", () => {
 
   it("handles rapid write-delete cycles", () => {
     for (let i = 0; i < 100; i++) {
-      const r = db.write({ title: `Temp ${i}`, content: "x", category: "fact", tags: [] });
+      const r = db.write({ title: `Temp ${i}`, category: "fact", tags: [] });
       db.delete(r.id);
     }
     expect(db.list().length).toBe(0);
