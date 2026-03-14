@@ -416,6 +416,28 @@ export function TabInstance({
               <ChangedFilesBar messages={chat.messages} />
             </box>
           )}
+          {chat.messageQueue.length > 0 && (
+            <box flexDirection="column" flexShrink={0} paddingX={1}>
+              {chat.messageQueue.map((q, i) => (
+                <box
+                  key={`q-${String(i)}-${String(q.queuedAt)}`}
+                  flexDirection="column"
+                  marginBottom={0}
+                  border={["left"]}
+                  borderColor="#444"
+                  customBorderChars={RAIL_BORDER}
+                  paddingLeft={2}
+                  paddingRight={1}
+                >
+                  <box flexDirection="row">
+                    <text fg="#444">You</text>
+                    <text fg="#333"> · queued</text>
+                  </box>
+                  <text fg="#666">{q.content}</text>
+                </box>
+              ))}
+            </box>
+          )}
           <box flexShrink={0} zIndex={10}>
             <InputBox
               onSubmit={handleInputSubmit}

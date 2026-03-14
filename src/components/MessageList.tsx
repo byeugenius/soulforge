@@ -26,7 +26,7 @@ import { StructuredPlanView } from "./StructuredPlanView.js";
 const REVEAL_INTERVAL = 30;
 const MAX_REVEAL_STEPS = 15;
 const CURSOR_CHAR = "\u2588"; // █
-const USER_COLOR = "#FF0040";
+const USER_COLOR = "#00BFFF";
 const ASSISTANT_COLOR = "#9B30FF";
 const SYSTEM_COLOR = "#555";
 const ERROR_COLOR = "#f44";
@@ -392,6 +392,7 @@ const UserMessageAccent = memo(function UserMessageAccent({ msg }: { msg: ChatMe
   const time = formatTime(msg.timestamp);
   const expanded = useUIStore((s) => s.reasoningExpanded);
   const isPlan = isPlanExecution(msg.content);
+  const borderColor = USER_COLOR;
 
   if (isPlan && !expanded) {
     const title = parsePlanTitle(msg.content);
@@ -401,21 +402,22 @@ const UserMessageAccent = memo(function UserMessageAccent({ msg }: { msg: ChatMe
         flexDirection="column"
         marginBottom={1}
         border={["left"]}
-        borderColor={USER_COLOR}
+        borderColor={borderColor}
         customBorderChars={RAIL_BORDER}
         paddingLeft={2}
         paddingRight={1}
-        backgroundColor="#140810"
+        paddingY={1}
+        backgroundColor="#0a1218"
       >
         <box flexDirection="row">
-          <text fg={USER_COLOR} attributes={TextAttributes.BOLD}>
+          <text fg={borderColor} attributes={TextAttributes.BOLD}>
             You
           </text>
           <text fg="#333"> · {time}</text>
         </box>
         <box height={1}>
           <text truncate>
-            <span fg="#FF0040">{TOOL_ICONS.plan} </span>
+            <span fg={USER_COLOR}>{TOOL_ICONS.plan} </span>
             <span fg="#ccc">Execute plan: {title}</span>
             <span fg="#555"> ({String(lineCount)} lines)</span>
             <span fg="#333"> ^T</span>
@@ -430,14 +432,15 @@ const UserMessageAccent = memo(function UserMessageAccent({ msg }: { msg: ChatMe
       flexDirection="column"
       marginBottom={1}
       border={["left"]}
-      borderColor={USER_COLOR}
+      borderColor={borderColor}
       customBorderChars={RAIL_BORDER}
       paddingLeft={2}
       paddingRight={1}
-      backgroundColor="#140810"
+      paddingY={1}
+      backgroundColor="#0a1218"
     >
       <box flexDirection="row">
-        <text fg={USER_COLOR} attributes={TextAttributes.BOLD}>
+        <text fg={borderColor} attributes={TextAttributes.BOLD}>
           You
         </text>
         <text fg="#333"> · {time}</text>
@@ -459,7 +462,8 @@ const UserMessageBubble = memo(function UserMessageBubble({ msg }: { msg: ChatMe
         border={true}
         borderColor={USER_COLOR}
         paddingX={2}
-        backgroundColor="#140810"
+        paddingY={1}
+        backgroundColor="#0a1218"
       >
         <text>{msg.content}</text>
       </box>
@@ -623,6 +627,7 @@ const AssistantMessage = memo(function AssistantMessage({
       borderColor={ASSISTANT_COLOR}
       customBorderChars={RAIL_BORDER}
       paddingLeft={2}
+      paddingY={1}
     >
       <box flexDirection="row">
         <text fg={ASSISTANT_COLOR}>{icon("ai")} Forge</text>
