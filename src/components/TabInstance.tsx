@@ -19,9 +19,11 @@ import type { TabActivity } from "../hooks/useTabs.js";
 import { useStatusBarStore } from "../stores/statusbar.js";
 import { useUIStore } from "../stores/ui.js";
 import type { AppConfig, ChatMessage, EditorIntegration } from "../types/index.js";
+import { AnimatedBorder } from "./AnimatedBorder.js";
 import { ChangedFilesBar, ChangesPanel } from "./ChangedFiles.js";
 import { InputBox } from "./InputBox.js";
 import { LandingPage } from "./LandingPage.js";
+import { LoadingStatus } from "./LoadingStatus.js";
 import { CodeExpandedProvider } from "./Markdown.js";
 import { RAIL_BORDER, StaticMessage } from "./MessageList.js";
 import { PlanProgress } from "./PlanProgress.js";
@@ -277,24 +279,7 @@ export function TabInstance({
         <LandingPage bootProviders={bootProviders} bootPrereqs={bootPrereqs} />
       ) : (
         <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="row">
-          <box
-            flexGrow={1}
-            flexShrink={1}
-            minHeight={0}
-            borderStyle="rounded"
-            border={true}
-            borderColor="#222"
-          >
-            <box
-              height={1}
-              flexShrink={0}
-              paddingX={1}
-              backgroundColor="#111"
-              alignSelf="flex-start"
-              marginTop={-1}
-            >
-              <text fg="#333">{icon("ai")} Chat</text>
-            </box>
+          <AnimatedBorder active={isStreaming}>
             <scrollbox
               ref={scrollRef}
               stickyScroll={true}
@@ -348,8 +333,13 @@ export function TabInstance({
                   </box>
                 )}
               </CodeExpandedProvider>
+              <LoadingStatus
+                isLoading={chat.isLoading}
+                isCompacting={chat.isCompacting}
+                queueCount={chat.messageQueue.length}
+              />
             </scrollbox>
-          </box>
+          </AnimatedBorder>
           {changesExpanded && <ChangesPanel messages={chat.messages} cwd={cwd} />}
         </box>
       )}

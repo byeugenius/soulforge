@@ -237,7 +237,7 @@ const [configMod, detectMod, iconsMod, installMod] = await earlyModules;
 const { loadConfig, loadProjectConfig } = configMod;
 const { detectNeovim } = detectMod;
 const { initNerdFont } = iconsMod;
-const { getVendoredPath, installNeovim, installRipgrep } = installMod;
+const { getVendoredPath, installNeovim, installRipgrep, installFd, installLazygit } = installMod;
 
 let resumeSessionId: string | undefined;
 const args = process.argv.slice(2);
@@ -284,6 +284,26 @@ if (!getVendoredPath("rg")) {
     logBackgroundError(
       "boot",
       `ripgrep install failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+}
+
+if (!getVendoredPath("fd")) {
+  status("Summoning the file finder…");
+  installFd().catch((err) => {
+    logBackgroundError(
+      "boot",
+      `fd install failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+}
+
+if (!getVendoredPath("lazygit")) {
+  status("Conjuring the git spirit…");
+  installLazygit().catch((err) => {
+    logBackgroundError(
+      "boot",
+      `lazygit install failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   });
 }

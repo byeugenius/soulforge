@@ -10,6 +10,8 @@ const FONTS_DIR = join(SOULFORGE_DIR, "fonts");
 
 const NVIM_VERSION = "0.11.1";
 const RG_VERSION = "14.1.1";
+const FD_VERSION = "10.2.0";
+const LAZYGIT_VERSION = "0.44.1";
 const PROXY_VERSION = "6.8.40";
 
 // ─── Nerd Fonts ───
@@ -149,7 +151,9 @@ function getProxyAsset(): PlatformAsset {
 /**
  * Returns the vendored binary path if it exists, or null.
  */
-export function getVendoredPath(binary: "nvim" | "rg" | "cli-proxy-api"): string | null {
+export function getVendoredPath(
+  binary: "nvim" | "rg" | "fd" | "lazygit" | "cli-proxy-api",
+): string | null {
   const binLink = join(BIN_DIR, binary);
   if (existsSync(binLink)) {
     return binLink;
@@ -229,6 +233,98 @@ export async function installRipgrep(): Promise<string> {
   createSymlink(asset.binPath, join(BIN_DIR, "rg"));
 
   return join(BIN_DIR, "rg");
+}
+
+function getFdAsset(): PlatformAsset {
+  const { platform, arch } = process;
+  let triplet: string;
+
+  if (platform === "darwin" && arch === "arm64") {
+    triplet = "aarch64-apple-darwin";
+  } else if (platform === "darwin" && arch === "x64") {
+    triplet = "x86_64-apple-darwin";
+  } else if (platform === "linux" && arch === "x64") {
+    triplet = "x86_64-unknown-linux-gnu";
+  } else if (platform === "linux" && arch === "arm64") {
+    triplet = "aarch64-unknown-linux-gnu";
+  } else {
+    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+  }
+
+  const dirName = `fd-v${FD_VERSION}-${triplet}`;
+
+  return {
+    url: `https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/${dirName}.tar.gz`,
+    binPath: join(INSTALLS_DIR, `fd-${FD_VERSION}`, dirName, "fd"),
+  };
+}
+
+function getLazygitAsset(): PlatformAsset {
+  const { platform, arch } = process;
+  let suffix: string;
+
+  if (platform === "darwin" && arch === "arm64") {
+    suffix = "Darwin_arm64";
+  } else if (platform === "darwin" && arch === "x64") {
+    suffix = "Darwin_x86_64";
+  } else if (platform === "linux" && arch === "x64") {
+    suffix = "Linux_x86_64";
+  } else if (platform === "linux" && arch === "arm64") {
+    suffix = "Linux_arm64";
+  } else {
+    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+  }
+
+  return {
+    url: `https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_${suffix}.tar.gz`,
+    binPath: join(INSTALLS_DIR, `lazygit-${LAZYGIT_VERSION}`, "lazygit"),
+  };
+}
+
+/**
+ * Download and install fd to ~/.soulforge/. Returns path to fd binary.
+ */
+export async function installFd(): Promise<string> {
+  ensureDirs();
+
+  const asset = getFdAsset();
+  const extractDir = join(INSTALLS_DIR, `fd-${FD_VERSION}`);
+
+  if (!existsSync(asset.binPath)) {
+    await downloadAndExtract(asset.url, extractDir);
+  }
+
+  if (!existsSync(asset.binPath)) {
+    throw new Error(`fd binary not found after extraction at ${asset.binPath}`);
+  }
+
+  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
+  createSymlink(asset.binPath, join(BIN_DIR, "fd"));
+
+  return join(BIN_DIR, "fd");
+}
+
+/**
+ * Download and install lazygit to ~/.soulforge/. Returns path to lazygit binary.
+ */
+export async function installLazygit(): Promise<string> {
+  ensureDirs();
+
+  const asset = getLazygitAsset();
+  const extractDir = join(INSTALLS_DIR, `lazygit-${LAZYGIT_VERSION}`);
+
+  if (!existsSync(asset.binPath)) {
+    await downloadAndExtract(asset.url, extractDir);
+  }
+
+  if (!existsSync(asset.binPath)) {
+    throw new Error(`lazygit binary not found after extraction at ${asset.binPath}`);
+  }
+
+  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
+  createSymlink(asset.binPath, join(BIN_DIR, "lazygit"));
+
+  return join(BIN_DIR, "lazygit");
 }
 
 /**

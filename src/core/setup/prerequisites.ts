@@ -89,7 +89,7 @@ export const PREREQUISITES: Prerequisite[] = [
     name: "lazygit",
     description: "Terminal git UI (optional, for /lazygit)",
     required: false,
-    check: () => commandExists("lazygit"),
+    check: () => getVendoredPath("lazygit") !== null || commandExists("lazygit"),
     install: {
       darwin: ["brew install lazygit"],
       linux: [
@@ -119,7 +119,7 @@ export const PREREQUISITES: Prerequisite[] = [
     name: "fd",
     description: "Fast file finder (used by /glob, fallback: find)",
     required: false,
-    check: () => commandExists("fd") || commandExists("fdfind"),
+    check: () => getVendoredPath("fd") !== null || commandExists("fd") || commandExists("fdfind"),
     install: {
       darwin: ["brew install fd"],
       linux: [

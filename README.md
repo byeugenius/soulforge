@@ -170,6 +170,8 @@ See [SECURITY.md](SECURITY.md) for our security policy and responsible disclosur
 
 [AGPL-3.0-only](LICENSE). See the [LICENSE](LICENSE) file for details.
 
+Third-party dependencies and their licenses are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
 ## Code of Conduct
 
 See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

@@ -8,23 +8,6 @@ import { HistoryDB } from "../core/history/db.js";
 import { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "../core/history/fuzzy.js";
 import { icon } from "../core/icons.js";
 
-const FORGE_STATUSES = [
-  "Forging response…",
-  "Stoking the flames…",
-  "Summoning spirits…",
-  "Channeling the ether…",
-  "Tempering thoughts…",
-  "Conjuring words…",
-  "Consulting the runes…",
-  "Weaving spellwork…",
-  "Kindling the forge…",
-  "Gathering arcana…",
-];
-
-const _ghostIcon = () => icon("ghost");
-const GHOST_FRAMES = [_ghostIcon, _ghostIcon, _ghostIcon, () => " "] as const;
-const GHOST_SPEED = 400;
-
 interface Props {
   onSubmit: (value: string) => void;
   isLoading: boolean;
@@ -202,7 +185,6 @@ export function InputBox({
   isFocused,
   onQueue,
   onExit,
-  queueCount,
   cwd,
   onDropdownChange,
 }: Props) {
@@ -221,49 +203,6 @@ export function InputBox({
   const pasteCounter = useRef(0);
 
   const showBusy = isLoading || isCompacting;
-  const [ghostTick, setGhostTick] = useState(0);
-  const forgeStatusRef = useRef("");
-  const wasLoadingRef = useRef(false);
-  const loadingStartRef = useRef(0);
-  const [elapsedSec, setElapsedSec] = useState(0);
-  if (isLoading && !wasLoadingRef.current) {
-    forgeStatusRef.current = FORGE_STATUSES[
-      Math.floor(Math.random() * FORGE_STATUSES.length)
-    ] as string;
-    loadingStartRef.current = Date.now();
-  }
-  wasLoadingRef.current = isLoading;
-
-  useEffect(() => {
-    if (!showBusy) {
-      setElapsedSec(0);
-      return;
-    }
-    const timer = setInterval(() => {
-      setGhostTick((t) => t + 1);
-      if (isLoading) {
-        setElapsedSec(Math.floor((Date.now() - loadingStartRef.current) / 1000));
-      }
-    }, GHOST_SPEED);
-    return () => clearInterval(timer);
-  }, [showBusy, isLoading]);
-
-  const ghostFrameFn = GHOST_FRAMES[ghostTick % GHOST_FRAMES.length];
-  const currentGhost = ghostFrameFn ? ghostFrameFn() : " ";
-  const busyStatus = isCompacting ? "Compacting context…" : forgeStatusRef.current;
-
-  let elapsedLabel = "";
-  if (isLoading && elapsedSec > 0) {
-    const h = Math.floor(elapsedSec / 3600);
-    const m = Math.floor((elapsedSec % 3600) / 60);
-    const s = elapsedSec % 60;
-    elapsedLabel =
-      h > 0
-        ? `${String(h)}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`
-        : m > 0
-          ? `${String(m)}m ${String(s).padStart(2, "0")}s`
-          : `${String(s)}s`;
-  }
 
   const historyDBRef = useRef<HistoryDB | null>(null);
   const historyCacheRef = useRef<string[]>([]);
@@ -1013,18 +952,6 @@ export function InputBox({
           </box>
         )}
 
-        {/* ── Loading status bar ── */}
-        {showBusy && (
-          <box paddingX={1} height={1} gap={1} flexDirection="row" marginTop={1}>
-            <text fg={isCompacting ? "#5af" : "#8B5CF6"}>{currentGhost}</text>
-            <text fg={isCompacting ? "#3388cc" : "#6A0DAD"}>{busyStatus}</text>
-            {elapsedLabel !== "" && <text fg="#555">{elapsedLabel}</text>}
-            {queueCount != null && queueCount > 0 && (
-              <text fg="#555">({String(queueCount)} queued)</text>
-            )}
-          </box>
-        )}
-
         {/* ── Bordered input area ── */}
         <box
           ref={containerRef}
@@ -1049,7 +976,7 @@ export function InputBox({
                   value={value}
                   onInput={handleChange}
                   onSubmit={() => handleSubmit(value)}
-                  placeholder="/ commands · queue messages"
+                  placeholder="'/' for commands · or interrupt by sending a new messages"
                   placeholderColor="#555"
                   focused={focused}
                   scrollMargin={0.01}

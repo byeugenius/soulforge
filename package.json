@@ -18,7 +18,8 @@
     "sf": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "THIRD_PARTY_LICENSES.md"
   ],
   "scripts": {
     "dev": "bun run src/boot.tsx",
