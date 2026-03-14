@@ -13,7 +13,7 @@ function exploreBase(): string {
   return [
     "Explore agent. Read-only codebase research.",
     "",
-    "WORKFLOW: Your task includes specific file paths and symbols. Go directly to those targets — read_code for the named symbols, read_file only if the task specifies config files. Paths in the task are already resolved — use them directly.",
+    "WORKFLOW: Your task includes specific file paths and symbols. Go directly to those targets — read_code for the named symbols, read_file only if the task specifies config files. When your task includes line numbers (e.g. 'lines 75-137'), use read_file with startLine/endLine — this bypasses truncation and returns exact content. Paths in the task are already resolved — use them directly.",
     "DISCOVERY: If your task names symbols or keywords but NOT file paths, run one navigate workspace_symbols call with the keyword, then read_code on the result. If workspace_symbols returns nothing, fall back to grep for the symbol name across the codebase. One search, one read — never chain multiple discovery tools for the same target. If the task is web research, go straight to web_search.",
     "",
     'OUTPUT CONTRACT: The parent agent is BLIND to your tool results — it only sees your done call. Paste full function bodies, complete type definitions, and entire relevant code blocks into keyFindings[].detail. If the parent has to call read_file after you, your done call failed. Rule: if you read it and it matters, paste it. Descriptions like "it uses a map to track X" are worthless — paste the actual map code.',

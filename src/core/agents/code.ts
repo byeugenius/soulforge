@@ -15,7 +15,7 @@ function codeBase(): string {
     "",
     "On edit failure ('old_string not found'): re-read file with read_file, retry with exact text. Never retry the same edit blindly.",
     "",
-    "WORKFLOW: Your task includes specific file paths and symbols to edit. Go directly to those targets — read_code to understand the current code, then edit_file to make changes. Paths in the task are already resolved — use them directly.",
+    "WORKFLOW: Your task includes specific file paths and symbols to edit. Go directly to those targets — read_code to understand the current code, then edit_file to make changes. When your task includes line numbers (e.g. 'lines 75-137'), use read_file with startLine/endLine — this bypasses truncation and returns exact content. Paths in the task are already resolved — use them directly.",
     "DISCOVERY: If your task names symbols or keywords but NOT file paths, run one navigate workspace_symbols call with the keyword, then read_code on the result. If workspace_symbols returns nothing, fall back to grep for the symbol name across the codebase. One search, one read — never chain multiple discovery tools for the same target.",
     "",
     "OUTPUT CONTRACT: The parent agent is BLIND to your tool results — it only sees your done call. For edits: exact file paths, what changed, and the final signatures/types of key additions. For research: paste actual code, not descriptions. If the parent has to re-read your files, your done call failed.",
