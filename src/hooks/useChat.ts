@@ -377,6 +377,7 @@ export function useChat({
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const messageQueueRef = useRef<QueuedMessage[]>([]);
   messageQueueRef.current = messageQueue;
+  const steeringAbortedRef = useRef(false);
 
   // LLM state
   const [activeModel, setActiveModel] = useState(
@@ -1229,7 +1230,9 @@ export function useChat({
 
         await contextManager.ensureGitContext();
 
+        steeringAbortedRef.current = false;
         const drainSteering = (): string | null => {
+          if (steeringAbortedRef.current) return null;
           const queue = messageQueueRef.current;
           if (queue.length === 0) return null;
           const [next, ...rest] = queue;
@@ -1833,11 +1836,13 @@ export function useChat({
         contextManager.invalidateFileTree();
 
         const postAction = planPostActionRef.current;
+        let willContinue = false;
         if (postAction) {
           planPostActionRef.current = null;
           const pContent = postAction.planContent;
 
           if (postAction.action === "revise") {
+            willContinue = true;
             setActivePlan(null);
             setSidebarPlan(null);
             setCoreMessages((prev) => {
@@ -1889,6 +1894,7 @@ export function useChat({
               (postAction.action === "clear_execute" || postAction.action === "execute") &&
               pContent
             ) {
+              willContinue = true;
               const isClear = postAction.action === "clear_execute";
               if (isClear) {
                 contextManager.resetConversationTracking();
@@ -1929,7 +1935,7 @@ export function useChat({
             }
           }
         } else if (pendingCompactRef.current) {
-          // Compact was requested during generation — run it now that state is settled
+          willContinue = true;
           pendingCompactRef.current = false;
           const planSnapshot = activePlanRef.current;
           summarizeConversationRef
@@ -1952,8 +1958,9 @@ export function useChat({
               );
             })
             .catch(() => {});
-        } else {
-          // Process message queue
+        }
+
+        if (!willContinue) {
           setMessageQueue((queue) => {
             if (queue.length > 0) {
               const [next, ...rest] = queue;
@@ -1995,12 +2002,14 @@ export function useChat({
         setPendingQuestion(null);
       }
       setActivePlan(null);
+      steeringAbortedRef.current = true;
       abortRef.current.abort();
       abortRef.current = null;
       setIsLoading(false);
       resetInProgressTasks();
       setLiveToolCalls([]);
       setStreamSegments([]);
+      messageQueueRef.current = [];
       setMessageQueue([]);
       liveToolCallsBuffer.current = [];
       streamSegmentsBuffer.current = [];
