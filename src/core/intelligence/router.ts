@@ -377,6 +377,10 @@ export class CodeIntelligenceRouter {
     if (probeFile) {
       try {
         // Use the first backend that can find symbols to get a real name
+        // Prefer function/class names, skip anything with <, empty, or weird chars
+        const isValidProbeSymbol = (name: string) =>
+          name.length > 0 && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
+
         for (const b of this.backends) {
           if (b.supportsLanguage(language) && typeof b.findSymbols === "function") {
             if (!this.initialized.has(b.name)) {
@@ -385,8 +389,19 @@ export class CodeIntelligenceRouter {
             }
             const syms = await b.findSymbols(probeFile);
             if (syms && syms.length > 0) {
-              probeSymbolName = syms[0]!.name;
-              break;
+              // First try to find a function or class with a clean name
+              const preferred = syms.find(
+                (s) =>
+                  (s.kind === "function" || s.kind === "class") &&
+                  isValidProbeSymbol(s.name),
+              );
+              // Fall back to any symbol with a clean name
+              const fallback = syms.find((s) => isValidProbeSymbol(s.name));
+              const chosen = preferred ?? fallback;
+              if (chosen) {
+                probeSymbolName = chosen.name;
+                break;
+              }
             }
           }
         }
