@@ -108,6 +108,7 @@ export function GitCommitModal({ visible, cwd, coAuthor, onClose, onCommitted, o
         border={true}
         borderColor="#FF8C00"
         width={popupWidth}
+        backgroundColor={POPUP_BG}
       >
         <PopupRow w={innerW}>
           <text fg="white" attributes={TextAttributes.BOLD} bg={POPUP_BG}>
@@ -172,13 +173,14 @@ export function GitCommitModal({ visible, cwd, coAuthor, onClose, onCommitted, o
             Message:
           </text>
         </PopupRow>
-        <box paddingX={2}>
+        <box paddingX={2} backgroundColor={POPUP_BG}>
           <box
             borderStyle="rounded"
             border={true}
             borderColor="#6A0DAD"
             paddingX={1}
             width={innerW - 2}
+            backgroundColor={POPUP_BG}
           >
             <input
               value={message}
@@ -186,6 +188,7 @@ export function GitCommitModal({ visible, cwd, coAuthor, onClose, onCommitted, o
               onSubmit={handleCommit}
               placeholder="describe your changes..."
               focused={visible}
+              backgroundColor={POPUP_BG}
             />
           </box>
         </box>

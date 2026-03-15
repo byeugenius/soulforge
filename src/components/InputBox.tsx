@@ -28,7 +28,7 @@ const CMD_DEFS: Array<{ cmd: string; ic: string; desc: string }> = [
   { cmd: "/clear", ic: "clear", desc: "Clear chat history" },
   { cmd: "/close-tab", ic: "tabs", desc: "Close current tab (Alt+W)" },
   { cmd: "/co-author-commits", ic: "git", desc: "Toggle co-author trailer" },
-  { cmd: "/commit", ic: "git", desc: "AI-assisted git commit" },
+  { cmd: "/commit", ic: "git", desc: "Git commit with message" },
   { cmd: "/compact", ic: "compress", desc: "Compact conversation context" },
   { cmd: "/compaction", ic: "compress", desc: "Switch compaction strategy (v1/v2)" },
   { cmd: "/context", ic: "context", desc: "Show/clear context budget" },

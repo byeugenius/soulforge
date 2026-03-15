@@ -30,7 +30,7 @@ const LINES: HelpLine[] = [
   { type: "entry", label: "/sessions", desc: "browse & restore past sessions" },
   { type: "entry", label: "/errors", desc: "browse tool call & error log" },
   { type: "entry", label: "/compact-v2-logs", desc: "view compaction events & summaries" },
-  { type: "entry", label: "/commit", desc: "AI-assisted git commit" },
+  { type: "entry", label: "/commit", desc: "Git commit with message" },
   { type: "entry", label: "/diff", desc: "open diff in editor" },
   { type: "entry", label: "/status", desc: "system status (context, tokens, repo map, memory)" },
   { type: "entry", label: "/git-status", desc: "git status overview" },
