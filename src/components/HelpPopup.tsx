@@ -73,6 +73,8 @@ const LINES: HelpLine[] = [
   { type: "entry", label: "/privacy", desc: "manage forbidden file patterns" },
   { type: "entry", label: "/privacy add <pat>", desc: "block a pattern (project)" },
   { type: "entry", label: "/setup", desc: "check & install prerequisites" },
+  { type: "entry", label: "/export", desc: "export chat to markdown (.soulforge/exports/)" },
+  { type: "entry", label: "/export json", desc: "export chat as JSON" },
   { type: "entry", label: "/storage", desc: "view & manage storage usage" },
   { type: "entry", label: "/font", desc: "show installed fonts & current terminal font" },
   { type: "entry", label: "/font set <name>", desc: "auto-set terminal font (e.g. fira-code)" },

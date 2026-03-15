@@ -66,7 +66,7 @@ export function Spinner({
   return <text fg={color}>{frames[frame % frames.length]}</text>;
 }
 
-const OVERLAY_DIM = 0.25;
+const OVERLAY_DIM = 0.65;
 
 export function Overlay({ children }: { children: React.ReactNode }) {
   return (
@@ -75,7 +75,7 @@ export function Overlay({ children }: { children: React.ReactNode }) {
         position="absolute"
         width="100%"
         height="100%"
-        backgroundColor="#000000"
+        backgroundColor="#0a0812"
         style={{ opacity: OVERLAY_DIM }}
       />
       <box

@@ -123,15 +123,21 @@ sed -i '' 's|require("url")|__require("url")|g' "${DEPS_DIR}/opentui-assets/pars
 cp src/core/editor/init.lua "${DEPS_DIR}/init.lua"
 
 # Nerd Font Symbols Only — enables icons without requiring a full Nerd Font
-NERD_SYMBOLS_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/NerdFontsSymbolsOnly.zip"
-if [[ ! -f "${CACHE_DIR}/NerdFontsSymbolsOnly.zip" ]]; then
-  echo "    ↓ Nerd Font Symbols Only..."
-  curl -fSL --retry 3 "$NERD_SYMBOLS_URL" -o "${CACHE_DIR}/NerdFontsSymbolsOnly.zip"
-else
-  echo "    ✓ Nerd Font Symbols Only (cached)"
-fi
-mkdir -p "${DEPS_DIR}/nerd-symbols"
-unzip -qo "${CACHE_DIR}/NerdFontsSymbolsOnly.zip" "*.ttf" -d "${DEPS_DIR}/nerd-symbols" 2>/dev/null || true
+NERD_FONTS_VERSION="v3.4.0"
+NERD_FONTS_BASE="https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONTS_VERSION}"
+
+for FONT_PKG in NerdFontsSymbolsOnly JetBrainsMono; do
+  if [[ ! -f "${CACHE_DIR}/${FONT_PKG}.zip" ]]; then
+    echo "    ↓ ${FONT_PKG}..."
+    curl -fSL --retry 3 "${NERD_FONTS_BASE}/${FONT_PKG}.zip" -o "${CACHE_DIR}/${FONT_PKG}.zip"
+  else
+    echo "    ✓ ${FONT_PKG} (cached)"
+  fi
+done
+
+mkdir -p "${DEPS_DIR}/nerd-fonts"
+unzip -qo "${CACHE_DIR}/NerdFontsSymbolsOnly.zip" "*.ttf" -d "${DEPS_DIR}/nerd-fonts" 2>/dev/null || true
+unzip -qo "${CACHE_DIR}/JetBrainsMono.zip" "*.ttf" -d "${DEPS_DIR}/nerd-fonts" 2>/dev/null || true
 
 echo "==> Dependencies ready"
 
@@ -279,9 +285,16 @@ cp -r "${SCRIPT_DIR}/deps/opentui-assets" "${SOULFORGE_DIR}/opentui-assets"
 cp "${SCRIPT_DIR}/deps/init.lua" "${SOULFORGE_DIR}/init.lua") &
 spin "Inscribing the tree-sitter runes" $!
 
-(FONT_DIR="${HOME}/Library/Fonts"
+(if [[ "$(uname)" == "Darwin" ]]; then
+  FONT_DIR="${HOME}/Library/Fonts"
+else
+  FONT_DIR="${HOME}/.local/share/fonts"
+fi
 mkdir -p "$FONT_DIR"
-cp "${SCRIPT_DIR}/deps/nerd-symbols/"*.ttf "$FONT_DIR/" 2>/dev/null || true) &
+cp "${SCRIPT_DIR}/deps/nerd-fonts/"*.ttf "$FONT_DIR/" 2>/dev/null || true
+if [[ "$(uname)" != "Darwin" ]]; then
+  fc-cache -f "$FONT_DIR" 2>/dev/null || true
+fi) &
 spin "Etching the sacred glyphs" $!
 
 (xattr -cr "${SOULFORGE_DIR}" 2>/dev/null || true) &

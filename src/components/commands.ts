@@ -1123,6 +1123,34 @@ async function handleCommandInner(input: string, ctx: CommandContext): Promise<v
     return;
   }
 
+  if (cmd === "/export" || cmd.startsWith("/export ")) {
+    const arg = trimmed.slice(7).trim();
+    const format = arg === "json" ? "json" : "markdown";
+    const outPath = arg && arg !== "json" && arg !== "md" && arg !== "markdown" ? arg : undefined;
+    const { exportChat } = await import("../core/sessions/export.js");
+    const tabLabel = ctx.tabMgr.activeTab?.label ?? "chat";
+    const result = exportChat(ctx.chat.messages, {
+      format,
+      outPath,
+      title: tabLabel,
+      cwd: ctx.cwd,
+    });
+    const relPath = result.path.startsWith(ctx.cwd)
+      ? result.path.slice(ctx.cwd.length + 1)
+      : result.path;
+    sysMsg(ctx, `Exported ${String(result.messageCount)} messages → \`${relPath}\``);
+    const { dirname } = await import("node:path");
+    const dir = dirname(result.path);
+    const opener =
+      process.platform === "darwin"
+        ? "open"
+        : process.platform === "win32"
+          ? "explorer"
+          : "xdg-open";
+    Bun.spawn([opener, dir]);
+    return;
+  }
+
   if (cmd === "/memory") {
     openMemoryMenu(ctx);
     return;

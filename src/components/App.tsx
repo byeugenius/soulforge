@@ -824,7 +824,13 @@ export function App({
 
   // Global keybindings
   useKeyboard((evt) => {
-    if (shutdownPhase >= 0 || selectIsAnyModalOpen(useUIStore.getState())) return;
+    if (shutdownPhase >= 0) return;
+    if (selectIsAnyModalOpen(useUIStore.getState())) {
+      if (evt.ctrl && evt.name === "c") {
+        handleExit();
+      }
+      return;
+    }
 
     if (evt.ctrl && evt.name === "e") {
       toggleEditor();

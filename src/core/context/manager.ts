@@ -759,7 +759,7 @@ export class ContextManager {
     if (!isMinimal) {
       parts.push(
         "",
-        "Context compaction is automatic — do NOT preemptively save to memory before compaction. Just keep working. Your plan steps, task list, and key state survive compaction automatically.",
+        "Context compaction is automatic and preserves your plan, tasks, and working state. Do NOT save to memory before compaction — memory is for long-term knowledge (decisions, conventions), not session checkpoints. Just keep working.",
         "",
         ...buildToolGuidance(hasRepoMap),
       );

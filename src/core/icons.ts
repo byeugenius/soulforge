@@ -170,11 +170,44 @@ const ASCII: Record<string, string> = {
 
 let _nerdFont: boolean | null = null;
 
+function detectNerdFont(): boolean {
+  // 1. Check if Symbols Only font is installed (our installer puts it here)
+  try {
+    const { existsSync } = require("node:fs") as typeof import("node:fs");
+    const { homedir } = require("node:os") as typeof import("node:os");
+    const { join } = require("node:path") as typeof import("node:path");
+    const fontDir = join(homedir(), "Library", "Fonts");
+    if (existsSync(join(fontDir, "SymbolsNerdFont-Regular.ttf"))) return true;
+    const linuxFontDir = join(homedir(), ".local", "share", "fonts");
+    if (existsSync(join(linuxFontDir, "SymbolsNerdFont-Regular.ttf"))) return true;
+  } catch {}
+
+  // 2. Known nerd-font-friendly terminals
+  const term = process.env.TERM_PROGRAM?.toLowerCase() ?? "";
+  const termEmulator = process.env.TERMINAL_EMULATOR?.toLowerCase() ?? "";
+  if (
+    term.includes("kitty") ||
+    term.includes("wezterm") ||
+    term.includes("alacritty") ||
+    term.includes("hyper") ||
+    term.includes("iterm") ||
+    term.includes("ghostty") ||
+    termEmulator.includes("jetbrains")
+  ) {
+    return true;
+  }
+
+  // 3. Check KITTY_WINDOW_ID or WEZTERM_PANE (set by those terminals)
+  if (process.env.KITTY_WINDOW_ID || process.env.WEZTERM_PANE) return true;
+
+  return false;
+}
+
 export function initNerdFont(configValue?: boolean | null): void {
   if (configValue === true || configValue === false) {
     _nerdFont = configValue;
   } else {
-    _nerdFont = false;
+    _nerdFont = detectNerdFont();
   }
 }
 

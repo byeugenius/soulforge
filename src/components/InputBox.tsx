@@ -38,6 +38,8 @@ const CMD_DEFS: Array<{ cmd: string; ic: string; desc: string }> = [
   { cmd: "/editor", ic: "pencil", desc: "Toggle editor panel" },
   { cmd: "/editor-settings", ic: "cog", desc: "Toggle editor/LSP integrations" },
   { cmd: "/errors", ic: "error", desc: "Browse error log" },
+  { cmd: "/export", ic: "changes", desc: "Export chat to markdown" },
+  { cmd: "/export json", ic: "changes", desc: "Export chat as JSON" },
   { cmd: "/compact-v2-logs", ic: "plan", desc: "View compaction events" },
   { cmd: "/font", ic: "pencil", desc: "Show/set terminal font" },
   { cmd: "/git", ic: "git", desc: "Git menu" },
@@ -479,7 +481,7 @@ export function InputBox({
     }
   });
   const contentWidth = useMemo(
-    () => Math.max(10, (measuredWidth > 0 ? measuredWidth - 2 : termWidth - 4) - 2),
+    () => Math.max(10, measuredWidth > 0 ? measuredWidth - 6 : termWidth - 8),
     [measuredWidth, termWidth],
   );
 
@@ -853,7 +855,16 @@ export function InputBox({
   // ── Rendering ──
 
   // Border color per state
-  const borderColor = fuzzyMode ? "#FF8C00" : showBusy ? "#59122a" : focused ? "#FF0040" : "#333";
+  const slashMode = value.startsWith("/") && focused;
+  const borderColor = fuzzyMode
+    ? "#FF8C00"
+    : slashMode
+      ? "#3a7bd5"
+      : showBusy
+        ? "#59122a"
+        : focused
+          ? "#FF0040"
+          : "#333";
 
   return (
     <box flexDirection="column" width="100%" flexShrink={0}>
@@ -865,18 +876,18 @@ export function InputBox({
               flexDirection="column"
               borderStyle="rounded"
               border={true}
-              borderColor="#333"
+              borderColor="#3a7bd5"
               width="100%"
             >
-              <box flexDirection="column" backgroundColor="#111">
+              <box flexDirection="column" backgroundColor="#0d1520">
                 <scrollbox ref={acScrollRef} height={Math.min(matches.length, maxVisible)}>
                   {matches.map((match, i) => {
                     const isSelected = i === selectedIdx;
                     return (
                       <box key={match.cmd} gap={1} paddingX={1} height={1} flexDirection="row">
-                        <text fg={isSelected ? "#FF0040" : "#333"}>{isSelected ? "›" : " "}</text>
+                        <text fg={isSelected ? "#3a7bd5" : "#333"}>{isSelected ? "›" : " "}</text>
                         <text
-                          fg={isSelected ? "#FF0040" : "#9B30FF"}
+                          fg={isSelected ? "#5a9bf5" : "#3a7bd5"}
                           attributes={isSelected ? TextAttributes.BOLD : undefined}
                         >
                           {match.cmd}

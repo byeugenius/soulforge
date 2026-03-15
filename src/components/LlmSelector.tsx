@@ -331,7 +331,7 @@ export const LlmSelector = memo(function LlmSelector({
               </PopupRow>
               <PopupRow w={innerW}>
                 <text fg="#a5650a" bg={POPUP_BG}>
-                  {"  "}⚠ Unofficial — uses CLIProxyAPI. Use at your own risk.
+                  {"  "} ⚠ Unofficial — uses CLIProxyAPI. Use at your own risk.
                 </text>
               </PopupRow>
             </>
