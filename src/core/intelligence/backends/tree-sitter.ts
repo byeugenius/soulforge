@@ -182,7 +182,9 @@ const QUERIES: Record<string, string> = {
 };
 
 const GRAMMAR_FILES: Record<string, string> = {
-  typescript: "tree-sitter-typescript.wasm",
+  // NOTE: tree-sitter-typescript.wasm doesn't exist in tree-sitter-wasms.
+  // The tsx grammar is a superset that handles both .ts and .tsx files.
+  tsx: "tree-sitter-tsx.wasm",
   javascript: "tree-sitter-javascript.wasm",
   python: "tree-sitter-python.wasm",
   go: "tree-sitter-go.wasm",
@@ -201,7 +203,6 @@ const GRAMMAR_FILES: Record<string, string> = {
   dart: "tree-sitter-dart.wasm",
   zig: "tree-sitter-zig.wasm",
   bash: "tree-sitter-bash.wasm",
-  tsx: "tree-sitter-tsx.wasm",
   ocaml: "tree-sitter-ocaml.wasm",
   objc: "tree-sitter-objc.wasm",
   css: "tree-sitter-css.wasm",
@@ -307,7 +308,9 @@ export class TreeSitterBackend implements IntelligenceBackend {
   private readonly treeCacheMaxSize = 50;
 
   supportsLanguage(language: Language): boolean {
-    return language in GRAMMAR_FILES;
+    // typescript uses the tsx grammar (no separate typescript wasm)
+    const key = language === "typescript" ? "tsx" : language;
+    return key in GRAMMAR_FILES;
   }
 
   setCache(cache: FileCache): void {
@@ -974,10 +977,12 @@ export class TreeSitterBackend implements IntelligenceBackend {
     return EXT_TO_LANG[file.slice(dot)] ?? "unknown";
   }
 
-  /** Map a file to its grammar key — handles tsx/typescript split */
+  /** Map a file to its grammar key — handles tsx/typescript split.
+   *  tree-sitter-typescript.wasm doesn't exist in the package;
+   *  the tsx grammar is a superset that handles both .ts and .tsx. */
   private grammarKeyForFile(file: string): string {
     const language = this.detectLang(file);
-    if (language === "typescript" && /\.tsx$/i.test(file)) return "tsx";
+    if (language === "typescript") return "tsx";
     return language;
   }
 
