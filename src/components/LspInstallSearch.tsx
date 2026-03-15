@@ -13,7 +13,8 @@ import {
   type MasonPackage,
   type PackageCategory,
   type PackageStatus,
-} from "../core/intelligence/backends/lsp/installer.js";
+    uninstallPackage,
+  } from "../core/intelligence/backends/lsp/installer.js";
 import { clearProbeCache } from "../core/intelligence/backends/lsp/server-registry.js";
 import type { AppConfig } from "../types/index.js";
 
@@ -264,6 +265,39 @@ export const LspInstallSearch = memo(function LspInstallSearch({
     }
   };
 
+  const doUninstall = async (status: PackageStatus) => {
+    if (installing) return;
+    if (!status.installed || status.source !== "soulforge") {
+      onSystemMessage(
+        status.source === "PATH"
+          ? `${status.pkg.name} is in system PATH — uninstall it with your package manager`
+          : status.source === "mason"
+            ? `${status.pkg.name} is installed via Mason — uninstall it from Neovim`
+            : `${status.pkg.name} is not installed by SoulForge`,
+      );
+      return;
+    }
+
+    setInstalling(true);
+    onSystemMessage(`Uninstalling ${status.pkg.name}...`);
+
+    try {
+      const result = await uninstallPackage(status.pkg, (msg) => onSystemMessage(msg));
+      if (result.success) {
+        onSystemMessage(`✓ ${status.pkg.name} uninstalled`);
+        clearProbeCache();
+        clearPathCache();
+        refreshAll();
+      } else {
+        onSystemMessage(`✗ Failed to uninstall ${status.pkg.name}: ${result.error}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      onSystemMessage(`✗ Failed to uninstall ${status.pkg.name}: ${msg}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
   const toggleDisabled = (pkgName: string, scope: ConfigScope) => {
     const isDisabled = disabledServers.includes(pkgName);
     const updated = isDisabled
@@ -378,7 +412,16 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       return;
     }
 
-    if (evt.name === "backspace" || evt.name === "delete") {
+    // 'u' key = uninstall soulforge-installed package
+      if (evt.name === "u" && !evt.ctrl && !evt.meta) {
+        const items = currentItems();
+        const item = items[cursor];
+        if (!item) return;
+        doUninstall(item);
+        return;
+      }
+
+      if (evt.name === "backspace" || evt.name === "delete") {
       setQuery((prev) => prev.slice(0, -1));
       setCursor(0);
       setScrollOffset(0);
@@ -616,7 +659,7 @@ export const LspInstallSearch = memo(function LspInstallSearch({
         <PopupRow w={innerW}>
           <text fg="#555" bg={POPUP_BG}>
             {"↑↓"} nav | {"⏎"} {tab === "installed" || tab === "disabled" ? "toggle" : "install"} |
-            d disable | {"^F"} category | {"⇥"} tab | esc close
+            d disable | u uninstall | {"^F"} category | {"⇥"} tab | esc close
           </text>
         </PopupRow>
       </box>

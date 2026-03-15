@@ -484,6 +484,86 @@ export async function installPackage(
   }
 }
 
+// ─── Uninstallation ───
+
+/** Uninstall a package installed by SoulForge */
+export async function uninstallPackage(
+  pkg: MasonPackage,
+  onProgress?: (msg: string) => void,
+): Promise<{ success: boolean; error?: string }> {
+  const purl = parsePurl(pkg.source.id);
+  if (!purl) return { success: false, error: "Cannot parse package source" };
+
+  const log = (msg: string) => onProgress?.(msg);
+  const binaries = getBinaries(pkg);
+
+  try {
+    switch (purl.type) {
+      case "npm": {
+        const fullName = purl.namespace
+          ? `${purl.namespace}/${purl.name}`
+          : purl.name;
+        log(`Removing ${fullName} via bun...`);
+        const { execSync: exec } = await import("node:child_process");
+        try {
+          exec(`bun remove --cwd ${SOULFORGE_LSP_DIR} ${fullName}`, { stdio: "pipe" });
+        } catch {
+          // If bun remove fails, manually remove the binaries
+          const { unlinkSync } = await import("node:fs");
+          for (const bin of binaries) {
+            const binPath = join(SOULFORGE_LSP_DIR, "node_modules", ".bin", bin);
+            try { unlinkSync(binPath); } catch {}
+          }
+        }
+        break;
+      }
+
+      case "pypi": {
+        log(`Removing ${purl.name}...`);
+        const { rmSync, unlinkSync } = await import("node:fs");
+        // Remove pip packages
+        const pipDir = join(SOULFORGE_LSP_DIR, "pip-packages");
+        const pkgDir = join(pipDir, purl.name.replace(/-/g, "_"));
+        try { rmSync(pkgDir, { recursive: true, force: true }); } catch {}
+        // Remove wrapper scripts
+        for (const bin of binaries) {
+          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+        }
+        break;
+      }
+
+      case "golang":
+      case "cargo": {
+        log(`Removing ${purl.name} binaries...`);
+        const { unlinkSync } = await import("node:fs");
+        for (const bin of binaries) {
+          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+        }
+        break;
+      }
+
+      case "github": {
+        log(`Removing ${purl.name} binaries...`);
+        const { unlinkSync } = await import("node:fs");
+        for (const bin of binaries) {
+          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+        }
+        break;
+      }
+
+      default:
+        return { success: false, error: `Unsupported install method: ${purl.type}` };
+    }
+
+    log(`✓ ${pkg.name} uninstalled`);
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`✗ Failed: ${msg}`);
+    return { success: false, error: msg };
+  }
+}
+
 // ─── GitHub Release Helpers ───
 
 function getMasonTarget(): string {
