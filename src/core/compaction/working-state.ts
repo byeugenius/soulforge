@@ -20,6 +20,8 @@ export class WorkingStateManager {
       discoveries: [],
       environment: [],
       toolResults: [],
+      userRequirements: [],
+      assistantNotes: [],
     };
   }
 
@@ -65,9 +67,29 @@ export class WorkingStateManager {
     }
   }
 
+  // ─── User Requirements ───
+
+  addUserRequirement(text: string): void {
+    if (text.length < 5) return;
+    this.state.userRequirements.push(text);
+    if (this.state.userRequirements.length > WorkingStateManager.MAX_LIST_SIZE) {
+      this.state.userRequirements.shift();
+    }
+  }
+
+  // ─── Assistant Notes ───
+
+  addAssistantNote(text: string): void {
+    if (text.length < 10) return;
+    this.state.assistantNotes.push(text);
+    if (this.state.assistantNotes.length > WorkingStateManager.MAX_LIST_SIZE) {
+      this.state.assistantNotes.shift();
+    }
+  }
+
   // ─── Decisions / Failures / Discoveries ───
 
-  private static readonly MAX_LIST_SIZE = 25;
+  private static readonly MAX_LIST_SIZE = 30;
 
   addDecision(d: string): void {
     if (!this.state.decisions.includes(d)) {
@@ -121,7 +143,9 @@ export class WorkingStateManager {
       s.failures.length +
       s.discoveries.length +
       s.toolResults.length +
-      s.environment.length
+      s.environment.length +
+      s.userRequirements.length +
+      s.assistantNotes.length
     );
   }
 
@@ -133,6 +157,10 @@ export class WorkingStateManager {
 
     if (s.task) {
       sections.push(`## Task\n${s.task}`);
+    }
+
+    if (s.userRequirements.length > 0) {
+      sections.push(`## User Requirements\n${s.userRequirements.map((r) => `- ${r}`).join("\n")}`);
     }
 
     if (s.plan.length > 0) {
@@ -170,6 +198,10 @@ export class WorkingStateManager {
 
     if (s.decisions.length > 0) {
       sections.push(`## Key Decisions\n${s.decisions.map((d) => `- ${d}`).join("\n")}`);
+    }
+
+    if (s.assistantNotes.length > 0) {
+      sections.push(`## Assistant Notes\n${s.assistantNotes.map((n) => `- ${n}`).join("\n")}`);
     }
 
     if (s.toolResults.length > 0) {

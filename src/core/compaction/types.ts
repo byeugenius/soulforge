@@ -7,6 +7,8 @@ export interface WorkingState {
   discoveries: string[];
   environment: string[];
   toolResults: ToolResultSlot[];
+  userRequirements: string[];
+  assistantNotes: string[];
 }
 
 export interface PlanSlot {

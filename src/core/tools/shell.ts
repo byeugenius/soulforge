@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import type { ToolResult } from "../../types";
 import { isForbidden } from "../security/forbidden.js";
+import { truncateWithTee } from "./tee.js";
 
 const DEFAULT_TIMEOUT = 30_000;
 
-// ─── Co-Author Injection ───
-// Intercept `git commit -m "..."` and append co-author trailer when enabled.
-// This ensures co-authorship is always applied regardless of how the agent commits.
+// ─── Git Commit Interception ───
+// Intercept `git commit -m "..."` to:
+// 1. Auto-run lint/typecheck on staged files before committing
+// 2. Append co-author trailer when enabled
 
 const CO_AUTHOR_LINE = "Co-Authored-By: SoulForge <soulforge@proxysoul.com>";
 let _shellCoAuthorEnabled = true;
@@ -16,6 +18,55 @@ export function setShellCoAuthorEnabled(enabled: boolean) {
 }
 
 const GIT_COMMIT_MSG_RE = /\bgit\s+commit\b.*?\s-m\s+/;
+
+let _preCommitEnabled = true;
+
+export function setPreCommitEnabled(enabled: boolean) {
+  _preCommitEnabled = enabled;
+}
+
+async function runPreCommitChecks(cwd: string): Promise<string | null> {
+  if (!_preCommitEnabled) return null;
+
+  let lintCmd: string | null = null;
+  try {
+    const { detectNativeChecks } = await import("./project.js");
+    lintCmd = detectNativeChecks(cwd);
+  } catch {
+    return null;
+  }
+  if (!lintCmd) return null;
+
+  try {
+    const { exitCode, stdout, stderr } = await new Promise<{
+      exitCode: number | null;
+      stdout: string;
+      stderr: string;
+    }>((resolve) => {
+      const chunks: string[] = [];
+      const errChunks: string[] = [];
+      const proc = spawn("sh", ["-c", lintCmd], { cwd, timeout: 15_000, env: { ...process.env } });
+      proc.stdout.on("data", (d: Buffer) => chunks.push(d.toString()));
+      proc.stderr.on("data", (d: Buffer) => errChunks.push(d.toString()));
+      proc.on("close", (code) =>
+        resolve({ exitCode: code, stdout: chunks.join(""), stderr: errChunks.join("") }),
+      );
+      proc.on("error", () => resolve({ exitCode: 1, stdout: "", stderr: "lint process error" }));
+    });
+
+    if (exitCode !== 0) {
+      const output = (stderr.trim() || stdout.trim()).split("\n");
+      const truncated =
+        output.length > 30
+          ? `${output.slice(0, 30).join("\n")}\n... (${String(output.length - 30)} more lines)`
+          : output.join("\n");
+      return `Pre-commit check failed (${lintCmd}):\n${truncated}\n\nFix errors before committing. Use project(action: "lint", fix: true) to auto-fix.`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function injectCoAuthor(command: string): string {
   if (!_shellCoAuthorEnabled) return command;
@@ -174,6 +225,9 @@ const READ_CMD_REDIRECT: Record<string, string> = {
   find: "glob",
 };
 
+const PROJECT_CMD_RE =
+  /^(?:bun run|bunx|npm run|npx|pnpm|yarn|deno|cargo|go |mix |dotnet |flutter |dart |swift |zig )\s*(lint|test|typecheck|build|check|clippy|vet|fmt|format)\b/;
+
 function detectReadCommand(command: string): string | null {
   const trimmed = command.trim();
   const first = trimmed.split(/[\s|;&]/)[0]?.replace(/^.*\//, "") ?? "";
@@ -181,6 +235,26 @@ function detectReadCommand(command: string): string | null {
   if (!target) return null;
   if (trimmed.includes("|") || trimmed.includes("&&") || trimmed.includes(";")) return null;
   return `Command succeeded, but ${target} is faster, gets cached, and is visible to dispatch dedup. Use ${target} instead of shell for this.`;
+}
+
+function detectProjectCommand(command: string): string | null {
+  const trimmed = command.trim();
+  if (trimmed.includes("|") || trimmed.includes("&&") || trimmed.includes(";")) return null;
+  const m = trimmed.match(PROJECT_CMD_RE);
+  if (!m) return null;
+  const action = m[1] ?? "";
+  const mapped =
+    action === "check" ||
+    action === "clippy" ||
+    action === "vet" ||
+    action === "fmt" ||
+    action === "format"
+      ? "lint"
+      : action;
+  if (["lint", "test", "typecheck", "build"].includes(mapped)) {
+    return `Command succeeded. Next time use project(action: "${mapped}") — it auto-detects the toolchain, results are structured, and output is visible in the UI.`;
+  }
+  return null;
 }
 
 export const shellTool = {
@@ -194,6 +268,11 @@ export const shellTool = {
     if (blocked) {
       const msg = `Access denied: command references a file matching forbidden pattern "${blocked}".`;
       return { success: false, output: msg, error: msg };
+    }
+
+    if (GIT_COMMIT_MSG_RE.test(args.command)) {
+      const lintErr = await runPreCommitChecks(cwd);
+      if (lintErr) return { success: false, output: lintErr, error: lintErr };
     }
     const timeout = args.timeout ?? DEFAULT_TIMEOUT;
 
@@ -233,11 +312,12 @@ export const shellTool = {
         const stderr = errChunks.join("");
 
         if (stdout.length > MAX_OUTPUT_BYTES) {
-          stdout = `${stdout.slice(0, MAX_OUTPUT_BYTES)}\n\n... [truncated: output exceeded ${String(MAX_OUTPUT_BYTES)} bytes]`;
+          const { text } = truncateWithTee(stdout, MAX_OUTPUT_BYTES, 4000, 10000, "shell");
+          stdout = text;
         }
 
         if (code === 0) {
-          const hint = detectReadCommand(command);
+          const hint = detectReadCommand(command) ?? detectProjectCommand(command);
           const output = hint ? `${stdout || stderr}\n\n${hint}` : stdout || stderr;
           resolve({ success: true, output });
         } else if (code === null) {

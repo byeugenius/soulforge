@@ -926,7 +926,8 @@ export class ContextManager {
         const content = readFileSync(join(this.cwd, check.file), "utf-8");
         const truncated = content.length > 500 ? `${content.slice(0, 500)}\n...` : content;
         const toolchain = this.detectToolchain();
-        const info = `${check.label} (${check.file}):\n${truncated}${toolchain ? `\nToolchain: ${toolchain}` : ""}`;
+        const profileStr = this.buildProfileString();
+        const info = `${check.label} (${check.file}):\n${truncated}${toolchain ? `\nToolchain: ${toolchain}` : ""}${profileStr}`;
         this.projectInfoCache = { info, at: now };
         return info;
       } catch {}
@@ -934,6 +935,27 @@ export class ContextManager {
 
     this.projectInfoCache = { info: null, at: now };
     return null;
+  }
+
+  private projectProfileCache: string | null = null;
+
+  private buildProfileString(): string {
+    if (this.projectProfileCache !== null) return this.projectProfileCache;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require("../tools/project.js") as {
+        detectProfile: (cwd: string) => Record<string, string | null>;
+      };
+      const profile = mod.detectProfile(this.cwd);
+      const parts: string[] = [];
+      for (const action of ["lint", "typecheck", "test", "build"] as const) {
+        if (profile[action]) parts.push(`${action}: \`${profile[action]}\``);
+      }
+      this.projectProfileCache = parts.length > 0 ? `\nProject commands: ${parts.join(" · ")}` : "";
+    } catch {
+      this.projectProfileCache = "";
+    }
+    return this.projectProfileCache;
   }
 
   private detectToolchain(): string | null {

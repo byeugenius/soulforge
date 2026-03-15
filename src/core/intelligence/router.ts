@@ -358,15 +358,35 @@ export class CodeIntelligenceRouter {
       label: string;
       fn: (b: IntelligenceBackend, f: string) => Promise<unknown>;
     }> = [
-      { op: "findSymbols", label: "findSymbols", fn: (b, f) => b.findSymbols!(f) },
-      { op: "findImports", label: "findImports", fn: (b, f) => b.findImports!(f) },
-      { op: "findExports", label: "findExports", fn: (b, f) => b.findExports!(f) },
-      { op: "getFileOutline", label: "getFileOutline", fn: (b, f) => b.getFileOutline!(f) },
-      { op: "getDiagnostics", label: "getDiagnostics", fn: (b, f) => b.getDiagnostics!(f) },
+      {
+        op: "findSymbols",
+        label: "findSymbols",
+        fn: (b, f) => b.findSymbols?.(f) ?? Promise.resolve(null),
+      },
+      {
+        op: "findImports",
+        label: "findImports",
+        fn: (b, f) => b.findImports?.(f) ?? Promise.resolve(null),
+      },
+      {
+        op: "findExports",
+        label: "findExports",
+        fn: (b, f) => b.findExports?.(f) ?? Promise.resolve(null),
+      },
+      {
+        op: "getFileOutline",
+        label: "getFileOutline",
+        fn: (b, f) => b.getFileOutline?.(f) ?? Promise.resolve(null),
+      },
+      {
+        op: "getDiagnostics",
+        label: "getDiagnostics",
+        fn: (b, f) => b.getDiagnostics?.(f) ?? Promise.resolve(null),
+      },
       {
         op: "readSymbol",
         label: `readSymbol(${probeSymbolName})`,
-        fn: (b, f) => b.readSymbol!(f, probeSymbolName),
+        fn: (b, f) => b.readSymbol?.(f, probeSymbolName) ?? Promise.resolve(null),
       },
     ];
 

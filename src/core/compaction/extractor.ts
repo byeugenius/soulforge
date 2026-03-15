@@ -3,15 +3,25 @@ import type { WorkingStateManager } from "./working-state.js";
 
 /**
  * Rule-based extractor that processes tool calls and messages to update
- * the working state incrementally. This covers ~90% of extraction with
- * zero LLM cost. The remaining ~10% (decisions from AI reasoning) can
- * optionally use a cheap LLM pass.
+ * the working state incrementally. Sees FULL data at extraction time
+ * (before pruning truncates it), which is v2's structural advantage.
  */
 
 // ─── Tool Call Extraction (deterministic) ───
 
-const READ_TOOLS = new Set(["read_file", "navigate", "grep", "glob", "analyze"]);
-const EDIT_TOOLS = new Set(["edit_file", "replace_file", "write_file"]);
+const READ_TOOLS = new Set([
+  "read_file",
+  "read_code",
+  "navigate",
+  "grep",
+  "glob",
+  "analyze",
+  "soul_grep",
+  "soul_find",
+  "soul_analyze",
+  "soul_impact",
+]);
+const EDIT_TOOLS = new Set(["edit_file", "replace_file", "write_file", "create_file"]);
 const SHELL_TOOL = "shell";
 const PROJECT_TOOL = "project";
 
@@ -25,32 +35,20 @@ export function extractFromToolCall(
   if (READ_TOOLS.has(toolName) && filePath) {
     wsm.trackFile(filePath, {
       type: "read",
-      summary:
-        toolName === "grep"
-          ? `grep for "${truncate(String(args.pattern ?? ""), 80)}"`
-          : toolName === "glob"
-            ? `glob "${truncate(String(args.pattern ?? ""), 80)}"`
-            : toolName === "analyze"
-              ? `analyzed${args.symbols ? ` symbols: ${truncate(String(args.symbols), 100)}` : ""}`
-              : "read",
+      summary: buildReadSummary(toolName, args),
     });
   }
 
   if (EDIT_TOOLS.has(toolName) && filePath) {
-    const detail =
-      toolName === "edit_file"
-        ? buildEditDetail(args)
-        : toolName === "write_file"
-          ? "full write"
-          : "replaced";
+    const detail = buildEditDetail(toolName, args);
     wsm.trackFile(filePath, {
-      type: filePath && toolName === "write_file" ? "create" : "edit",
+      type: toolName === "write_file" || toolName === "create_file" ? "create" : "edit",
       detail,
     });
   }
 
   if (toolName === SHELL_TOOL) {
-    const cmd = truncate(String(args.command ?? ""), 120);
+    const cmd = truncate(String(args.command ?? ""), 200);
     wsm.addToolResult("shell", `ran: ${cmd}`);
   }
 
@@ -58,7 +56,7 @@ export function extractFromToolCall(
     const action = String(args.action ?? "");
     wsm.addToolResult(
       "project",
-      `${action}${args.command ? `: ${truncate(String(args.command), 80)}` : ""}`,
+      `${action}${args.command ? `: ${truncate(String(args.command), 120)}` : ""}`,
     );
   }
 }
@@ -77,7 +75,9 @@ export function extractFromToolResult(
   }
 
   if (toolName === "shell" || toolName === "project") {
-    const summary = truncate(resultStr, 300);
+    const isError = isErrorResult(resultStr);
+    const limit = isError ? 1500 : 800;
+    const summary = truncate(resultStr, limit);
     const existing = wsm.getState().toolResults;
     const last = existing[existing.length - 1];
     if (last && last.tool === toolName) {
@@ -87,12 +87,42 @@ export function extractFromToolResult(
     }
   }
 
-  if (toolName === "grep") {
-    const matchCount = (resultStr.match(/\n/g) || []).length;
+  if (toolName === "grep" || toolName === "soul_grep") {
+    const lines = resultStr.split("\n").filter((l) => l.trim());
+    const matchCount = lines.length;
+    const preview = lines.slice(0, 10).join("\n");
     wsm.addToolResult(
-      "grep",
-      `${matchCount} matches${matchCount > 0 ? `: ${truncate(resultStr, 200)}` : ""}`,
+      toolName,
+      `${matchCount} matches${matchCount > 0 ? `:\n${truncate(preview, 600)}` : ""}`,
     );
+  }
+
+  if (toolName === "read_file" || toolName === "read_code") {
+    const lineCount = resultStr.split("\n").length;
+    const outline = extractFileOutline(resultStr);
+    if (outline) {
+      const filePath = _args ? extractFilePath(_args) : undefined;
+      if (filePath) {
+        const existing = wsm.getState().files.get(filePath);
+        const lastAction = existing?.actions[existing.actions.length - 1];
+        if (lastAction?.type === "read") {
+          lastAction.summary = `${lineCount} lines — ${outline}`;
+        }
+      }
+    }
+  }
+
+  if (toolName === "navigate") {
+    wsm.addToolResult("navigate", truncate(resultStr, 600));
+  }
+
+  if (toolName === "soul_find") {
+    const lines = resultStr.split("\n").filter((l) => l.trim());
+    wsm.addToolResult("soul_find", `${lines.length} results: ${truncate(resultStr, 400)}`);
+  }
+
+  if (toolName === "soul_analyze" || toolName === "soul_impact" || toolName === "analyze") {
+    wsm.addToolResult(toolName, truncate(resultStr, 600));
   }
 }
 
@@ -103,49 +133,58 @@ export function extractFromUserMessage(wsm: WorkingStateManager, message: ModelM
   if (!text) return;
 
   if (!wsm.getState().task) {
-    wsm.setTask(truncate(text, 300));
+    wsm.setTask(truncate(text, 400));
+  } else {
+    wsm.addUserRequirement(truncate(text, 300));
   }
 }
 
 /**
- * Extract decisions from assistant text. This is the "fuzzy 10%" —
- * can be done rule-based (pattern matching) or with a cheap LLM.
- * This function handles the rule-based version.
+ * Extract key points from assistant text. Keeps a condensed summary of
+ * each assistant turn to preserve reasoning and context.
  */
 export function extractFromAssistantMessage(wsm: WorkingStateManager, message: ModelMessage): void {
   const text = messageText(message);
-  if (!text) return;
+  if (!text || text.length < 20) return;
 
-  const decisionPatterns = [
-    /(?:I'll|let's|we should|I'm going to|the approach is|decided to|choosing|using|switching to)\s+(.{10,120}?)(?:\.|$)/gi,
-    /(?:because|since|the reason is)\s+(.{10,120}?)(?:\.|$)/gi,
-  ];
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.length > 10)
+    .map((s) => s.trim());
 
-  for (const pattern of decisionPatterns) {
-    for (const match of text.matchAll(pattern)) {
-      if (match[1]) {
-        const decision = truncate(match[1].trim(), 150);
-        if (decision.length > 15) {
-          wsm.addDecision(decision);
-        }
-      }
+  if (sentences.length === 0) return;
+
+  if (sentences.length <= 3) {
+    wsm.addAssistantNote(truncate(text, 300));
+    return;
+  }
+
+  const kept: string[] = [];
+  const maxSentences = 5;
+  const budget = 500;
+  let chars = 0;
+
+  for (const s of sentences) {
+    if (kept.length >= maxSentences || chars >= budget) break;
+    if (isSubstantive(s)) {
+      kept.push(s);
+      chars += s.length;
     }
   }
 
-  const discoveryPatterns = [
-    /(?:found that|discovered|it turns out|interestingly|the issue (?:is|was))\s+(.{10,150}?)(?:\.|$)/gi,
-  ];
-
-  for (const pattern of discoveryPatterns) {
-    for (const match of text.matchAll(pattern)) {
-      if (match[1]) {
-        wsm.addDiscovery(truncate(match[1].trim(), 150));
-      }
-    }
+  if (kept.length > 0) {
+    wsm.addAssistantNote(truncate(kept.join(" "), budget));
   }
 }
 
 // ─── Helpers ───
+
+function isSubstantive(sentence: string): boolean {
+  const filler = /^(ok|sure|let me|i'll now|here's|looking at|alright|got it|understood)/i;
+  if (filler.test(sentence)) return false;
+  if (sentence.length < 15) return false;
+  return true;
+}
 
 function extractFilePath(args: Record<string, unknown>): string | undefined {
   const keys = ["file", "path", "filePath", "file_path", "target_file", "source_file", "target"];
@@ -156,12 +195,79 @@ function extractFilePath(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function buildEditDetail(args: Record<string, unknown>): string {
-  const old = truncate(String(args.old_string ?? args.search ?? ""), 60);
-  const new_ = truncate(String(args.new_string ?? args.replace ?? ""), 60);
-  if (old && new_) return `"${old}" → "${new_}"`;
-  if (args.line != null) return `line ${args.line}`;
-  return "edited";
+function buildReadSummary(toolName: string, args: Record<string, unknown>): string {
+  switch (toolName) {
+    case "grep":
+    case "soul_grep":
+      return `grep for "${truncate(String(args.pattern ?? ""), 120)}"`;
+    case "glob":
+      return `glob "${truncate(String(args.pattern ?? ""), 120)}"`;
+    case "analyze":
+    case "soul_analyze":
+      return `analyzed${args.symbols ? ` symbols: ${truncate(String(args.symbols), 150)}` : ""}`;
+    case "soul_find":
+      return `find "${truncate(String(args.query ?? ""), 120)}"`;
+    case "soul_impact":
+      return `impact analysis`;
+    case "navigate":
+      return `navigate to ${truncate(String(args.symbol ?? args.query ?? ""), 100)}`;
+    case "read_code":
+      return `read code${args.outline ? " (outline)" : ""}`;
+    default:
+      return "read";
+  }
+}
+
+function buildEditDetail(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === "edit_file") {
+    const old = truncate(String(args.old_string ?? args.search ?? ""), 300);
+    const new_ = truncate(String(args.new_string ?? args.replace ?? ""), 300);
+    if (old && new_) return `"${old}" → "${new_}"`;
+    if (args.lineStart != null) return `edit at line ${args.lineStart}`;
+    return "edited";
+  }
+  if (toolName === "write_file" || toolName === "create_file") {
+    const content = String(args.content ?? "");
+    const lineCount = content.split("\n").length;
+    return `full write (${lineCount} lines)`;
+  }
+  return "replaced";
+}
+
+function extractFileOutline(content: string): string | undefined {
+  const lines = content.split("\n");
+  const exports: string[] = [];
+  const definitions: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const exportMatch = trimmed.match(
+      /^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|let|type|interface|enum)\s+(\w+)/,
+    );
+    if (exportMatch?.[1]) {
+      exports.push(exportMatch[1]);
+      continue;
+    }
+    const defMatch = trimmed.match(/^(?:async\s+)?(?:function|class)\s+(\w+)/);
+    if (defMatch?.[1]) {
+      definitions.push(defMatch[1]);
+      continue;
+    }
+    const pyDefMatch = trimmed.match(/^(?:def|class)\s+(\w+)/);
+    if (pyDefMatch?.[1]) {
+      definitions.push(pyDefMatch[1]);
+    }
+  }
+
+  const symbols = exports.length > 0 ? exports : definitions;
+  if (symbols.length === 0) return undefined;
+
+  const label = exports.length > 0 ? "exports" : "defines";
+  const display =
+    symbols.length > 8
+      ? `${symbols.slice(0, 8).join(", ")}... +${symbols.length - 8} more`
+      : symbols.join(", ");
+  return `${label}: ${display}`;
 }
 
 function isErrorResult(result: string): boolean {
@@ -173,7 +279,7 @@ function isErrorResult(result: string): boolean {
 function extractErrorSummary(result: string): string {
   const lines = result.split("\n").filter((l) => l.trim().length > 0);
   const errorLine = lines.find((l) => /(?:error|Error|failed|exception|not found)/i.test(l));
-  return truncate(errorLine || lines[0] || "unknown error", 200);
+  return truncate(errorLine || lines[0] || "unknown error", 300);
 }
 
 function messageText(msg: ModelMessage): string | undefined {

@@ -7,13 +7,10 @@ import type { WorkingStateManager } from "./working-state.js";
  * Build the compacted summary for v2.
  *
  * 1. Serialize the incrementally-built working state (free, already computed).
- * 2. Optionally run a cheap LLM pass to extract anything the rule-based
- *    extractor might have missed from the older messages.
+ * 2. Optionally run a cheap LLM pass to verify completeness against the
+ *    full older messages — not a gap-fill on a tiny sample, but a real
+ *    verification pass that sees everything.
  * 3. Merge and return the final summary string.
- *
- * The LLM pass is a small "gap-fill" — NOT a full conversation summarization.
- * It receives the existing structured state + the raw older messages and only
- * outputs what's missing. This is ~10x cheaper than v1's full summarization.
  */
 export async function buildV2Summary(opts: {
   wsm: WorkingStateManager;
@@ -31,7 +28,7 @@ export async function buildV2Summary(opts: {
     return structuredState;
   }
 
-  const convoSample = buildConvoSample(olderMessages, 4000);
+  const convoText = buildFullConvoText(olderMessages, 12000);
 
   const { text: gapFill } = await generateText({
     model,
@@ -44,18 +41,24 @@ export async function buildV2Summary(opts: {
       "EXISTING STRUCTURED STATE (already extracted):",
       structuredState,
       "",
-      "RAW CONVERSATION SAMPLE (older messages):",
-      convoSample,
+      "FULL CONVERSATION (older messages being compacted):",
+      convoText,
       "",
-      "Your job: output ONLY information that is MISSING from the structured state above.",
+      "Your job: output ONLY information that is genuinely MISSING from the structured state above.",
+      "Focus on:",
+      "- User requirements or constraints not captured",
+      "- Important decisions or reasoning not reflected",
+      "- Error details or test results that matter for ongoing work",
+      "- Context that would be needed to continue the task",
+      "",
       "Format as bullet points under these headers (skip empty sections):",
       "",
+      "## Missing Requirements",
       "## Missing Decisions",
-      "## Missing Discoveries",
       "## Missing Context",
       "",
       "If the structured state already covers everything important, output exactly: COMPLETE",
-      "Be very concise. Only add genuinely missing context — don't repeat what's already captured.",
+      "Be concise but thorough. Include specific details (file names, error messages, code snippets) not vague summaries.",
     ].join("\n"),
   });
 
@@ -63,33 +66,45 @@ export async function buildV2Summary(opts: {
     return structuredState;
   }
 
-  return `${structuredState}\n\n## Additional Context (gap-fill)\n${gapFill.trim()}`;
+  return `${structuredState}\n\n## Additional Context (LLM verification)\n${gapFill.trim()}`;
 }
 
-function buildConvoSample(messages: ModelMessage[], charBudget: number): string {
+function buildFullConvoText(messages: ModelMessage[], charBudget: number): string {
   const parts: string[] = [];
   let chars = 0;
 
-  for (let i = messages.length - 1; i >= 0 && chars < charBudget; i--) {
-    const msg = messages[i];
-    if (!msg) continue;
-    const text = messageTextBrief(msg);
+  for (const msg of messages) {
+    if (chars >= charBudget) break;
+    const text = messageTextFull(msg);
     if (!text) continue;
-    const chunk = `${msg.role}: ${text.slice(0, 1000)}`;
-    parts.unshift(chunk);
-    chars += chunk.length;
+    const chunk = `${msg.role}: ${text}`;
+    const limited = chunk.length > 2000 ? `${chunk.slice(0, 2000)}...` : chunk;
+    parts.push(limited);
+    chars += limited.length;
   }
 
   return parts.join("\n\n");
 }
 
-function messageTextBrief(msg: ModelMessage): string | undefined {
+function messageTextFull(msg: ModelMessage): string | undefined {
   if (typeof msg.content === "string") return msg.content;
   if (Array.isArray(msg.content)) {
     const texts: string[] = [];
     for (const part of msg.content) {
-      if (typeof part === "object" && part !== null && "text" in part) {
-        texts.push(String((part as { text: string }).text));
+      if (typeof part === "object" && part !== null) {
+        if ("text" in part) {
+          texts.push(String((part as { text: string }).text));
+        } else if ("type" in part) {
+          const typed = part as { type: string; toolName?: string; result?: unknown };
+          if (typed.type === "tool-result") {
+            const resultStr = typed.result != null ? JSON.stringify(typed.result) : "null";
+            texts.push(
+              `[tool-result: ${typed.toolName ?? "unknown"} → ${resultStr.slice(0, 1500)}]`,
+            );
+          } else if (typed.type === "tool-call") {
+            texts.push(`[tool-call: ${typed.toolName ?? "unknown"}]`);
+          }
+        }
       }
     }
     return texts.join("\n") || undefined;

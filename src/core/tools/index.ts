@@ -558,7 +558,9 @@ export function buildTools(
     project: tool({
       description: projectTool.description,
       inputSchema: z.object({
-        action: z.enum(["test", "build", "lint", "typecheck", "run"]).describe("Project action"),
+        action: z
+          .enum(["test", "build", "lint", "typecheck", "run", "list"])
+          .describe("Project action (list discovers monorepo packages)"),
         file: z.string().optional().describe("Target file (for test/lint)"),
         fix: z.boolean().optional().describe("Auto-fix lint issues"),
         script: z.string().optional().describe("Named script to run (for run action)"),

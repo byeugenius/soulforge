@@ -213,7 +213,7 @@ export class LspBackend implements IntelligenceBackend {
     const lines = content.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!;
+      const line = lines[i] ?? "";
       const trimmed = line.trim();
 
       // JS/TS: import ... from '...' or import '...'
@@ -227,23 +227,23 @@ export class LspBackend implements IntelligenceBackend {
         const specMatch = trimmed.match(/import\s+(\w+)/);
         const namedMatch = trimmed.match(/\{([^}]+)\}/);
         const nsMatch = trimmed.match(/\*\s+as\s+(\w+)/);
-        if (nsMatch) {
+        if (nsMatch?.[1]) {
           isNamespace = true;
-          specifiers.push(nsMatch[1]!);
-        } else if (specMatch && specMatch[1] !== "type") {
+          specifiers.push(nsMatch[1]);
+        } else if (specMatch?.[1] && specMatch[1] !== "type") {
           isDefault = true;
-          specifiers.push(specMatch[1]!);
+          specifiers.push(specMatch[1]);
         }
-        if (namedMatch) {
+        if (namedMatch?.[1]) {
           specifiers.push(
-            ...namedMatch[1]!
+            ...namedMatch[1]
               .split(",")
-              .map((s) => s.trim().split(/\s+as\s+/)[0]!)
+              .map((s) => s.trim().split(/\s+as\s+/)[0] ?? "")
               .filter(Boolean),
           );
         }
         imports.push({
-          source: jsImport[1]!,
+          source: jsImport[1] ?? "",
           specifiers,
           isDefault,
           isNamespace,
@@ -256,20 +256,20 @@ export class LspBackend implements IntelligenceBackend {
       if (trimmed.startsWith("import ") || trimmed.startsWith("from ")) {
         const pyFrom = trimmed.match(/^from\s+([\w.]+)\s+import\s+(.+)/);
         const pyImport = trimmed.match(/^import\s+([\w.]+)/);
-        if (pyFrom) {
+        if (pyFrom?.[1] && pyFrom[2]) {
           imports.push({
-            source: pyFrom[1]!,
-            specifiers: pyFrom[2]!
+            source: pyFrom[1],
+            specifiers: pyFrom[2]
               .split(",")
-              .map((s) => s.trim().split(/\s+as\s+/)[0]!)
+              .map((s) => s.trim().split(/\s+as\s+/)[0] ?? "")
               .filter(Boolean),
             isDefault: false,
             isNamespace: false,
             location: { file: absFile, line: i + 1, column: 1 },
           });
-        } else if (pyImport) {
+        } else if (pyImport?.[1]) {
           imports.push({
-            source: pyImport[1]!,
+            source: pyImport[1],
             specifiers: [],
             isDefault: false,
             isNamespace: true,
@@ -281,9 +281,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // Go: import "pkg" or import ( "pkg" )
       const goImport = trimmed.match(/^import\s+(?:(\w+)\s+)?["']([^"']+)["']/);
-      if (goImport) {
+      if (goImport?.[2]) {
         imports.push({
-          source: goImport[2]!,
+          source: goImport[2],
           specifiers: goImport[1] ? [goImport[1]] : [],
           isDefault: false,
           isNamespace: !!goImport[1],
@@ -294,12 +294,12 @@ export class LspBackend implements IntelligenceBackend {
       // Go: inside import block
       if (trimmed === "import (") {
         for (let j = i + 1; j < lines.length; j++) {
-          const inner = lines[j]!.trim();
+          const inner = (lines[j] ?? "").trim();
           if (inner === ")") break;
           const goInner = inner.match(/^(?:(\w+)\s+)?["']([^"']+)["']/);
-          if (goInner) {
+          if (goInner?.[2]) {
             imports.push({
-              source: goInner[2]!,
+              source: goInner[2],
               specifiers: goInner[1] ? [goInner[1]] : [],
               isDefault: false,
               isNamespace: !!goInner[1],
@@ -312,9 +312,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // Rust: use crate::... / use std::...
       const rustUse = trimmed.match(/^use\s+([\w:]+)/);
-      if (rustUse) {
+      if (rustUse?.[1]) {
         imports.push({
-          source: rustUse[1]!,
+          source: rustUse[1],
           specifiers: [],
           isDefault: false,
           isNamespace: false,
@@ -325,9 +325,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // C/C++: #include <...> or #include "..."
       const cInclude = trimmed.match(/^#include\s+[<"]([^>"]+)[>"]/);
-      if (cInclude) {
+      if (cInclude?.[1]) {
         imports.push({
-          source: cInclude[1]!,
+          source: cInclude[1],
           specifiers: [],
           isDefault: false,
           isNamespace: false,
@@ -338,9 +338,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // Ruby: require 'x' / require_relative 'x'
       const rbRequire = trimmed.match(/^(?:require|require_relative)\s+['"]([^'"]+)['"]/);
-      if (rbRequire) {
+      if (rbRequire?.[1]) {
         imports.push({
-          source: rbRequire[1]!,
+          source: rbRequire[1],
           specifiers: [],
           isDefault: false,
           isNamespace: false,
@@ -351,9 +351,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // PHP: use Namespace\Class
       const phpUse = trimmed.match(/^use\s+([\w\\]+)/);
-      if (phpUse) {
+      if (phpUse?.[1]) {
         imports.push({
-          source: phpUse[1]!,
+          source: phpUse[1],
           specifiers: [],
           isDefault: false,
           isNamespace: false,
@@ -380,7 +380,7 @@ export class LspBackend implements IntelligenceBackend {
     const lines = content.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!;
+      const line = lines[i] ?? "";
       const trimmed = line.trim();
 
       // JS/TS: export ...
@@ -395,20 +395,20 @@ export class LspBackend implements IntelligenceBackend {
         const typeMatch = trimmed.match(/export\s+(?:default\s+)?(?:type|interface)\s+(\w+)/);
         const enumMatch = trimmed.match(/export\s+(?:default\s+)?enum\s+(\w+)/);
 
-        if (funcMatch) {
-          name = funcMatch[1]!;
+        if (funcMatch?.[1]) {
+          name = funcMatch[1];
           kind = "function";
-        } else if (classMatch) {
-          name = classMatch[1]!;
+        } else if (classMatch?.[1]) {
+          name = classMatch[1];
           kind = "class";
-        } else if (typeMatch) {
-          name = typeMatch[1]!;
+        } else if (typeMatch?.[1]) {
+          name = typeMatch[1];
           kind = trimmed.includes("interface") ? "interface" : "type";
-        } else if (enumMatch) {
-          name = enumMatch[1]!;
+        } else if (enumMatch?.[1]) {
+          name = enumMatch[1];
           kind = "enum";
-        } else if (constMatch) {
-          name = constMatch[1]!;
+        } else if (constMatch?.[1]) {
+          name = constMatch[1];
           kind = "variable";
         } else if (isDefault) {
           name = "default";
@@ -433,15 +433,15 @@ export class LspBackend implements IntelligenceBackend {
 
       // Re-exports: export { ... } from '...'
       const reExport = trimmed.match(/^export\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/);
-      if (reExport) {
-        const names = reExport[1]!
+      if (reExport?.[1]) {
+        const names = reExport[1]
           .split(",")
           .map(
             (s) =>
               s
                 .trim()
                 .split(/\s+as\s+/)
-                .pop()!,
+                .pop() ?? "",
           )
           .filter(Boolean);
         for (const n of names) {
@@ -460,7 +460,7 @@ export class LspBackend implements IntelligenceBackend {
           .slice(lines.slice(0, i).join("\n").length)
           .match(/__all__\s*=\s*\[([^\]]+)\]/);
         if (allMatch) {
-          const names = allMatch[1]!.match(/['"](\w+)['"]/g);
+          const names = allMatch[1]?.match(/['"](\w+)['"]/g);
           if (names) {
             for (const n of names) {
               exports.push({

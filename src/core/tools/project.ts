@@ -1,12 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolResult } from "../../types/index.js";
+import { truncateWithTee } from "./tee.js";
 
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-type ProjectAction = "test" | "build" | "lint" | "typecheck" | "run";
+type ProjectAction = "test" | "build" | "lint" | "typecheck" | "run" | "list";
 
 interface ProjectArgs {
   action: ProjectAction;
@@ -27,7 +28,7 @@ interface ProjectProfile {
   run: string | null;
 }
 
-function detectProfile(cwd: string): ProjectProfile {
+export function detectProfile(cwd: string): ProjectProfile {
   const profile: ProjectProfile = {
     test: null,
     build: null,
@@ -121,7 +122,7 @@ function detectProfile(cwd: string): ProjectProfile {
     profile.build = null;
     profile.lint =
       has("ruff.toml") || has(".ruff.toml") ? `${prefix}ruff check` : `${prefix}flake8`;
-    profile.typecheck = `${prefix}mypy .`;
+    profile.typecheck = has("pyrightconfig.json") ? `${prefix}pyright` : `${prefix}mypy .`;
     // Framework-specific run commands
     if (has("manage.py")) profile.run = `${prefix}python manage.py runserver`;
     else if (has("app.py") || has("main.py")) profile.run = `${prefix}uvicorn main:app --reload`;
@@ -135,6 +136,21 @@ function detectProfile(cwd: string): ProjectProfile {
     profile.lint = null;
     profile.typecheck = "dotnet build";
     profile.run = "dotnet run";
+    return profile;
+  }
+
+  // PHP
+  if (has("composer.json")) {
+    profile.test = "vendor/bin/phpunit";
+    profile.build = null;
+    profile.lint =
+      has("phpstan.neon") || has("phpstan.neon.dist")
+        ? "vendor/bin/phpstan analyse"
+        : has("psalm.xml") || has("psalm.xml.dist")
+          ? "vendor/bin/psalm"
+          : null;
+    profile.typecheck = profile.lint;
+    profile.run = has("artisan") ? "php artisan serve" : null;
     return profile;
   }
 
@@ -286,23 +302,235 @@ function readPackageScripts(cwd: string): Record<string, string> {
 
 function detectJsLinter(cwd: string): string | null {
   const has = (f: string) => existsSync(join(cwd, f));
-  if (has("biome.json") || has("biome.jsonc")) return "biome lint .";
+  if (has("biome.json") || has("biome.jsonc")) return "biome check .";
+  if (has("oxlintrc.json") || has(".oxlintrc.json")) return "oxlint .";
   if (
+    has("eslint.config.js") ||
+    has("eslint.config.mjs") ||
+    has("eslint.config.ts") ||
     has(".eslintrc") ||
     has(".eslintrc.js") ||
     has(".eslintrc.json") ||
-    has("eslint.config.js") ||
-    has("eslint.config.mjs")
+    has(".eslintrc.yml")
   )
     return "eslint .";
   return null;
 }
 
+function detectJsTypecheck(cwd: string): string | null {
+  const has = (f: string) => existsSync(join(cwd, f));
+  if (!has("tsconfig.json")) return null;
+  if (has("bun.lock") || has("bun.lockb")) return "bunx tsc --noEmit";
+  if (has("deno.json") || has("deno.lock")) return "deno check .";
+  if (has("pnpm-lock.yaml")) return "pnpm tsc --noEmit";
+  return "npx tsc --noEmit";
+}
+
+/**
+ * Detect the native lint + typecheck commands from config files, bypassing package.json scripts.
+ * Used by pre-commit checks to run the actual tool, not arbitrary user scripts.
+ * Returns commands joined with &&.
+ */
+export function detectNativeChecks(cwd: string): string | null {
+  const has = (f: string) => existsSync(join(cwd, f));
+  const cmds: string[] = [];
+
+  // JS/TS
+  const jsLint = detectJsLinter(cwd);
+  if (jsLint) cmds.push(jsLint);
+  const jsTc = detectJsTypecheck(cwd);
+  if (jsTc) cmds.push(jsTc);
+  if (cmds.length > 0) return cmds.join(" && ");
+
+  // Deno
+  if (has("deno.json") || has("deno.lock")) return "deno lint && deno check .";
+
+  // Rust
+  if (has("Cargo.toml")) return "cargo clippy && cargo check";
+
+  // Go
+  if (has("go.mod")) {
+    const lint =
+      has(".golangci.yml") || has(".golangci.yaml") ? "golangci-lint run" : "go vet ./...";
+    return `${lint} && go build ./...`;
+  }
+
+  // Python
+  if (has("pyproject.toml") || has("setup.py") || has("requirements.txt")) {
+    const pm = has("uv.lock")
+      ? "uv run "
+      : has("poetry.lock")
+        ? "poetry run "
+        : has("Pipfile.lock")
+          ? "pipenv run "
+          : "";
+    const lint = has("ruff.toml") || has(".ruff.toml") ? `${pm}ruff check` : `${pm}flake8`;
+    const tc = has("pyrightconfig.json") ? `${pm}pyright` : `${pm}mypy .`;
+    return `${lint} && ${tc}`;
+  }
+
+  // PHP
+  if (has("composer.json")) {
+    if (has("phpstan.neon") || has("phpstan.neon.dist")) return "vendor/bin/phpstan analyse";
+    if (has("psalm.xml") || has("psalm.xml.dist")) return "vendor/bin/psalm";
+    return null;
+  }
+
+  // Swift
+  if (has("Package.swift") && has(".swiftlint.yml")) return "swiftlint";
+
+  // Ruby
+  if (has("Gemfile") && has(".rubocop.yml")) return "bundle exec rubocop";
+
+  return null;
+}
+
+// ─── Monorepo Package Discovery ───
+
+interface PackageInfo {
+  name: string;
+  path: string;
+  toolchain: string | null;
+  hasLint: boolean;
+  hasTest: boolean;
+  hasTypecheck: boolean;
+}
+
+function discoverPackages(cwd: string): PackageInfo[] {
+  const has = (f: string) => existsSync(join(cwd, f));
+  const packages: PackageInfo[] = [];
+
+  // JS/TS workspaces (pnpm, yarn, npm)
+  const workspaceGlobs = getJsWorkspaceGlobs(cwd, has);
+  if (workspaceGlobs.length > 0) {
+    for (const glob of workspaceGlobs) {
+      const base = glob.replace(/\/?\*.*$/, "");
+      if (!base) continue;
+      scanDir(join(cwd, base), cwd, packages, "package.json");
+    }
+  }
+
+  // Cargo workspaces
+  if (has("Cargo.toml")) {
+    try {
+      const cargo = readFileSync(join(cwd, "Cargo.toml"), "utf-8");
+      const membersMatch = cargo.match(/members\s*=\s*\[([\s\S]*?)\]/);
+      if (membersMatch?.[1]) {
+        const members =
+          membersMatch[1].match(/["']([^"']+)["']/g)?.map((m) => m.replace(/["']/g, "")) ?? [];
+        for (const member of members) {
+          if (member.includes("*")) {
+            scanDir(join(cwd, member.replace(/\/?\*$/, "")), cwd, packages, "Cargo.toml");
+          } else if (existsSync(join(cwd, member, "Cargo.toml"))) {
+            addPackage(packages, join(cwd, member), cwd);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Go workspaces
+  if (has("go.work")) {
+    try {
+      const goWork = readFileSync(join(cwd, "go.work"), "utf-8");
+      const useMatch = goWork.match(/use\s*\(([\s\S]*?)\)/);
+      const dirs = useMatch?.[1]
+        ? (useMatch[1].match(/^\s*(\S+)/gm)?.map((d) => d.trim()) ?? [])
+        : (goWork.match(/^use\s+(\S+)/gm)?.map((d) => d.replace(/^use\s+/, "").trim()) ?? []);
+      for (const dir of dirs) {
+        if (existsSync(join(cwd, dir, "go.mod"))) {
+          addPackage(packages, join(cwd, dir), cwd);
+        }
+      }
+    } catch {}
+  }
+
+  return packages;
+}
+
+function getJsWorkspaceGlobs(cwd: string, has: (f: string) => boolean): string[] {
+  if (has("pnpm-workspace.yaml")) {
+    try {
+      const raw = readFileSync(join(cwd, "pnpm-workspace.yaml"), "utf-8");
+      const quoted = raw.match(/['"]([^'"]+)['"]/g)?.map((g) => g.replace(/['"]/g, "")) ?? [];
+      if (quoted.length > 0) return quoted;
+      const simple = raw.match(/^\s*-\s+(.+)$/gm);
+      return simple?.map((line) => line.replace(/^\s*-\s+/, "").trim()).filter(Boolean) ?? [];
+    } catch {}
+  }
+  if (has("package.json")) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
+      const w = pkg.workspaces;
+      return Array.isArray(w) ? w : Array.isArray(w?.packages) ? w.packages : [];
+    } catch {}
+  }
+  return [];
+}
+
+function scanDir(dir: string, rootCwd: string, packages: PackageInfo[], marker: string): void {
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const pkgDir = join(dir, entry.name);
+      if (existsSync(join(pkgDir, marker))) addPackage(packages, pkgDir, rootCwd);
+    }
+  } catch {}
+}
+
+function addPackage(packages: PackageInfo[], pkgDir: string, rootCwd: string): void {
+  const rel = pkgDir.replace(rootCwd, "").replace(/^\//, "");
+  const profile = detectProfile(pkgDir);
+  let name = rel;
+  try {
+    if (existsSync(join(pkgDir, "package.json"))) {
+      const pkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf-8"));
+      if (pkg.name) name = pkg.name;
+    } else if (existsSync(join(pkgDir, "Cargo.toml"))) {
+      const cargo = readFileSync(join(pkgDir, "Cargo.toml"), "utf-8");
+      const nameMatch = cargo.match(/name\s*=\s*["']([^"']+)["']/);
+      if (nameMatch?.[1]) name = nameMatch[1];
+    }
+  } catch {}
+
+  packages.push({
+    name,
+    path: rel,
+    toolchain: profile.lint?.split(/\s/)[0] ?? profile.test?.split(/\s/)[0] ?? null,
+    hasLint: !!profile.lint,
+    hasTest: !!profile.test,
+    hasTypecheck: !!profile.typecheck,
+  });
+}
+
+function formatPackageList(packages: PackageInfo[]): string {
+  if (packages.length === 0) return "No workspace packages found. This may not be a monorepo.";
+  const lines = packages.map((p) => {
+    const caps = [
+      p.hasLint ? "lint" : null,
+      p.hasTypecheck ? "typecheck" : null,
+      p.hasTest ? "test" : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const toolLabel = p.toolchain ? ` (${p.toolchain})` : "";
+    return `  ${p.name} — ${p.path}${toolLabel}${caps ? ` [${caps}]` : ""}`;
+  });
+  return `${String(packages.length)} packages:\n${lines.join("\n")}\n\nUse project(action: "lint", cwd: "<path>") to target a specific package.`;
+}
+
 export const projectTool = {
   name: "project",
-  description: "Run project commands (test, build, lint, typecheck) with auto-detected toolchain.",
+  description:
+    "Run project commands (test, build, lint, typecheck, list) with auto-detected toolchain.",
   execute: async (args: ProjectArgs): Promise<ToolResult> => {
     const cwd = args.cwd ? join(process.cwd(), args.cwd) : process.cwd();
+
+    if (args.action === "list") {
+      const packages = discoverPackages(cwd);
+      return { success: true, output: formatPackageList(packages) };
+    }
+
     const profile = detectProfile(cwd);
 
     let command: string | null = null;
@@ -380,24 +608,18 @@ export const projectTool = {
 
       const output = [stdout, stderr].filter(Boolean).join("\n").trim();
       const MAX_OUTPUT = 10_000;
-      let truncated: string;
-      if (output.length <= MAX_OUTPUT) {
-        truncated = output;
-      } else {
-        const HEAD = 3000;
-        const TAIL = 5000;
-        truncated = `${output.slice(0, HEAD)}\n\n... (${String(output.length - HEAD - TAIL)} chars truncated) ...\n\n${output.slice(-TAIL)}`;
-      }
+      const { text: truncated } = truncateWithTee(output, MAX_OUTPUT, 3000, 5000, args.action);
 
+      const cmdLabel = `[${args.action}] ${command}`;
       if (exitCode === 0) {
         return {
           success: true,
-          output: `${args.action} passed.\n${truncated}`,
+          output: `${cmdLabel} — passed.\n${truncated}`,
         };
       }
       return {
         success: false,
-        output: `${args.action} failed (exit ${String(exitCode)}).\n${truncated}`,
+        output: `${cmdLabel} — failed (exit ${String(exitCode)}).\n${truncated}`,
         error: `exit ${String(exitCode)}`,
       };
     } catch (err: unknown) {

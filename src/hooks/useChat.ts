@@ -641,11 +641,13 @@ export function useChat({
         const isV2 = compactionCfg?.strategy === "v2";
         const KEEP_RECENT = compactionCfg?.keepRecent ?? 4;
         let keepStart = Math.max(0, currentCore.length - KEEP_RECENT);
-        while (
-          keepStart > 0 &&
-          keepStart < currentCore.length &&
-          currentCore[keepStart].role === "tool"
-        ) {
+        // Never split between assistant tool-call and its tool-result pair
+        while (keepStart > 0 && currentCore[keepStart]?.role === "tool") {
+          keepStart--;
+        }
+        // After ackMsg (assistant), recentMessages must start with "user" to maintain alternation.
+        // If it starts with "assistant", back up one more to include the preceding user message.
+        if (keepStart > 0 && currentCore[keepStart]?.role === "assistant") {
           keepStart--;
         }
         const olderMessages = currentCore.slice(0, keepStart);
