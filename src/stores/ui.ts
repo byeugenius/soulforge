@@ -99,14 +99,17 @@ export const useUIStore = create<UIState>()((set) => ({
 
   openModal: (name) => set(() => ({ modals: { ...INITIAL_MODALS, [name]: true } })),
   closeModal: (name) => set((s) => ({ modals: { ...s.modals, [name]: false } })),
-  toggleModal: (name) => set((s) => ({ modals: { ...s.modals, [name]: !s.modals[name] } })),
+  toggleModal: (name) =>
+    set((s) => ({
+      modals: s.modals[name] ? { ...s.modals, [name]: false } : { ...INITIAL_MODALS, [name]: true },
+    })),
 
   setRouterSlotPicking: (slot) => set({ routerSlotPicking: slot }),
 
   openCommandPicker: (config) =>
-    set((s) => ({
+    set(() => ({
       commandPickerConfig: config,
-      modals: { ...s.modals, commandPicker: true },
+      modals: { ...INITIAL_MODALS, commandPicker: true },
     })),
   updatePickerOptions: (options) =>
     set((s) => ({
