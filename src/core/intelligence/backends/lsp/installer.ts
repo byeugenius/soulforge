@@ -500,9 +500,7 @@ export async function uninstallPackage(
   try {
     switch (purl.type) {
       case "npm": {
-        const fullName = purl.namespace
-          ? `${purl.namespace}/${purl.name}`
-          : purl.name;
+        const fullName = purl.namespace ? `${purl.namespace}/${purl.name}` : purl.name;
         log(`Removing ${fullName} via bun...`);
         const { execSync: exec } = await import("node:child_process");
         try {
@@ -512,7 +510,9 @@ export async function uninstallPackage(
           const { unlinkSync } = await import("node:fs");
           for (const bin of binaries) {
             const binPath = join(SOULFORGE_LSP_DIR, "node_modules", ".bin", bin);
-            try { unlinkSync(binPath); } catch {}
+            try {
+              unlinkSync(binPath);
+            } catch {}
           }
         }
         break;
@@ -524,10 +524,14 @@ export async function uninstallPackage(
         // Remove pip packages
         const pipDir = join(SOULFORGE_LSP_DIR, "pip-packages");
         const pkgDir = join(pipDir, purl.name.replace(/-/g, "_"));
-        try { rmSync(pkgDir, { recursive: true, force: true }); } catch {}
+        try {
+          rmSync(pkgDir, { recursive: true, force: true });
+        } catch {}
         // Remove wrapper scripts
         for (const bin of binaries) {
-          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+          try {
+            unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin));
+          } catch {}
         }
         break;
       }
@@ -537,7 +541,9 @@ export async function uninstallPackage(
         log(`Removing ${purl.name} binaries...`);
         const { unlinkSync } = await import("node:fs");
         for (const bin of binaries) {
-          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+          try {
+            unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin));
+          } catch {}
         }
         break;
       }
@@ -546,7 +552,9 @@ export async function uninstallPackage(
         log(`Removing ${purl.name} binaries...`);
         const { unlinkSync } = await import("node:fs");
         for (const bin of binaries) {
-          try { unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin)); } catch {}
+          try {
+            unlinkSync(join(SOULFORGE_LSP_DIR, "bin", bin));
+          } catch {}
         }
         break;
       }

@@ -2,9 +2,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import { FileCache } from "./cache.js";
 import {
-  EXT_TO_LANGUAGE,
   type BackendPreference,
   type CodeIntelligenceConfig,
+  EXT_TO_LANGUAGE,
   type IntelligenceBackend,
   type Language,
 } from "./types.js";
@@ -276,10 +276,10 @@ export class CodeIntelligenceRouter {
   /** Find a file to use for LSP warmup probing */
   private findProbeFile(language: Language): string | null {
     // Build extensions list from the canonical EXT_TO_LANGUAGE map
-      const exts = Object.entries(EXT_TO_LANGUAGE)
+    const exts = Object.entries(EXT_TO_LANGUAGE)
       .filter(([_, lang]) => lang === language)
       .map(([ext]) => ext);
-      if (exts.length === 0) return null;
+    if (exts.length === 0) return null;
 
     // Check src/ first, then root
     for (const dir of ["src", "."]) {
@@ -335,9 +335,7 @@ export class CodeIntelligenceRouter {
             if (syms && syms.length > 0) {
               // First try to find a function or class with a clean name
               const preferred = syms.find(
-                (s) =>
-                  (s.kind === "function" || s.kind === "class") &&
-                  isValidProbeSymbol(s.name),
+                (s) => (s.kind === "function" || s.kind === "class") && isValidProbeSymbol(s.name),
               );
               // Fall back to any symbol with a clean name
               const fallback = syms.find((s) => isValidProbeSymbol(s.name));

@@ -3,6 +3,35 @@ import type { ToolResult } from "../../types";
 import { isForbidden } from "../security/forbidden.js";
 
 const DEFAULT_TIMEOUT = 30_000;
+
+// ─── Co-Author Injection ───
+// Intercept `git commit -m "..."` and append co-author trailer when enabled.
+// This ensures co-authorship is always applied regardless of how the agent commits.
+
+const CO_AUTHOR_LINE = "Co-Authored-By: SoulForge <soulforge@proxysoul.com>";
+let _shellCoAuthorEnabled = true;
+
+export function setShellCoAuthorEnabled(enabled: boolean) {
+  _shellCoAuthorEnabled = enabled;
+}
+
+const GIT_COMMIT_MSG_RE = /\bgit\s+commit\b.*?\s-m\s+/;
+
+function injectCoAuthor(command: string): string {
+  if (!_shellCoAuthorEnabled) return command;
+  if (!GIT_COMMIT_MSG_RE.test(command)) return command;
+  if (command.includes("Co-Authored-By")) return command;
+  if (command.includes("--amend")) return command;
+
+  // Match -m "msg" or -m 'msg' and inject trailer before closing quote
+  return command.replace(
+    /(-m\s+)(["'])([\s\S]*?)\2/,
+    (_match, flag: string, quote: string, msg: string) => {
+      const trailer = `\\n\\n${CO_AUTHOR_LINE}`;
+      return `${flag}${quote}${msg}${trailer}${quote}`;
+    },
+  );
+}
 const MAX_OUTPUT_BYTES = 16_384;
 
 // Commands that read file content
@@ -158,7 +187,7 @@ export const shellTool = {
   name: "shell",
   description: "Run a shell command.",
   execute: async (args: ShellArgs, abortSignal?: AbortSignal): Promise<ToolResult> => {
-    const command = args.command;
+    const command = injectCoAuthor(args.command);
     const cwd = args.cwd ?? process.cwd();
 
     const blocked = checkShellForbidden(command);

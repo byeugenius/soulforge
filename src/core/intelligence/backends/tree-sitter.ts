@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FileCache } from "../cache.js";
 import {
-  detectLanguageFromPath,
   type CodeBlock,
+  detectLanguageFromPath,
   type ExportInfo,
   type FileOutline,
   type ImportInfo,

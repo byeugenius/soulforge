@@ -7,11 +7,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
-  detectLanguageFromPath,
   type CallHierarchyResult,
   type CodeAction,
   type CodeBlock,
   type Diagnostic,
+  detectLanguageFromPath,
   type ExportInfo,
   type FileOutline,
   type FormatEdit,
@@ -236,7 +236,10 @@ export class LspBackend implements IntelligenceBackend {
         }
         if (namedMatch) {
           specifiers.push(
-            ...namedMatch[1]!.split(",").map((s) => s.trim().split(/\s+as\s+/)[0]!).filter(Boolean),
+            ...namedMatch[1]!
+              .split(",")
+              .map((s) => s.trim().split(/\s+as\s+/)[0]!)
+              .filter(Boolean),
           );
         }
         imports.push({
@@ -256,7 +259,10 @@ export class LspBackend implements IntelligenceBackend {
         if (pyFrom) {
           imports.push({
             source: pyFrom[1]!,
-            specifiers: pyFrom[2]!.split(",").map((s) => s.trim().split(/\s+as\s+/)[0]!).filter(Boolean),
+            specifiers: pyFrom[2]!
+              .split(",")
+              .map((s) => s.trim().split(/\s+as\s+/)[0]!)
+              .filter(Boolean),
             isDefault: false,
             isNamespace: false,
             location: { file: absFile, line: i + 1, column: 1 },
@@ -428,7 +434,16 @@ export class LspBackend implements IntelligenceBackend {
       // Re-exports: export { ... } from '...'
       const reExport = trimmed.match(/^export\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/);
       if (reExport) {
-        const names = reExport[1]!.split(",").map((s) => s.trim().split(/\s+as\s+/).pop()!).filter(Boolean);
+        const names = reExport[1]!
+          .split(",")
+          .map(
+            (s) =>
+              s
+                .trim()
+                .split(/\s+as\s+/)
+                .pop()!,
+          )
+          .filter(Boolean);
         for (const n of names) {
           exports.push({
             name: n,
@@ -441,7 +456,9 @@ export class LspBackend implements IntelligenceBackend {
 
       // Python: __all__ = [...]
       if (trimmed.startsWith("__all__")) {
-        const allMatch = content.slice(lines.slice(0, i).join("\n").length).match(/__all__\s*=\s*\[([^\]]+)\]/);
+        const allMatch = content
+          .slice(lines.slice(0, i).join("\n").length)
+          .match(/__all__\s*=\s*\[([^\]]+)\]/);
         if (allMatch) {
           const names = allMatch[1]!.match(/['"](\w+)['"]/g);
           if (names) {
@@ -466,7 +483,11 @@ export class LspBackend implements IntelligenceBackend {
       const lang = detectLanguage(file);
       if (lang === "go") {
         for (const sym of symbols) {
-          if (sym.name[0] && sym.name[0] === sym.name[0].toUpperCase() && /[A-Z]/.test(sym.name[0])) {
+          if (
+            sym.name[0] &&
+            sym.name[0] === sym.name[0].toUpperCase() &&
+            /[A-Z]/.test(sym.name[0])
+          ) {
             exports.push({
               name: sym.name,
               isDefault: false,
@@ -509,9 +530,7 @@ export class LspBackend implements IntelligenceBackend {
 
     // Find matching symbol
     const match = symbols.find(
-      (s) =>
-        s.name === symbolName &&
-        (!symbolKind || s.kind === symbolKind),
+      (s) => s.name === symbolName && (!symbolKind || s.kind === symbolKind),
     );
     if (!match?.range) return null;
 
@@ -549,9 +568,11 @@ export class LspBackend implements IntelligenceBackend {
    * Unlike findSymbols which returns SymbolInfo, this returns the raw range
    * so readSymbol can extract the exact source text.
    */
-  private async getDocumentSymbolsWithRange(
-    file: string,
-  ): Promise<Array<{ name: string; kind: SymbolKind; range: { start: { line: number; character: number }; end: { line: number; character: number } } }> | null> {
+  private async getDocumentSymbolsWithRange(file: string): Promise<Array<{
+    name: string;
+    kind: SymbolKind;
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  }> | null> {
     let raw: unknown[] | null = null;
 
     if (nvimBridge.isNvimAvailable()) {
@@ -568,7 +589,14 @@ export class LspBackend implements IntelligenceBackend {
 
     if (!raw || raw.length === 0) return null;
 
-    const result: Array<{ name: string; kind: SymbolKind; range: { start: { line: number; character: number }; end: { line: number; character: number } } }> = [];
+    const result: Array<{
+      name: string;
+      kind: SymbolKind;
+      range: {
+        start: { line: number; character: number };
+        end: { line: number; character: number };
+      };
+    }> = [];
 
     function walk(symbols: unknown[]): void {
       for (const sym of symbols) {

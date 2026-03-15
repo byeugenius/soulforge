@@ -13,8 +13,8 @@ import {
   type MasonPackage,
   type PackageCategory,
   type PackageStatus,
-    uninstallPackage,
-  } from "../core/intelligence/backends/lsp/installer.js";
+  uninstallPackage,
+} from "../core/intelligence/backends/lsp/installer.js";
 import { clearProbeCache } from "../core/intelligence/backends/lsp/server-registry.js";
 import type { AppConfig } from "../types/index.js";
 
@@ -413,15 +413,15 @@ export const LspInstallSearch = memo(function LspInstallSearch({
     }
 
     // 'u' key = uninstall soulforge-installed package
-      if (evt.name === "u" && !evt.ctrl && !evt.meta) {
-        const items = currentItems();
-        const item = items[cursor];
-        if (!item) return;
-        doUninstall(item);
-        return;
-      }
+    if (evt.name === "u" && !evt.ctrl && !evt.meta) {
+      const items = currentItems();
+      const item = items[cursor];
+      if (!item) return;
+      doUninstall(item);
+      return;
+    }
 
-      if (evt.name === "backspace" || evt.name === "delete") {
+    if (evt.name === "backspace" || evt.name === "delete") {
       setQuery((prev) => prev.slice(0, -1));
       setCursor(0);
       setScrollOffset(0);

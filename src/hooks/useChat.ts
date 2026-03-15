@@ -31,6 +31,7 @@ import { SessionManager } from "../core/sessions/manager.js";
 import { createThinkingParser } from "../core/thinking-parser.js";
 import { onFileEdited } from "../core/tools/file-events.js";
 import { planFileName } from "../core/tools/index.js";
+import { setShellCoAuthorEnabled } from "../core/tools/shell.js";
 import { resetInProgressTasks } from "../core/tools/task-list.js";
 import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
@@ -385,9 +386,10 @@ export function useChat({
   );
   const [coAuthorCommits, setCoAuthorCommits] = useState(initialState?.coAuthorCommits ?? true);
 
-  // Sync co-author flag with git module
+  // Sync co-author flag with git module + shell interceptor
   useEffect(() => {
     setCoAuthorEnabled(coAuthorCommits);
+    setShellCoAuthorEnabled(coAuthorCommits);
   }, [coAuthorCommits]);
 
   // Sync context window size to contextManager + status bar store
@@ -638,7 +640,14 @@ export function useChat({
         const compactionCfg = effectiveConfig.compaction;
         const isV2 = compactionCfg?.strategy === "v2";
         const KEEP_RECENT = compactionCfg?.keepRecent ?? 4;
-        const keepStart = Math.max(0, currentCore.length - KEEP_RECENT);
+        let keepStart = Math.max(0, currentCore.length - KEEP_RECENT);
+        while (
+          keepStart > 0 &&
+          keepStart < currentCore.length &&
+          currentCore[keepStart].role === "tool"
+        ) {
+          keepStart--;
+        }
         const olderMessages = currentCore.slice(0, keepStart);
         const recentMessages = currentCore.slice(keepStart);
 
