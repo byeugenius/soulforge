@@ -1,5 +1,5 @@
 import { fg as fgStyle, StyledText, type TextRenderable } from "@opentui/core";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ContextManager } from "../core/context/manager.js";
 import { useStatusBarStore } from "../stores/statusbar.js";
 
@@ -98,29 +98,16 @@ interface Props {
 export function ContextBar({ contextManager }: Props) {
   const textRef = useRef<TextRenderable>(null);
 
-  const initStore = useStatusBarStore.getState();
-  const initCtxTokens = initStore.contextTokens;
-  const initCtxWindow = initStore.contextWindow || 200_000;
-  const initPct = initCtxTokens > 0
-    ? Math.min(100, Math.max(1, Math.round((initCtxTokens / initCtxWindow) * 100)))
-    : 0;
-
-  const targetRef = useRef<BarTarget>({
-    pct: initPct,
-    tokensX10: Math.round(initCtxTokens / 100),
-    live: initCtxTokens > 0,
-    flash: false,
-  });
+  const targetRef = useRef<BarTarget>({ pct: 0, tokensX10: 0, live: false, flash: false });
   const prevTotalRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPctRef = useRef(0);
+  const currentTokensRef = useRef(0);
+  const compactFrameRef = useRef(0);
+  const prevV2SlotsRef = useRef(0);
 
-  useEffect(() => {
-    const update = (state: {
-      contextTokens: number;
-      contextWindow: number;
-      chatChars: number;
-      subagentChars: number;
-    }) => {
+  const computeTarget = useCallback(
+    (state: { contextTokens: number; contextWindow: number; chatChars: number; subagentChars: number }) => {
       const ctxWindow = state.contextWindow || 200_000;
       const isApi = state.contextTokens > 0;
       const breakdown = contextManager.getContextBreakdown();
@@ -129,7 +116,6 @@ export function ContextBar({ contextManager }: Props) {
       const totalTokens = isApi
         ? state.contextTokens + state.subagentChars / CHARS_PER_TOKEN
         : charEstimate;
-      const live = isApi;
       const rawPct = (totalTokens / ctxWindow) * 100;
       const pct = totalTokens > 0 ? Math.min(100, Math.max(1, Math.round(rawPct))) : 0;
       const tokensX10 = Math.round(totalTokens / 100);
@@ -143,18 +129,19 @@ export function ContextBar({ contextManager }: Props) {
         }, 500);
       }
       prevTotalRef.current = totalTokens;
+      targetRef.current = { pct, tokensX10, live: isApi, flash };
+    },
+    [contextManager],
+  );
 
-      targetRef.current = { pct, tokensX10, live, flash };
-    };
-    // Fire immediately so the bar reflects current state (subscribe alone only fires on change)
-    update(useStatusBarStore.getState());
-    return useStatusBarStore.subscribe(update);
-  }, [contextManager]);
+  useEffect(() => {
+    const state = useStatusBarStore.getState();
+    computeTarget(state);
+    currentPctRef.current = targetRef.current.pct;
+    currentTokensRef.current = targetRef.current.tokensX10;
+    return useStatusBarStore.subscribe(computeTarget);
+  }, [computeTarget]);
 
-  const currentPctRef = useRef(initPct);
-  const currentTokensRef = useRef(Math.round(initCtxTokens / 100));
-  const compactFrameRef = useRef(0);
-  const prevV2SlotsRef = useRef(0);
   useEffect(() => {
     const timer = setInterval(() => {
       const target = targetRef.current;
@@ -197,6 +184,5 @@ export function ContextBar({ contextManager }: Props) {
     return () => clearInterval(timer);
   }, []);
 
-  const initial = buildContent(initPct, (initCtxTokens / 1000).toFixed(1), formatWindow(initCtxWindow), initCtxTokens > 0, false);
-  return <text ref={textRef} truncate content={initial} />;
+  return <text ref={textRef} truncate content={buildContent(0, "0.0", formatWindow(200_000), false, false)} />;
 }

@@ -490,10 +490,13 @@ export class RepoMap {
       }
 
       if (toIndex.length > 0 || stale.length > 0) {
+        this.onProgress?.(-1, -1);
         this.buildEdges();
+        this.onProgress?.(-2, -2);
         this.computePageRank();
       }
 
+      this.onProgress?.(-3, -3);
       this.buildCoChanges();
 
       this.compactIfNeeded();

@@ -137,7 +137,7 @@ function triggerSemanticGeneration(ctx: CommandContext, cm: ContextManager): voi
     });
 }
 
-function openRepoMapMenu(ctx: CommandContext): void {
+function buildRepoMapOptions(ctx: CommandContext) {
   const cm = ctx.contextManager;
   const repoMap = cm.getRepoMap();
   const enabled = cm.isRepoMapEnabled();
@@ -151,13 +151,8 @@ function openRepoMapMenu(ctx: CommandContext): void {
       : "scanning..."
     : "off — using file tree";
 
-  ctx.openCommandPicker({
-    title: "Repo Map",
-    icon: icon("repomap"),
+  return {
     currentValue: enabled ? "enable" : "disable",
-    keepOpen: true,
-    scopeEnabled: true,
-    initialScope: ctx.detectScope("repoMap"),
     options: [
       {
         value: "enable",
@@ -223,7 +218,31 @@ function openRepoMapMenu(ctx: CommandContext): void {
         description: statusDesc,
       },
     ],
+  };
+}
+
+function refreshRepoMapPicker(ctx: CommandContext): void {
+  const { options, currentValue } = buildRepoMapOptions(ctx);
+  const store = useUIStore.getState();
+  store.updatePickerOptions(options);
+  if (store.commandPickerConfig) {
+    store.commandPickerConfig.currentValue = currentValue;
+  }
+}
+
+function openRepoMapMenu(ctx: CommandContext): void {
+  const { options, currentValue } = buildRepoMapOptions(ctx);
+
+  ctx.openCommandPicker({
+    title: "Repo Map",
+    icon: icon("repomap"),
+    currentValue,
+    keepOpen: true,
+    scopeEnabled: true,
+    initialScope: ctx.detectScope("repoMap"),
+    options,
     onSelect: (value, scope) => {
+      const cm = ctx.contextManager;
       if (value === "enable" || value === "disable") {
         applyRepoMapToggle(ctx, value === "enable", scope ?? "project");
       } else if (value === "refresh") {
@@ -273,13 +292,16 @@ function openRepoMapMenu(ctx: CommandContext): void {
         triggerSemanticGeneration(ctx, cm);
       } else if (value === "semantic-clear") {
         cm.clearSemanticSummaries();
+        const stats = cm.getRepoMap().getStats();
         sysMsg(ctx, `Cleared ${String(stats.summaries)} cached summaries.`);
       } else if (value === "info") {
         useUIStore.getState().openModal("repoMapStatus");
       }
+      refreshRepoMapPicker(ctx);
     },
     onScopeMove: (value, from, to) => {
       applyRepoMapToggle(ctx, value === "enable", to, from);
+      refreshRepoMapPicker(ctx);
     },
   });
 }
