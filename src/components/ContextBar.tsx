@@ -105,6 +105,9 @@ export function ContextBar({ contextManager }: Props) {
   const currentTokensRef = useRef(0);
   const compactFrameRef = useRef(0);
   const prevV2SlotsRef = useRef(0);
+  const renderedContentRef = useRef(
+    buildContent(0, "0.0", formatWindow(200_000), false, false),
+  );
 
   const computeTarget = useCallback(
     (state: {
@@ -169,20 +172,22 @@ export function ContextBar({ contextManager }: Props) {
       currentPctRef.current = pct;
       currentTokensRef.current = tok;
       try {
+        const content = buildContent(
+          pct,
+          (tok / 10).toFixed(1),
+          winLabel,
+          target.live,
+          target.flash,
+          {
+            active: isCompacting,
+            frame: compactFrameRef.current,
+            strategy: store.compactionStrategy,
+            v2Slots: store.v2Slots,
+          },
+        );
+        renderedContentRef.current = content;
         if (textRef.current) {
-          textRef.current.content = buildContent(
-            pct,
-            (tok / 10).toFixed(1),
-            winLabel,
-            target.live,
-            target.flash,
-            {
-              active: isCompacting,
-              frame: compactFrameRef.current,
-              strategy: store.compactionStrategy,
-              v2Slots: store.v2Slots,
-            },
-          );
+          textRef.current.content = content;
         }
       } catch {}
     }, STEP_MS);
@@ -190,10 +195,6 @@ export function ContextBar({ contextManager }: Props) {
   }, []);
 
   return (
-    <text
-      ref={textRef}
-      truncate
-      content={buildContent(0, "0.0", formatWindow(200_000), false, false)}
-    />
+    <text ref={textRef} truncate content={renderedContentRef.current} />
   );
 }
