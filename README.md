@@ -327,15 +327,15 @@ SoulForge ships 30+ tools organized by capability:
 
 | Provider | Models | Setup |
 |----------|--------|-------|
-| **Anthropic** | Claude 4.6 Opus/Sonnet, Haiku 4.5 | `ANTHROPIC_API_KEY` |
-| **OpenAI** | GPT-4.5, o3, o4-mini | `OPENAI_API_KEY` |
-| **Google** | Gemini 2.5 Pro/Flash | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| **xAI** | Grok 3 | `XAI_API_KEY` |
-| **Ollama** | Any local model | Auto-detected |
-| **OpenRouter** | 200+ models | `OPENROUTER_API_KEY` |
-| **LLMGateway** | Custom proxy | `LLMGATEWAY_API_KEY` |
+| [**Anthropic**](https://console.anthropic.com/) | Claude 4.6 Opus/Sonnet, Haiku 4.5 | `ANTHROPIC_API_KEY` |
+| [**OpenAI**](https://platform.openai.com/) | GPT-4.5, o3, o4-mini | `OPENAI_API_KEY` |
+| [**Google**](https://aistudio.google.com/) | Gemini 2.5 Pro/Flash | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| [**xAI**](https://console.x.ai/) | Grok 3 | `XAI_API_KEY` |
+| [**Ollama**](https://ollama.ai) | Any local model | Auto-detected |
+| [**OpenRouter**](https://openrouter.ai) | 200+ models | `OPENROUTER_API_KEY` |
+| [**LLM Gateway**](https://llmgateway.io) | Multi-model gateway (OpenAI, Claude, Gemini, DeepSeek) | `LLM_GATEWAY_API_KEY` |
 | **Vercel Gateway** | Vercel AI Gateway | `VERCEL_GATEWAY_API_KEY` |
-| **Proxy** | Custom endpoint | `PROXY_API_KEY` |
+| **Proxy** | Any OpenAI-compatible endpoint | `PROXY_API_KEY` |
 
 ### Task Router
 
@@ -516,7 +516,7 @@ SoulForge builds on ideas from projects we respect:
 
 - **[Aider](https://github.com/Aider-AI/aider)** — pioneered tree-sitter repo maps with PageRank for AI code editing. SoulForge extends this with cochange analysis, blast radius, clone detection, and real-time graph updates on file edits.
 - **[Claude Code](https://github.com/anthropics/claude-code)** — Anthropic's CLI agent. Inspired our tool result pruning, subagent architecture, and the ECC patterns (schema enforcement over prompt instructions). SoulForge adds embedded Neovim, multi-provider support, and graph intelligence.
-- **[Everything Claude Code (ECC)](https://github.com/anthropics/claude-code/blob/main/.claude/docs)** — the design philosophy behind our enforcement patterns: `targetFiles` required on dispatch, pre-commit lint gates, confident tool output, auto-enrichment over prompt discipline.
+- **[Everything Claude Code (ECC)](https://github.com/anthropics/claude-code)** — design philosophy: enforce behavior with code, not prompt instructions. Our `targetFiles` schema validation, pre-commit lint gates, confident tool output, and auto-enrichment patterns come from this thinking.
 - **[Vercel AI SDK](https://sdk.vercel.ai)** — the multi-provider abstraction layer that makes 9 providers possible with a single tool loop interface.
 - **[Neovim](https://neovim.io)** — the editor. SoulForge embeds it via msgpack-RPC rather than reimplementing it, because your config and muscle memory shouldn't be a compromise.
 
