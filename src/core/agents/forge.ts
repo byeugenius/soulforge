@@ -113,6 +113,7 @@ interface ForgeAgentOptions {
   onApproveWebSearch?: (query: string) => Promise<boolean>;
   onApproveFetchPage?: (url: string) => Promise<boolean>;
   onApproveOutsideCwd?: (toolName: string, path: string) => Promise<boolean>;
+  onApproveDestructive?: (description: string) => Promise<boolean>;
   providerOptions?: ProviderOptions;
   headers?: Record<string, string>;
   codeExecution?: boolean;
@@ -146,6 +147,7 @@ export function createForgeAgent({
   onApproveWebSearch,
   onApproveFetchPage,
   onApproveOutsideCwd,
+  onApproveDestructive,
   providerOptions,
   headers,
   codeExecution,
@@ -171,6 +173,7 @@ export function createForgeAgent({
     repoMap,
     onApproveFetchPage,
     onApproveOutsideCwd,
+    onApproveDestructive,
   });
 
   const subagentTools = isRestricted

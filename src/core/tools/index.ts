@@ -7,6 +7,11 @@ import type { EditorIntegration } from "../../types/index.js";
 import { type AgentBus, normalizePath } from "../agents/agent-bus.js";
 import type { RepoMap } from "../intelligence/repo-map.js";
 import { MemoryManager } from "../memory/manager.js";
+import {
+  describeDestructiveCommand,
+  isDestructiveCommand,
+  isSensitiveFile,
+} from "../security/approval-gates.js";
 import { needsOutsideConfirm } from "../security/outside-cwd.js";
 import { analyzeTool } from "./analyze.js";
 import { discoverPatternTool } from "./discover-pattern.js";
@@ -73,6 +78,7 @@ export function buildTools(
     repoMap?: RepoMap;
     onApproveFetchPage?: (url: string) => Promise<boolean>;
     onApproveOutsideCwd?: (toolName: string, path: string) => Promise<boolean>;
+    onApproveDestructive?: (description: string) => Promise<boolean>;
   },
 ) {
   const effectiveCwd = cwd ?? process.cwd();
@@ -115,6 +121,13 @@ export function buildTools(
       execute: deferExecute(async (args) => {
         const gate = await gateOutsideCwd("edit_file", resolve(args.path));
         if (gate.blocked) return gate.result;
+        if (opts?.onApproveDestructive && isSensitiveFile(args.path)) {
+          const approved = await opts.onApproveDestructive(`Edit sensitive file: \`${args.path}\``);
+          if (!approved) {
+            const msg = `Denied: edit to sensitive file ${args.path}`;
+            return { success: false, output: msg, error: msg };
+          }
+        }
         return editFileTool.execute(args);
       }),
     }),
@@ -145,6 +158,13 @@ export function buildTools(
       execute: deferExecute(async (args) => {
         const gate = await gateOutsideCwd("multi_edit", resolve(args.path));
         if (gate.blocked) return gate.result;
+        if (opts?.onApproveDestructive && isSensitiveFile(args.path)) {
+          const approved = await opts.onApproveDestructive(`Edit sensitive file: \`${args.path}\``);
+          if (!approved) {
+            const msg = `Denied: edit to sensitive file ${args.path}`;
+            return { success: false, output: msg, error: msg };
+          }
+        }
         return multiEditTool.execute(args);
       }),
     }),
@@ -245,6 +265,14 @@ export function buildTools(
         if (args.cwd) {
           const gate = await gateOutsideCwd("shell", resolve(args.cwd));
           if (gate.blocked) return gate.result;
+        }
+        if (opts?.onApproveDestructive && isDestructiveCommand(args.command)) {
+          const desc = describeDestructiveCommand(args.command);
+          const approved = await opts.onApproveDestructive(`Shell: ${desc}\n\n\`${args.command}\``);
+          if (!approved) {
+            const msg = `Denied: ${desc}`;
+            return { success: false, output: msg, error: msg };
+          }
         }
         return shellTool.execute(args, abortSignal);
       },

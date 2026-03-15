@@ -745,6 +745,9 @@ export function buildSubagentTools(models: SubagentModels) {
     updateFile() {},
   };
 
+  let turnDispatchCount = 0;
+  const turnDispatchSummaries: string[] = [];
+
   return {
     dispatch: tool({
       description:
@@ -797,7 +800,7 @@ export function buildSubagentTools(models: SubagentModels) {
           .boolean()
           .optional()
           .describe(
-            "Override all dispatch validation (overlap check, ≤4 file rejection, web task limit). Only set true AFTER reviewing all previous dispatch results and confirming they lack the specific information you need. If previous results contain the data, act on them instead.",
+            "Override all dispatch validation (per-turn dispatch limit, file overlap between agents, investigation quality, ≤4 file rejection, web task limit). Only set true AFTER reviewing all previous dispatch results and confirming they lack the specific information you need.",
           ),
       }),
       execute: async (rawArgs, { abortSignal, toolCallId }) => {
@@ -846,33 +849,89 @@ export function buildSubagentTools(models: SubagentModels) {
           }
 
           if (!args.force && cacheRef.current) {
-            const hasCodeTask = args.tasks.some((t) => t.role === "code");
-            if (hasCodeTask) {
-              const cache = cacheRef.current;
-              const allTargetFiles: string[] = [];
-              for (const t of args.tasks) {
-                const isWebTask =
-                  t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
-                if (!isWebTask) {
-                  for (const f of t.targetFiles) allTargetFiles.push(normalizePath(f));
-                }
+            const cache = cacheRef.current;
+            const allTargetFiles: string[] = [];
+            for (const t of args.tasks) {
+              if (t.role === "investigate") continue;
+              const isWebTask =
+                t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
+              if (!isWebTask) {
+                for (const f of t.targetFiles) allTargetFiles.push(normalizePath(f));
               }
-              if (allTargetFiles.length > 0) {
-                const cached = allTargetFiles.filter((f) => cache.files.has(f));
-                if (cached.length > 0 && cached.length >= allTargetFiles.length * 0.5) {
-                  const missing = allTargetFiles.filter((f) => !cache.files.has(f));
-                  const cachedList = cached.map((f) => `\`${f}\``).join(", ");
-                  const missingHint =
-                    missing.length > 0
-                      ? ` Files not yet read: ${missing.map((f) => `\`${f}\``).join(", ")}. Use read_file for these.`
-                      : "";
-                  return `Dispatch rejected: ${String(cached.length)}/${String(allTargetFiles.length)} target files are already in your context (${cachedList}).${missingHint} Act on the data you have. Set force: true only if you need agents to EDIT these files or do work beyond reading.`;
-                }
+            }
+            if (allTargetFiles.length > 0) {
+              const cached = allTargetFiles.filter((f) => cache.files.has(f));
+              if (cached.length > 0 && cached.length >= allTargetFiles.length * 0.5) {
+                const hasCodeTask = args.tasks.some((t) => t.role === "code");
+                const missing = allTargetFiles.filter((f) => !cache.files.has(f));
+                const cachedList = cached.map((f) => `\`${f}\``).join(", ");
+                const missingHint =
+                  missing.length > 0
+                    ? ` Files not yet read: ${missing.map((f) => `\`${f}\``).join(", ")}. Use read_file for these.`
+                    : "";
+                const actionHint = hasCodeTask
+                  ? "Set force: true only if you need agents to EDIT these files or do work beyond reading."
+                  : "Set force: true only if you need agents to do multi-step investigation beyond what's already in context.";
+                return `Dispatch rejected: ${String(cached.length)}/${String(allTargetFiles.length)} target files are already in your context (${cachedList}).${missingHint} Act on the data you have. ${actionHint}`;
               }
             }
           }
 
           if (!args.force) {
+            // Gate: per-turn dispatch limit
+            if (turnDispatchCount > 0) {
+              const prev = turnDispatchSummaries
+                .map((s, i) => `  ${String(i + 1)}. ${s}`)
+                .join("\n");
+              return (
+                `Dispatch rejected: this is dispatch #${String(turnDispatchCount + 1)} this turn. Previous dispatch(es):\n${prev}\n` +
+                `Act on these results before dispatching again. If they lack what you need, use read_file/read_code/soul_grep for targeted follow-up. ` +
+                `Set force: true only after confirming previous results genuinely lack the specific information you need.`
+              );
+            }
+
+            // Gate: intra-dispatch file overlap between agents
+            const fileOwners = new Map<string, string[]>();
+            for (const t of args.tasks) {
+              const isWebTask =
+                t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
+              if (isWebTask) continue;
+              const label = t.id ?? t.task.slice(0, 60);
+              for (const f of t.targetFiles) {
+                const norm = normalizePath(f);
+                const owners = fileOwners.get(norm);
+                if (owners) owners.push(label);
+                else fileOwners.set(norm, [label]);
+              }
+            }
+            const overlaps = [...fileOwners.entries()].filter(([, owners]) => owners.length > 1);
+            if (overlaps.length > 0) {
+              const lines = overlaps
+                .slice(0, 5)
+                .map(([f, owners]) => `  \`${f}\` — ${owners.join(", ")}`)
+                .join("\n");
+              return (
+                `Dispatch rejected: ${String(overlaps.length)} file(s) targeted by multiple agents:\n${lines}\n` +
+                `Split by file ownership — each file belongs to exactly one agent. ` +
+                `Set force: true to proceed anyway.`
+              );
+            }
+
+            // Gate: investigation task quality
+            const INVESTIGATION_SIGNALS =
+              /\?|count|frequency|how many|at least|threshold|metric|pattern|idiom|convention|inconsisten|duplicat|repeated|unused|dead|missing|violat|soul_grep|soul_analyze|soul_impact|grep\b|where\b|which\b|filter|compare|difference|between/i;
+            for (const t of args.tasks) {
+              if (t.role !== "investigate") continue;
+              if (INVESTIGATION_SIGNALS.test(t.task)) continue;
+              return (
+                `Dispatch rejected: investigate task "${t.id ?? "?"}" lacks a specific investigation target.\n` +
+                `Task: "${t.task.slice(0, 120)}${t.task.length > 120 ? "..." : ""}"\n` +
+                `Investigation tasks should specify what to look for: a pattern, a question, a metric, or a comparison. ` +
+                `Example: "Use soul_grep count mode to find inline style={{ patterns across all screens, then compare error handling in useSocial vs useAuth."\n` +
+                `Set force: true to proceed anyway.`
+              );
+            }
+
             const webTasks = args.tasks.filter(
               (t) => t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER,
             );
@@ -880,7 +939,7 @@ export function buildSubagentTools(models: SubagentModels) {
               return `Dispatch rejected: ${String(webTasks.length)} web search tasks is excessive. Use at most 2 focused web tasks per dispatch. Check the conversation for URLs the user already shared (use fetch_page) and previous search results before searching again. Set force: true only after confirming existing context lacks the answer.`;
             }
 
-            // Reject small dispatches — faster to do directly
+            // Gate: reject small dispatches — faster to do directly
             const nonWebTasks = args.tasks.filter(
               (t) =>
                 !(t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER),
@@ -1006,9 +1065,15 @@ export function buildSubagentTools(models: SubagentModels) {
               abortSignal,
             );
 
+            const edited = [...editedMap.keys()];
+            turnDispatchCount++;
+            turnDispatchSummaries.push(
+              `${args.objective ?? "Single agent"}: ${edited.length > 0 ? `edited ${edited.join(", ")}` : "read-only"}`,
+            );
+
             return {
               reads: bus.getFileReadRecords(task.agentId),
-              filesEdited: [...editedMap.keys()],
+              filesEdited: edited,
               output: desloppifyResult ? `${resultText}\n${desloppifyResult}` : resultText,
             } satisfies DispatchOutput;
           }
@@ -1162,9 +1227,16 @@ export function buildSubagentTools(models: SubagentModels) {
             : "";
           if (cacheStats) sections.push(cacheStats);
 
+          const editedPaths = [...allEdited.keys()];
+          turnDispatchCount++;
+          turnDispatchSummaries.push(
+            `${args.objective ?? "Dispatch"}: ${String(successful.length)}/${String(tasks.length)} agents` +
+              (editedPaths.length > 0 ? `, edited ${editedPaths.join(", ")}` : ""),
+          );
+
           return {
             reads: bus.getFileReadRecords(),
-            filesEdited: [...bus.getEditedFiles().keys()],
+            filesEdited: editedPaths,
             output: sections.join("\n"),
           } satisfies DispatchOutput;
         } finally {

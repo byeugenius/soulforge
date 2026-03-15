@@ -923,16 +923,10 @@ export function useChat({
 
   const autoSummarizedRef = useRef(false);
   useEffect(() => {
+    if (activeModelRef.current === "none") return;
+    if (contextTokens <= 0) return;
     const ctxWindow = getModelContextWindow(activeModelRef.current);
-    const apiTokens = contextTokens;
-    let pct: number;
-    if (apiTokens > 0) {
-      pct = apiTokens / ctxWindow;
-    } else {
-      const systemChars = contextManager.getContextBreakdown().reduce((sum, s) => sum + s.chars, 0);
-      const totalChars = systemChars + chatChars;
-      pct = totalChars / (ctxWindow * 3.5);
-    }
+    const pct = contextTokens / ctxWindow;
     const triggerAt = effectiveConfig.compaction?.triggerThreshold ?? 0.7;
     const resetAt = effectiveConfig.compaction?.resetThreshold ?? 0.4;
     if (pct > triggerAt && !autoSummarizedRef.current && coreMessagesRef.current.length >= 6) {
@@ -953,8 +947,6 @@ export function useChat({
     }
   }, [
     contextTokens,
-    chatChars,
-    contextManager,
     summarizeConversation,
     effectiveConfig.compaction?.triggerThreshold,
     effectiveConfig.compaction?.resetThreshold,
@@ -1021,6 +1013,24 @@ export function useChat({
     });
     outsideCwdMutexRef.current = result.then(() => {});
     return result;
+  }, []);
+
+  const promptDestructive = useCallback((description: string): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
+      setPendingQuestion({
+        id: crypto.randomUUID(),
+        question: `⚠ Potentially destructive action:\n\n${description}`,
+        options: [
+          { label: "Allow", value: "allow", description: "Allow this action" },
+          { label: "Deny", value: "deny", description: "Block this action" },
+        ],
+        allowSkip: false,
+        resolve: (answer: string) => {
+          setPendingQuestion(null);
+          resolve(answer === "allow");
+        },
+      });
+    });
   }, []);
 
   // Interactive callbacks for plan/question tools
@@ -1315,6 +1325,7 @@ export function useChat({
           onApproveWebSearch: webSearchApproval,
           onApproveFetchPage: fetchPageApproval,
           onApproveOutsideCwd: promptOutsideCwd,
+          onApproveDestructive: promptDestructive,
           providerOptions,
           headers,
           codeExecution: effectiveConfig.codeExecution,
@@ -1351,6 +1362,7 @@ export function useChat({
                           onApproveWebSearch: webSearchApproval,
                           onApproveFetchPage: fetchPageApproval,
                           onApproveOutsideCwd: promptOutsideCwd,
+                          onApproveDestructive: promptDestructive,
                           providerOptions: degraded.providerOptions,
                           headers: degraded.headers,
                           codeExecution: effectiveConfig.codeExecution,
@@ -2051,6 +2063,7 @@ export function useChat({
       setActivePlan,
       syncV2Slots,
       promptOutsideCwd,
+      promptDestructive,
     ],
   );
   handleSubmitRef.current = handleSubmit;
