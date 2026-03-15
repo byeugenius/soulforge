@@ -510,6 +510,18 @@ bun run lint:fix      # auto-fix
 
 ---
 
+## Inspirations
+
+SoulForge builds on ideas from projects we respect:
+
+- **[Aider](https://github.com/Aider-AI/aider)** — pioneered tree-sitter repo maps with PageRank for AI code editing. SoulForge extends this with cochange analysis, blast radius, clone detection, and real-time graph updates on file edits.
+- **[Claude Code](https://github.com/anthropics/claude-code)** — Anthropic's CLI agent. Inspired our tool result pruning, subagent architecture, and the ECC patterns (schema enforcement over prompt instructions). SoulForge adds embedded Neovim, multi-provider support, and graph intelligence.
+- **[Everything Claude Code (ECC)](https://github.com/anthropics/claude-code/blob/main/.claude/docs)** — the design philosophy behind our enforcement patterns: `targetFiles` required on dispatch, pre-commit lint gates, confident tool output, auto-enrichment over prompt discipline.
+- **[Vercel AI SDK](https://sdk.vercel.ai)** — the multi-provider abstraction layer that makes 9 providers possible with a single tool loop interface.
+- **[Neovim](https://neovim.io)** — the editor. SoulForge embeds it via msgpack-RPC rather than reimplementing it, because your config and muscle memory shouldn't be a compromise.
+
+---
+
 ## License
 
 [AGPL-3.0-only](LICENSE). Third-party licenses in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
