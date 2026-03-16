@@ -265,6 +265,93 @@ function buildFallbackResult(
   return parts.join("\n");
 }
 
+/**
+ * Auto-synthesize a DoneToolResult from the agent's tool results when done wasn't called.
+ * Extracts actual code from read_file/read_code results so the parent gets usable content.
+ * This guarantees 100% done results — the parent ALWAYS gets structured output.
+ */
+function synthesizeDoneFromResults(
+  result: AgentResult,
+  agentFindings: Array<{ label: string; content: string }>,
+  task: { agentId: string; task: string; role: string },
+): DoneToolResult {
+  const filesRead = new Set<string>();
+  const filesEdited = new Set<string>();
+  const keyFindings: Array<{ file: string; detail: string }> = [];
+  let budget = 8000;
+
+  // Extract from bus findings first (agent used report_finding)
+  for (const f of agentFindings) {
+    if (budget <= 0) break;
+    const detail = f.content.slice(0, budget);
+    keyFindings.push({ file: f.label, detail });
+    budget -= detail.length + 50;
+  }
+
+  // Extract from tool results (actual code the agent read)
+  for (const step of result.steps) {
+    for (const tc of step.toolCalls ?? []) {
+      const path = (tc.args as Record<string, unknown> | undefined)?.path as string | undefined;
+      const file = (tc.args as Record<string, unknown> | undefined)?.file as string | undefined;
+      const resolvedPath = path ?? file;
+      if (resolvedPath) {
+        if (tc.toolName === "read_file" || tc.toolName === "read_code") filesRead.add(resolvedPath);
+        if (tc.toolName === "edit_file") filesEdited.add(resolvedPath);
+      }
+    }
+
+    if (budget <= 0) continue;
+
+    for (const tr of step.toolResults ?? []) {
+      if (budget <= 0) break;
+      if (tr.toolName !== "read_file" && tr.toolName !== "read_code") continue;
+      const input = tr.input as Record<string, unknown> | undefined;
+      const filePath = (input?.path ?? input?.file) as string | undefined;
+      if (!filePath) continue;
+
+      // Skip if we already have a finding for this file from bus
+      if (keyFindings.some((kf) => kf.file === filePath)) continue;
+
+      const raw = tr.output;
+      if (!raw) continue;
+      let text = typeof raw === "string" ? raw : JSON.stringify(raw);
+      try {
+        const parsed = JSON.parse(text) as { output?: string; success?: boolean };
+        if (parsed.output && parsed.success !== false) text = parsed.output;
+      } catch {}
+
+      if (text.length < 20 || text.includes("[Already in your context")) continue;
+
+      const capped = text.slice(0, Math.min(2000, budget));
+      keyFindings.push({ file: filePath, detail: capped });
+      budget -= capped.length + 50;
+    }
+  }
+
+  // Ensure at least one finding (schema requires min 1)
+  if (keyFindings.length === 0) {
+    keyFindings.push({
+      file: task.agentId,
+      detail: `Agent read ${String(filesRead.size)} files: ${[...filesRead].join(", ")}`,
+    });
+  }
+
+  const text = result.text.trim();
+  const summary =
+    text.length > 10
+      ? text.slice(0, 500)
+      : `Auto-synthesized: examined ${String(filesRead.size)} files for task "${task.task.slice(0, 100)}"`;
+
+  return {
+    summary,
+    filesExamined: [...filesRead],
+    ...(filesEdited.size > 0
+      ? { filesEdited: [...filesEdited].map((f) => ({ file: f, changes: "edited" })) }
+      : {}),
+    keyFindings,
+  };
+}
+
 const DONE_RESULT_CAP = 8000;
 
 function formatDoneResult(done: DoneToolResult): string {
@@ -781,12 +868,16 @@ async function runAgentTask(
       const cacheRead =
         callbacks._acc.cacheRead || (result.totalUsage.inputTokenDetails?.cacheReadTokens ?? 0);
 
-      const doneResult = extractDoneResult(result);
+      let doneResult = extractDoneResult(result);
       const agentFindings = bus.getFindings().filter((f) => f.agentId === task.agentId);
-      const calledDone = doneResult !== null;
-      const resultText = calledDone
-        ? formatDoneResult(doneResult)
-        : buildFallbackResult(result, agentFindings);
+
+      // Auto-synthesize done when agent exhausted steps without calling done
+      if (!doneResult) {
+        doneResult = synthesizeDoneFromResults(result, agentFindings, task);
+      }
+
+      const calledDone = extractDoneResult(result) !== null; // original check for UI indicator
+      const resultText = formatDoneResult(doneResult);
 
       const agentResult: BusAgentResult = {
         agentId: task.agentId,
