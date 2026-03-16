@@ -1308,6 +1308,7 @@ export function useChat({
         await contextManager.ensureGitContext();
 
         steeringAbortedRef.current = false;
+        const pendingSteeringMsgs: ChatMessage[] = [];
         const drainSteering = (): string | null => {
           if (steeringAbortedRef.current) return null;
           const queue = messageQueueRef.current;
@@ -1317,18 +1318,13 @@ export function useChat({
           setMessageQueue(rest);
           const content = next?.content ?? null;
           if (content) {
-            queueMicrotask(() => {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: crypto.randomUUID(),
-                  role: "user" as const,
-                  content,
-                  timestamp: Date.now(),
-                  showInChat: true,
-                  isSteering: true,
-                },
-              ]);
+            pendingSteeringMsgs.push({
+              id: crypto.randomUUID(),
+              role: "user" as const,
+              content,
+              timestamp: Date.now(),
+              showInChat: true,
+              isSteering: true,
             });
           }
           return content;
@@ -1784,7 +1780,7 @@ export function useChat({
         }));
 
         setMessages((prev) => {
-          const allMsgs = [...prev, assistantMsg, ...errorMsgs];
+          const allMsgs = [...prev, ...pendingSteeringMsgs, assistantMsg, ...errorMsgs];
           queueMicrotask(() => {
             const snapshot = getWorkspaceSnapshot?.();
             if (snapshot) {

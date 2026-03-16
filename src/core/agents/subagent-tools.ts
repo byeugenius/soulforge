@@ -1434,6 +1434,12 @@ export function buildSubagentTools(models: SubagentModels) {
           );
         }
 
+        if (typeof dispatch !== "string") {
+          compact.push(
+            "\n---\nYou now have the dispatch results. If this gives you enough information to address the user's request, proceed immediately — plan, edit, or respond. Do not re-read files the dispatch already returned.",
+          );
+        }
+
         return { type: "text" as const, value: compact.join("\n") };
       },
     }),

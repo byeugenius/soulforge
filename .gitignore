@@ -49,3 +49,6 @@ benchmarks/results-*.json
 
 # Installed agent skills (user-specific)
 .agents/
+
+# Audit logs
+audit_issue.json

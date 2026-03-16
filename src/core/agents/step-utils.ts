@@ -80,46 +80,77 @@ function extractText(output: unknown): string {
   return String(output);
 }
 
-function buildSummary(toolName: string, text: string, symbolHint?: string): string | null {
+interface SummaryContext {
+  symbolHint?: string;
+  args?: Record<string, unknown>;
+}
+
+function buildSummary(toolName: string, text: string, ctx?: SummaryContext): string | null {
   const lineCount = text.split("\n").length;
   const charCount = text.length;
 
   if (charCount <= 200) return null;
 
+  const args = ctx?.args;
+
   if (toolName === "read_file" || toolName === "read_code") {
     const parts = [`[pruned] ${String(lineCount)} lines`];
-    if (symbolHint) {
-      parts.push(symbolHint);
-    }
+    if (ctx?.symbolHint) parts.push(ctx.symbolHint);
     return parts.join(" — ");
   }
-  if (toolName === "grep") {
+  if (toolName === "grep" || toolName === "soul_grep") {
     const matchCount = (text.match(/\n/g) || []).length;
-    return `[pruned] ${String(matchCount)} matches`;
+    const pattern = typeof args?.pattern === "string" ? ` for "${args.pattern.slice(0, 40)}"` : "";
+    return `[pruned] ${String(matchCount)} matches${pattern}`;
   }
   if (toolName === "glob") {
     const fileCount = text.trim().split("\n").length;
-    return `[pruned] ${String(fileCount)} files`;
+    const pattern = typeof args?.pattern === "string" ? ` for ${args.pattern}` : "";
+    return `[pruned] ${String(fileCount)} files${pattern}`;
   }
   if (toolName === "shell") {
-    return `[pruned] ${String(lineCount)} lines of output`;
+    const cmd = typeof args?.command === "string" ? args.command.slice(0, 60) : "";
+    const lastLine = text.trim().split("\n").pop() ?? "";
+    const exitHint = /exit code[: ]+(\d+)/i.test(lastLine)
+      ? ` — ${lastLine.slice(0, 40)}`
+      : text.includes("error") || text.includes("Error")
+        ? " — had errors"
+        : " — ok";
+    return `[pruned] \`${cmd}\` → ${String(lineCount)} lines${exitHint}`;
   }
   if (toolName === "dispatch") {
+    const parts: string[] = ["[pruned] dispatch completed"];
+    const headingMatch = text.match(/^## (.+)/m);
+    if (headingMatch?.[1]) parts.push(headingMatch[1].trim());
+    const agentMatch = text.match(/\*\*(\d+\/\d+)\*\* agents/);
+    if (agentMatch) parts.push(`${agentMatch[1]} agents`);
     const filesMatch = text.match(/### Files Edited\n([\s\S]*?)(?:\n###|$)/);
-    if (filesMatch) return `[pruned] dispatch completed — ${filesMatch[1]?.trim()}`;
-    return `[pruned] dispatch completed — ${String(charCount)} chars of output`;
+    if (filesMatch?.[1]) parts.push(`edited: ${filesMatch[1].trim()}`);
+    const agentSections = text.match(/### [✓✗] Agent: .+/g);
+    if (agentSections) {
+      const agents = agentSections.slice(0, 5).map((s) => s.replace(/^### [✓✗] Agent: /, ""));
+      parts.push(`agents: ${agents.join(", ")}`);
+    }
+    const verifyMatch = text.match(/VERDICT: (PASS|FAIL|PARTIAL)(?:\s*—\s*(.+))?/);
+    if (verifyMatch)
+      parts.push(
+        `verification: ${verifyMatch[1]}${verifyMatch[2] ? ` — ${verifyMatch[2].slice(0, 60)}` : ""}`,
+      );
+    return parts.join(" — ");
   }
   if (toolName === "list_dir") {
     const entryMatch = text.match(/(\d+) entries/);
     return `[pruned] ${entryMatch ? entryMatch[1] : String(lineCount)} entries`;
   }
-  if (toolName === "soul_grep" || toolName === "soul_find") {
+  if (toolName === "soul_find") {
     const matchCount = (text.match(/\n/g) || []).length;
-    return `[pruned] ${String(matchCount)} results`;
+    const query = typeof args?.query === "string" ? ` for "${args.query.slice(0, 40)}"` : "";
+    return `[pruned] ${String(matchCount)} results${query}`;
   }
   if (toolName === "soul_analyze" || toolName === "soul_impact") {
+    const action = typeof args?.action === "string" ? `${args.action}: ` : "";
     const firstLine = text.split("\n")[0] ?? "";
-    return `[pruned] ${firstLine.slice(0, 120)}`;
+    return `[pruned] ${action}${firstLine.slice(0, 120)}`;
   }
   if (toolName === "memory") {
     const count = text.trim().split("\n").length;
@@ -299,6 +330,26 @@ function compactOldToolResults(
   const cutoff = messages.length - KEEP_RECENT_MESSAGES;
   const resolvedPathMap = pathMap ?? (symbolLookup ? buildToolCallPathMap(messages) : undefined);
 
+  const argsMap = new Map<string, Record<string, unknown>>();
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        (part as { type: string }).type === "tool-call" &&
+        "toolCallId" in part &&
+        "input" in part
+      ) {
+        const tc = part as { toolCallId: string; input: unknown };
+        if (typeof tc.input === "object" && tc.input !== null) {
+          argsMap.set(tc.toolCallId, tc.input as Record<string, unknown>);
+        }
+      }
+    }
+  }
+
   return messages.map((msg, idx) => {
     if (idx >= cutoff) return msg;
     if (msg.role !== "tool" || typeof msg.content === "string") return msg;
@@ -325,7 +376,10 @@ function compactOldToolResults(
         }
       }
 
-      const summary = buildSummary(part.toolName, text, symbolHint);
+      const summary = buildSummary(part.toolName, text, {
+        symbolHint,
+        args: argsMap.get(part.toolCallId),
+      });
       if (!summary) return part;
       changed = true;
       return { ...part, output: { type: "text" as const, value: summary } };

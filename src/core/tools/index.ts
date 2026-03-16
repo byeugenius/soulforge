@@ -86,9 +86,14 @@ export function buildTools(
   const memoryTool = createMemoryTool(mm);
 
   let sequentialReads = 0;
-  const READ_NUDGE_THRESHOLD = 4;
-  const READ_NUDGE =
+  const READ_NUDGE_SOFT = 4;
+  const READ_NUDGE_HARD = 7;
+  const NUDGE_SOFT =
     "\n\n---\n[Hint: You've read several files sequentially. Consider soul_grep (count mode) to scan patterns across the codebase, or soul_analyze for structural insights — both are faster than reading files one by one.]";
+  const NUDGE_HARD =
+    "\n\n---\n[WARNING: You have read " +
+    "many files sequentially without using search tools. STOP reading and use soul_grep/soul_analyze to find what you need. " +
+    "If you already have the information from a previous dispatch, act on it instead of re-reading.]";
   const resetReadCounter = () => {
     sequentialReads = 0;
   };
@@ -119,8 +124,13 @@ export function buildTools(
       execute: deferExecute(async (args) => {
         const result = await readFileTool.execute(args);
         sequentialReads++;
-        if (sequentialReads >= READ_NUDGE_THRESHOLD && result.success) {
-          return { ...result, output: result.output + READ_NUDGE };
+        if (result.success) {
+          if (sequentialReads >= READ_NUDGE_HARD) {
+            return { ...result, output: result.output + NUDGE_HARD };
+          }
+          if (sequentialReads >= READ_NUDGE_SOFT) {
+            return { ...result, output: result.output + NUDGE_SOFT };
+          }
         }
         return result;
       }),
@@ -490,8 +500,13 @@ export function buildTools(
       execute: deferExecute(async (args) => {
         const result = await readCodeTool.execute(args);
         sequentialReads++;
-        if (sequentialReads >= READ_NUDGE_THRESHOLD && result.success) {
-          return { ...result, output: result.output + READ_NUDGE };
+        if (result.success) {
+          if (sequentialReads >= READ_NUDGE_HARD) {
+            return { ...result, output: result.output + NUDGE_HARD };
+          }
+          if (sequentialReads >= READ_NUDGE_SOFT) {
+            return { ...result, output: result.output + NUDGE_SOFT };
+          }
         }
         return result;
       }),

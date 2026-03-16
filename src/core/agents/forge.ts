@@ -20,6 +20,7 @@ import {
 import { readFileTool } from "../tools/read-file.js";
 import { renderTaskList } from "../tools/task-list.js";
 import { normalizePath } from "./agent-bus.js";
+import { buildSymbolLookup, compactOldToolResults } from "./step-utils.js";
 import { repairToolCall, sanitizeMessages } from "./stream-options.js";
 import { buildSubagentTools, type SharedCacheRef } from "./subagent-tools.js";
 
@@ -38,7 +39,81 @@ function hasPlanToolCall(messages: ModelMessage[]): boolean {
   return false;
 }
 
-function buildForgePrepareStep(isPlanMode: boolean, drainSteering?: () => string | null) {
+const STRIP_TOOL_NAMES = new Set(["update_plan_step"]);
+
+function stripBookkeepingTools(messages: ModelMessage[]): ModelMessage[] {
+  const stripIds = new Set<string>();
+
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        (part as { type: string }).type === "tool-call" &&
+        "toolName" in part &&
+        STRIP_TOOL_NAMES.has((part as { toolName: string }).toolName)
+      ) {
+        stripIds.add((part as { toolCallId: string }).toolCallId);
+      }
+    }
+  }
+
+  if (stripIds.size === 0) return messages;
+
+  return messages
+    .map((msg) => {
+      if (!Array.isArray(msg.content)) return msg;
+
+      if (msg.role === "assistant") {
+        const filtered = msg.content.filter((part) => {
+          if (
+            typeof part === "object" &&
+            part !== null &&
+            "type" in part &&
+            (part as { type: string }).type === "tool-call" &&
+            "toolCallId" in part
+          ) {
+            return !stripIds.has((part as { toolCallId: string }).toolCallId);
+          }
+          return true;
+        });
+        if (filtered.length === 0) return null;
+        if (filtered.length !== msg.content.length) return { ...msg, content: filtered };
+        return msg;
+      }
+
+      if (msg.role === "tool") {
+        const filtered = msg.content.filter((part) => {
+          if (
+            typeof part === "object" &&
+            part !== null &&
+            "type" in part &&
+            (part as { type: string }).type === "tool-result" &&
+            "toolCallId" in part
+          ) {
+            return !stripIds.has((part as { toolCallId: string }).toolCallId);
+          }
+          return true;
+        });
+        if (filtered.length === 0) return null;
+        if (filtered.length !== msg.content.length) return { ...msg, content: filtered };
+        return msg;
+      }
+
+      return msg;
+    })
+    .filter(Boolean) as ModelMessage[];
+}
+
+function buildForgePrepareStep(
+  isPlanMode: boolean,
+  drainSteering?: () => string | null,
+  repoMap?: import("../intelligence/repo-map.js").RepoMap,
+) {
+  const symbolLookup = buildSymbolLookup(repoMap);
+
   // biome-ignore lint/suspicious/noExplicitAny: PrepareStepFunction generic is invariant
   return ({ stepNumber, messages }: { stepNumber: number; messages: ModelMessage[] }): any => {
     const sanitized = sanitizeMessages(messages);
@@ -49,7 +124,13 @@ function buildForgePrepareStep(isPlanMode: boolean, drainSteering?: () => string
       system?: string;
     } = {};
 
-    if (sanitized !== messages) result.messages = sanitized;
+    let processed = stripBookkeepingTools(sanitized);
+    if (stepNumber >= 2) {
+      processed = compactOldToolResults(processed, symbolLookup);
+    }
+    if (processed !== messages) {
+      result.messages = processed;
+    }
 
     if (isPlanMode && stepNumber >= PLAN_NUDGE_STEP && !hasPlanToolCall(messages)) {
       if (stepNumber >= PLAN_FORCE_STEP) {
@@ -250,7 +331,7 @@ export function createForgeAgent({
       };
     },
     stopWhen: stepCountIs(500),
-    prepareStep: buildForgePrepareStep(forgeMode === "plan", drainSteering),
+    prepareStep: buildForgePrepareStep(forgeMode === "plan", drainSteering, repoMap),
     experimental_repairToolCall: repairToolCall,
     ...(providerOptions && Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
     ...(headers ? { headers } : {}),
