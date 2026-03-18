@@ -230,15 +230,9 @@ function buildForgePrepareStep(
 
     // Inject steering messages from queue (user typed while agent was running)
     if (stepNumber > 0 && drainSteering) {
-      const allSteering: string[] = [];
-      let next = drainSteering();
-      while (next) {
-        allSteering.push(next);
-        next = drainSteering();
-      }
-      if (allSteering.length > 0) {
+      const combined = drainSteering();
+      if (combined) {
         const msgs = result.messages ?? [...messages];
-        const combined = allSteering.join("\n\n");
         msgs.push({
           role: "user",
           content: [
@@ -394,6 +388,7 @@ export function createForgeAgent({
     id: "forge",
     model,
     tools: allTools,
+    stopWhen: () => false,
     callOptionsSchema: z.object({
       userMessage: z.string().optional(),
     }),

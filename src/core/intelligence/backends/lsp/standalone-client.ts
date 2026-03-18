@@ -35,7 +35,7 @@ export class StandaloneLspClient {
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
   private buffer = Buffer.alloc(0);
-  private openDocuments = new Set<string>();
+  private openDocuments = new Map<string, { version: number; content: string }>();
   private diagnostics = new Map<string, LspDiagnostic[]>();
   private diagnosticWaiters = new Map<string, Array<() => void>>();
   private initialized = false;
@@ -167,12 +167,25 @@ export class StandaloneLspClient {
   /** Ensure a document is open in the server */
   ensureDocumentOpen(filePath: string): void {
     const uri = filePathToUri(filePath);
-    if (this.openDocuments.has(uri)) return;
 
     let text: string;
     try {
       text = readFileSync(filePath, "utf-8");
     } catch {
+      return;
+    }
+
+    const existing = this.openDocuments.get(uri);
+    if (existing) {
+      // Document already open — send didChange if content differs
+      if (existing.content !== text) {
+        existing.version++;
+        existing.content = text;
+        this.notify("textDocument/didChange", {
+          textDocument: { uri, version: existing.version },
+          contentChanges: [{ text }],
+        });
+      }
       return;
     }
 
@@ -192,7 +205,7 @@ export class StandaloneLspClient {
     this.notify("textDocument/didOpen", {
       textDocument: { uri, languageId, version: 1, text },
     });
-    this.openDocuments.add(uri);
+    this.openDocuments.set(uri, { version: 1, content: text });
   }
 
   /** Get definition locations */

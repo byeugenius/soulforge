@@ -1279,25 +1279,19 @@ function workspaceEditToRefactorResult(
       return b.range.start.character - a.range.start.character;
     });
 
-    const lines = newContent.split("\n");
+    // Pre-compute line start offsets (0-indexed: lineStarts[0] = offset of line 0)
+    // Handles both \n and \r\n line endings correctly
+    const lineStarts: number[] = [0];
+    for (let i = 0; i < newContent.length; i++) {
+      if (newContent[i] === "\n") {
+        lineStarts.push(i + 1);
+      }
+    }
+
     for (const textEdit of sorted) {
-      const startLine = textEdit.range.start.line;
-      const startChar = textEdit.range.start.character;
-      const endLine = textEdit.range.end.line;
-      const endChar = textEdit.range.end.character;
-
-      // Convert line/character offsets to a flat string offset
-      let startOffset = 0;
-      for (let i = 0; i < startLine && i < lines.length; i++) {
-        startOffset += (lines[i]?.length ?? 0) + 1; // +1 for newline
-      }
-      startOffset += startChar;
-
-      let endOffset = 0;
-      for (let i = 0; i < endLine && i < lines.length; i++) {
-        endOffset += (lines[i]?.length ?? 0) + 1;
-      }
-      endOffset += endChar;
+      const startOffset =
+        (lineStarts[textEdit.range.start.line] ?? 0) + textEdit.range.start.character;
+      const endOffset = (lineStarts[textEdit.range.end.line] ?? 0) + textEdit.range.end.character;
 
       newContent =
         newContent.slice(0, startOffset) + textEdit.newText + newContent.slice(endOffset);

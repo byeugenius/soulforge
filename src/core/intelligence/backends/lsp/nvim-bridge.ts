@@ -46,7 +46,9 @@ function bufferPreamble(filePath: string): string {
     local filepath = '${escaped}'
     local bufnr = vim.fn.bufadd(filepath)
     vim.fn.bufload(bufnr)
-    vim.bo[bufnr].buflisted = false
+    -- Force re-read from disk so LSP always sees current content
+     vim.api.nvim_buf_call(bufnr, function() vim.cmd('edit!') end)
+     vim.bo[bufnr].buflisted = false
 
     -- Wait up to 2s for an LSP client to attach
     local deadline = vim.uv.now() + 2000

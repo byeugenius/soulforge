@@ -371,7 +371,15 @@ export const refactorTool = {
 
 function applyFormatEdits(formatEdit: FormatEdit): void {
   const content = readFileSync(formatEdit.file, "utf-8");
-  const lines = content.split("\n");
+
+  // Pre-compute line start offsets (1-indexed: lineStarts[1] = offset of line 1)
+  // Handles both \n and \r\n line endings correctly
+  const lineStarts: number[] = [0, 0]; // lineStarts[0] unused, lineStarts[1] = 0
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\n") {
+      lineStarts.push(i + 1);
+    }
+  }
 
   const sorted = [...formatEdit.edits].sort((a, b) => {
     if (a.startLine !== b.startLine) return b.startLine - a.startLine;
@@ -380,18 +388,8 @@ function applyFormatEdits(formatEdit: FormatEdit): void {
 
   let result = content;
   for (const edit of sorted) {
-    let startOffset = 0;
-    for (let i = 0; i < edit.startLine - 1 && i < lines.length; i++) {
-      startOffset += (lines[i]?.length ?? 0) + 1;
-    }
-    startOffset += edit.startCol - 1;
-
-    let endOffset = 0;
-    for (let i = 0; i < edit.endLine - 1 && i < lines.length; i++) {
-      endOffset += (lines[i]?.length ?? 0) + 1;
-    }
-    endOffset += edit.endCol - 1;
-
+    const startOffset = (lineStarts[edit.startLine] ?? 0) + edit.startCol - 1;
+    const endOffset = (lineStarts[edit.endLine] ?? 0) + edit.endCol - 1;
     result = result.slice(0, startOffset) + edit.newText + result.slice(endOffset);
   }
 

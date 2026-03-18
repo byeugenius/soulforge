@@ -1276,7 +1276,8 @@ export function useChat({
         }
       });
 
-      const pendingSteeringMsgs: ChatMessage[] = [];
+      // Steering messages are now flushed immediately in drainSteering —
+      // no longer accumulated and appended at the end.
 
       try {
         const taskType = detectTaskType(input);
@@ -1333,25 +1334,78 @@ export function useChat({
         await contextManager.ensureGitContext();
 
         steeringAbortedRef.current = false;
+        /**
+         * flushBeforeSteering — commit accumulated assistant content + steering
+         * messages into the messages list so the UI shows:
+         *   <previous assistant response> → <steering> → <new streaming>
+         * instead of lumping steering before the final combined response.
+         */
+        const flushBeforeSteering = (steeringMsgs: ChatMessage[]) => {
+          if (fullText.trim().length === 0 && completedCalls.length === 0) {
+            // Nothing accumulated yet — just queue steering messages into messages
+            setMessages((prev) => [...prev, ...steeringMsgs]);
+          } else {
+            // Commit current assistant progress + steering messages
+            const flushedAssistant: ChatMessage = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: fullText,
+              timestamp: Date.now(),
+              toolCalls: completedCalls.length > 0 ? [...completedCalls] : undefined,
+              segments: finalSegments.length > 0 ? [...finalSegments] : undefined,
+            };
+            setMessages((prev) => [...prev, flushedAssistant, ...steeringMsgs]);
+          }
+
+          // Reset accumulators so subsequent steps start fresh
+          fullText = "";
+          completedCalls.length = 0;
+          finalSegments.length = 0;
+
+          // Clear streaming display buffers
+          streamSegmentsBuffer.current = [];
+          liveToolCallsBuffer.current = [];
+          lastFlushedSegments.current = [];
+          lastFlushedToolCalls.current = [];
+          lastFlushedStreamingChars.current = 0;
+          streamingCharsRef.current = 0;
+          toolCharsRef.current = 0;
+          segmentsDirty.current = false;
+          toolCallsDirty.current = false;
+          setStreamSegments([]);
+          setLiveToolCalls([]);
+        };
+
         const drainSteering = (): string | null => {
           if (steeringAbortedRef.current) return null;
           const queue = messageQueueRef.current;
           if (queue.length === 0) return null;
-          const [next, ...rest] = queue;
-          messageQueueRef.current = rest;
-          setMessageQueue(rest);
-          const content = next?.content ?? null;
-          if (content) {
-            pendingSteeringMsgs.push({
-              id: crypto.randomUUID(),
-              role: "user" as const,
-              content,
-              timestamp: Date.now(),
-              showInChat: true,
-              isSteering: true,
-            });
+          // Drain ALL queued steering messages at once
+          const drained: ChatMessage[] = [];
+          const texts: string[] = [];
+          for (const item of queue) {
+            const content = item?.content;
+            if (content) {
+              drained.push({
+                id: crypto.randomUUID(),
+                role: "user" as const,
+                content,
+                timestamp: Date.now(),
+                showInChat: true,
+                isSteering: true,
+              });
+              texts.push(content);
+            }
           }
-          return content;
+          messageQueueRef.current = [];
+          setMessageQueue([]);
+
+          if (drained.length > 0) {
+            // Flush current progress + steering into messages
+            flushBeforeSteering(drained);
+          }
+
+          return texts.length > 0 ? texts.join("\n\n") : null;
         };
 
         const agent = createForgeAgent({
@@ -1820,7 +1874,7 @@ export function useChat({
         }));
 
         setMessages((prev) => {
-          const allMsgs = [...prev, ...pendingSteeringMsgs, assistantMsg, ...errorMsgs];
+          const allMsgs = [...prev, assistantMsg, ...errorMsgs];
           queueMicrotask(() => {
             const snapshot = getWorkspaceSnapshot?.();
             if (snapshot) {
@@ -1933,7 +1987,6 @@ export function useChat({
         if (!hasPlanPostAction) {
           setMessages((prev) => [
             ...prev,
-            ...pendingSteeringMsgs,
             {
               id: crypto.randomUUID(),
               role: "system",

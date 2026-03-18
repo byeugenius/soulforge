@@ -6,9 +6,10 @@ Type messages while the agent is running. They get queued and injected into the 
 
 1. User types a message while the agent is busy (loading indicator visible)
 2. Message is queued (up to 5 messages, shown in UI with "queued" label)
-3. At the next `prepareStep` call (between agent steps), `drainSteering()` pops the first queued message
-4. Message is injected as `[user steering] <content>` into the conversation
-5. Agent sees the steering and adjusts its approach
+3. At the next `prepareStep` call (between agent steps), `drainSteering()` drains all queued messages at once
+4. Current assistant progress is committed as a completed message, steering messages are appended, and accumulators are reset
+5. Combined steering text is injected as a user message into the AI conversation
+6. Agent sees the steering and adjusts its approach
 
 ## Architecture
 
@@ -20,11 +21,17 @@ User types while loading
   messageQueueRef (ref)
         │
         ▼  prepareStep calls drainSteering()
-  Injected into messages as:
-  { role: "user", content: "[user steering] fix the types too" }
+  flushBeforeSteering():
+    - Commits current assistant progress to messages
+    - Appends steering messages after it
+    - Resets accumulators (fullText, segments, tool calls)
         │
         ▼
-  Agent processes in next step
+  Combined text injected into AI messages as:
+  { role: "user", content: "IMPORTANT — ..." }
+        │
+        ▼
+  Agent processes in next step (fresh accumulators)
 ```
 
 ## Safety
