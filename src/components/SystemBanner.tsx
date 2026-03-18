@@ -124,10 +124,8 @@ export function SystemBanner({ messages, expanded = false }: Props) {
     return () => clearTimeout(timer);
   }, [phase, fadeStep]);
 
-  if (phase === "hidden" || !current) return null;
-
-  const err = isError(current.content);
-  const allLines = current.content.split("\n");
+  const err = current ? isError(current.content) : false;
+  const allLines = current ? current.content.split("\n") : [""];
   const firstLine = allLines[0] ?? "";
   const extraLines = allLines.slice(1);
   const multiLine = extraLines.length > 0;
@@ -151,20 +149,24 @@ export function SystemBanner({ messages, expanded = false }: Props) {
     };
   }, [fadeFactor, bgColor, accentColor, textColor, iconColor]);
 
-  const displayText = phase === "enter" ? firstLine.slice(0, revealCount) : firstLine;
-  const showCursor = phase === "enter";
-
-  const icon = err ? "✗" : "⚡";
+  const bannerIcon = err ? "✗" : "⚡";
 
   const time = useMemo(
     () =>
-      new Date(current.timestamp).toLocaleTimeString("en-US", {
-        hour12: true,
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-    [current.timestamp],
+      current
+        ? new Date(current.timestamp).toLocaleTimeString("en-US", {
+            hour12: true,
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : "",
+    [current?.timestamp],
   );
+
+  if (phase === "hidden" || !current) return null;
+
+  const displayText = phase === "enter" ? firstLine.slice(0, revealCount) : firstLine;
+  const showCursor = phase === "enter";
 
   const showExpanded = expanded && multiLine && phase !== "enter";
   const bannerHeight = showExpanded ? 1 + extraLines.length : 1;
@@ -177,7 +179,7 @@ export function SystemBanner({ messages, expanded = false }: Props) {
         </box>
         <box position="absolute">
           <text bg={fBg}>
-            <span fg={fIcon}> {icon} </span>
+            <span fg={fIcon}> {bannerIcon}</span>
             <span fg={fAccent} attributes={TextAttributes.BOLD}>
               {err ? "Error" : "System"}
             </span>
