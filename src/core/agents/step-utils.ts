@@ -3,6 +3,7 @@ import type { PrepareStepFunction, StopCondition } from "ai";
 import { EPHEMERAL_CACHE } from "../llm/provider-options.js";
 import { renderTaskList } from "../tools/task-list.js";
 import type { AgentBus } from "./agent-bus.js";
+import type { RecallStore } from "./recall-store.js";
 import { emitSubagentStep } from "./subagent-events.js";
 
 export type SymbolLookup = (
@@ -17,6 +18,7 @@ export interface PrepareStepOptions {
   allTools: Record<string, unknown>;
   symbolLookup?: SymbolLookup;
   contextWindow?: number;
+  recallStore?: RecallStore;
 }
 
 // Context-proportional thresholds (fraction of model's context window).
@@ -67,6 +69,7 @@ function extractText(output: unknown): string {
 interface SummaryContext {
   symbolHint?: string;
   args?: Record<string, unknown>;
+  recallId?: string;
 }
 
 function buildSummary(toolName: string, text: string, ctx?: SummaryContext): string | null {
@@ -76,21 +79,22 @@ function buildSummary(toolName: string, text: string, ctx?: SummaryContext): str
   if (charCount <= 200) return null;
 
   const args = ctx?.args;
+  const tag = ctx?.recallId ? `[pruned:${ctx.recallId}]` : "[pruned]";
 
   if (toolName === "read_file" || toolName === "read_code") {
-    const parts = [`[pruned] ${String(lineCount)} lines`];
+    const parts = [`${tag} ${String(lineCount)} lines`];
     if (ctx?.symbolHint) parts.push(ctx.symbolHint);
     return parts.join(" — ");
   }
   if (toolName === "grep" || toolName === "soul_grep") {
     const matchCount = (text.match(/\n/g) || []).length;
     const pattern = typeof args?.pattern === "string" ? ` for "${args.pattern.slice(0, 40)}"` : "";
-    return `[pruned] ${String(matchCount)} matches${pattern}`;
+    return `${tag} ${String(matchCount)} matches${pattern}`;
   }
   if (toolName === "glob") {
     const fileCount = text.trim().split("\n").length;
     const pattern = typeof args?.pattern === "string" ? ` for ${args.pattern}` : "";
-    return `[pruned] ${String(fileCount)} files${pattern}`;
+    return `${tag} ${String(fileCount)} files${pattern}`;
   }
   if (toolName === "shell") {
     const cmd = typeof args?.command === "string" ? args.command.slice(0, 60) : "";
@@ -100,10 +104,10 @@ function buildSummary(toolName: string, text: string, ctx?: SummaryContext): str
       : text.includes("error") || text.includes("Error")
         ? " — had errors"
         : " — ok";
-    return `[pruned] \`${cmd}\` → ${String(lineCount)} lines${exitHint}`;
+    return `${tag} \`${cmd}\` → ${String(lineCount)} lines${exitHint}`;
   }
   if (toolName === "dispatch") {
-    const parts: string[] = ["[pruned] dispatch completed"];
+    const parts: string[] = [`${tag} dispatch completed`];
     const headingMatch = text.match(/^## (.+)/m);
     if (headingMatch?.[1]) parts.push(headingMatch[1].trim());
     const agentMatch = text.match(/\*\*(\d+\/\d+)\*\* agents/);
@@ -124,41 +128,41 @@ function buildSummary(toolName: string, text: string, ctx?: SummaryContext): str
   }
   if (toolName === "list_dir") {
     const entryMatch = text.match(/(\d+) entries/);
-    return `[pruned] ${entryMatch ? entryMatch[1] : String(lineCount)} entries`;
+    return `${tag} ${entryMatch ? entryMatch[1] : String(lineCount)} entries`;
   }
   if (toolName === "soul_find") {
     const matchCount = (text.match(/\n/g) || []).length;
     const query = typeof args?.query === "string" ? ` for "${args.query.slice(0, 40)}"` : "";
-    return `[pruned] ${String(matchCount)} results${query}`;
+    return `${tag} ${String(matchCount)} results${query}`;
   }
   if (toolName === "soul_analyze" || toolName === "soul_impact") {
     const action = typeof args?.action === "string" ? `${args.action}: ` : "";
     const firstLine = text.split("\n")[0] ?? "";
-    return `[pruned] ${action}${firstLine.slice(0, 120)}`;
+    return `${tag} ${action}${firstLine.slice(0, 120)}`;
   }
   if (toolName === "memory") {
     const count = text.trim().split("\n").length;
-    return `[pruned] ${String(count)} memories`;
+    return `${tag} ${String(count)} memories`;
   }
   if (toolName === "plan") {
     const titleMatch = text.match(/^# (.+)/m);
     const stepCount = (text.match(/^### /gm) || []).length;
     const title = titleMatch ? titleMatch[1]?.slice(0, 60) : "plan";
-    return `[pruned] plan "${title}" — ${String(stepCount)} steps`;
+    return `${tag} plan "${title}" — ${String(stepCount)} steps`;
   }
   if (toolName === "update_plan_step") {
     const firstLine = text.split("\n")[0] ?? "";
-    return `[pruned] ${firstLine.slice(0, 80)}`;
+    return `${tag} ${firstLine.slice(0, 80)}`;
   }
   if (toolName === "ask_user") {
     const firstLine = text.split("\n")[0] ?? "";
-    return `[pruned] user: ${firstLine.slice(0, 80)}`;
+    return `${tag} user: ${firstLine.slice(0, 80)}`;
   }
   if (toolName === "git") {
     const firstLine = text.split("\n")[0] ?? "";
-    return `[pruned] ${firstLine.slice(0, 100)}`;
+    return `${tag} ${firstLine.slice(0, 100)}`;
   }
-  return `[pruned] ${String(lineCount)} lines, ${String(charCount)} chars`;
+  return `${tag} ${String(lineCount)} lines, ${String(charCount)} chars`;
 }
 
 function buildToolCallPathMap(messages: ModelMessage[]): Map<string, string> {
@@ -330,11 +334,18 @@ function stripOldEditArgs(messages: ModelMessage[], cutoff: number): ModelMessag
 }
 
 // ─── Age-based tool result summarization (step 3+) ───
+// NOTE: This function is NOT called from any production code path.
+// It was previously wired into buildPrepareStep but was removed.
+// The main agent relies on v1/v2 compaction for context management.
+// Subagents use semanticPrune + stripOldEditArgs instead (above).
+// ReadTracker (read-tracker.ts) handles re-read prevention at tool execution time.
+// Exported for tests and potential future reactivation.
 
 function compactOldToolResults(
   messages: ModelMessage[],
   symbolLookup?: SymbolLookup,
   pathMap?: Map<string, string>,
+  recallStore?: RecallStore,
 ): ModelMessage[] {
   if (messages.length <= KEEP_RECENT_MESSAGES) return messages;
 
@@ -387,9 +398,16 @@ function compactOldToolResults(
         }
       }
 
+      let recallId: string | undefined;
+      if (recallStore) {
+        const toolArgs = argsMap.get(part.toolCallId) ?? {};
+        recallId = recallStore.record(part.toolCallId, part.toolName, toolArgs, text, idx);
+      }
+
       const summary = buildSummary(part.toolName, text, {
         symbolHint,
         args: argsMap.get(part.toolCallId),
+        recallId,
       });
       if (!summary) return part;
       changed = true;

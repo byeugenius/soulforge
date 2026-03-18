@@ -49,6 +49,8 @@ interface SubagentModels {
   repoMap?: RepoMap;
   sharedCacheRef?: SharedCacheRef;
   agentFeatures?: AgentFeatures;
+  skills?: Array<{ name: string; content: string }>;
+  onDispatchReads?: (reads: FileReadRecord[]) => void;
 }
 
 function formatToolArgs(toolCall: { toolName: string; input?: unknown }): string {
@@ -702,6 +704,24 @@ const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2000;
 const MAX_CONCURRENT_AGENTS = 3;
 
+const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnFormat, string> = {
+  summary:
+    "Return concise findings and reasoning. No code blocks or raw file content. " +
+    "Focus on what you found, what it means, and what the implications are.",
+  code:
+    "Return pasteable code snippets with file paths and line numbers. " +
+    "Every finding MUST include the actual code. The parent agent is BLIND to your tool results.",
+  files:
+    "Return file paths only, each with a one-line description of what was found or changed. " +
+    "No code blocks, no detailed analysis. Just the list.",
+  full:
+    "Return complete analysis: reasoning, code snippets, file paths, line numbers, and all details. " +
+    "Paste full function bodies and type definitions in keyFindings — the parent cannot see your tool results.",
+  verdict:
+    "Return a clear yes/no answer with a brief justification (1-3 sentences). " +
+    "No code blocks unless they directly support the verdict.",
+};
+
 function isRetryable(error: unknown): boolean {
   if (error instanceof DependencyFailedError) return false;
   const msg = error instanceof Error ? error.message : String(error);
@@ -910,6 +930,10 @@ async function runAgentTask(
     enrichedPrompt += `\n\n--- Peer findings so far ---\n${peerFindings}`;
   }
 
+  if (task.returnFormat) {
+    enrichedPrompt += `\n\n--- Return format: ${task.returnFormat} ---\n${RETURN_FORMAT_INSTRUCTIONS[task.returnFormat]}`;
+  }
+
   let lastError: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (abortSignal?.aborted) break;
@@ -1094,6 +1118,47 @@ async function runAgentTask(
   };
 }
 
+const SKILL_TOKEN_RE = /[a-z0-9]+/gi;
+const SKILL_MATCH_THRESHOLD = 2;
+const SKILL_NAME_WEIGHT = 3;
+const SKILL_PREVIEW_CHARS = 200;
+const SKILL_MAX_INJECT_CHARS = 2000;
+
+function tokenize(text: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const m of text.matchAll(SKILL_TOKEN_RE)) {
+    const t = m[0].toLowerCase();
+    if (t.length >= 2) tokens.add(t);
+  }
+  return tokens;
+}
+
+function matchSkillsToTask(
+  skills: Array<{ name: string; content: string }>,
+  taskDescription: string,
+): Array<{ name: string; content: string }> {
+  if (skills.length === 0) return [];
+  const taskTokens = tokenize(taskDescription);
+  if (taskTokens.size === 0) return [];
+
+  const scored: Array<{ name: string; content: string; score: number }> = [];
+  for (const skill of skills) {
+    const nameTokens = tokenize(skill.name);
+    const contentTokens = tokenize(skill.content.slice(0, SKILL_PREVIEW_CHARS));
+    let score = 0;
+    for (const t of taskTokens) {
+      if (nameTokens.has(t)) score += SKILL_NAME_WEIGHT;
+      if (contentTokens.has(t)) score += 1;
+    }
+    if (score >= SKILL_MATCH_THRESHOLD) {
+      scored.push({ name: skill.name, content: skill.content, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(({ name, content }) => ({ name, content }));
+}
+
 export function buildSubagentTools(models: SubagentModels) {
   const cacheRef: SharedCacheRef = models.sharedCacheRef ?? {
     current: undefined,
@@ -1133,6 +1198,16 @@ export function buildSubagentTools(models: SubagentModels) {
                 .default("explore")
                 .describe(
                   "explore = targeted extraction, investigate = broad cross-cutting analysis (scans with soul_grep/soul_analyze/grep), code = edits",
+                ),
+              returnFormat: z
+                .enum(["summary", "code", "files", "full", "verdict"])
+                .describe(
+                  "What you need back from this agent. " +
+                    "summary: concise findings + reasoning, no code blocks. " +
+                    "code: pasteable code snippets with file paths and line numbers. " +
+                    "files: file paths only with one-line descriptions of what was found/changed. " +
+                    "full: complete analysis with code, reasoning, and all details. " +
+                    "verdict: yes/no answer with brief justification (for validation tasks).",
                 ),
               id: z.string().optional().describe("Unique ID (auto-generated if omitted)"),
               taskId: z
@@ -1514,10 +1589,23 @@ export function buildSubagentTools(models: SubagentModels) {
               });
               fileHint = `\nTarget files:\n${enriched.join("\n")}`;
             }
+            let skillHint = "";
+            if (models.skills && models.skills.length > 0) {
+              const matched = matchSkillsToTask(models.skills, t.task);
+              for (const s of matched) {
+                const truncated =
+                  s.content.length > SKILL_MAX_INJECT_CHARS
+                    ? `${s.content.slice(0, SKILL_MAX_INJECT_CHARS)}\n[... truncated]`
+                    : s.content;
+                skillHint += `\n\n--- Relevant skill: ${s.name} ---\n${truncated}`;
+              }
+            }
+
             return {
               agentId: t.id ?? `agent-${String(i + 1)}`,
               role: t.role,
-              task: `${t.task}${fileHint}`,
+              task: `${t.task}${fileHint}${skillHint}`,
+              returnFormat: t.returnFormat,
               dependsOn: t.dependsOn,
               taskId: t.taskId,
             };
@@ -1590,8 +1678,10 @@ export function buildSubagentTools(models: SubagentModels) {
             );
 
             const postParts = [desloppifyResult, verifyResult].filter(Boolean);
+            const reads = bus.getFileReadRecords(task.agentId);
+            models.onDispatchReads?.(reads);
             return {
-              reads: bus.getFileReadRecords(task.agentId),
+              reads,
               filesEdited: edited,
               output: postParts.length > 0 ? `${resultText}\n${postParts.join("\n")}` : resultText,
             } satisfies DispatchOutput;
@@ -1785,8 +1875,10 @@ export function buildSubagentTools(models: SubagentModels) {
               (editedPaths.length > 0 ? `, edited ${editedPaths.join(", ")}` : ""),
           );
 
+          const allReads = bus.getFileReadRecords();
+          models.onDispatchReads?.(allReads);
           return {
-            reads: bus.getFileReadRecords(),
+            reads: allReads,
             filesEdited: editedPaths,
             output: sections.join("\n"),
           } satisfies DispatchOutput;

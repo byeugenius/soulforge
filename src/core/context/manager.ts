@@ -574,6 +574,10 @@ export class ContextManager {
     return [...this.skills.keys()];
   }
 
+  getActiveSkillEntries(): Array<{ name: string; content: string }> {
+    return [...this.skills.entries()].map(([name, content]) => ({ name, content }));
+  }
+
   /** Get a breakdown of what's in the context and how much space each section uses */
   getContextBreakdown(): { section: string; chars: number; active: boolean }[] {
     const sections: { section: string; chars: number; active: boolean }[] = [];

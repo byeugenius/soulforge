@@ -10,6 +10,7 @@ import type {
 } from "../../types/index.js";
 import type { ContextManager } from "../context/manager.js";
 import { EPHEMERAL_CACHE, isAnthropicNative } from "../llm/provider-options.js";
+import { onFileEdited } from "../tools/file-events.js";
 import {
   buildInteractiveTools,
   buildTools,
@@ -19,6 +20,8 @@ import {
 import { readFileTool } from "../tools/read-file.js";
 import { renderTaskList } from "../tools/task-list.js";
 import { normalizePath } from "./agent-bus.js";
+import type { ReadTracker } from "./read-tracker.js";
+import type { RecallStore } from "./recall-store.js";
 import { repairToolCall, sanitizeMessages } from "./stream-options.js";
 import { buildSubagentTools, type SharedCacheRef } from "./subagent-tools.js";
 
@@ -100,6 +103,8 @@ function countReadsAfterLastDispatch(messages: ModelMessage[]): number {
   return count;
 }
 
+// No step-level tool result pruning — main agent relies on v1/v2 compaction for context
+// management and ReadTracker for re-read prevention at tool execution time.
 function buildForgePrepareStep(
   isPlanMode: boolean,
   drainSteering?: () => string | null,
@@ -274,6 +279,8 @@ interface ForgeAgentOptions {
   cwd?: string;
   sessionId?: string;
   sharedCacheRef?: SharedCacheRef;
+  recallStore?: RecallStore;
+  readTracker?: ReadTracker;
   agentFeatures?: AgentFeatures;
   planExecution?: boolean;
   drainSteering?: () => string | null;
@@ -308,12 +315,15 @@ export function createForgeAgent({
   cwd,
   sessionId,
   sharedCacheRef,
+  recallStore,
+  readTracker,
   agentFeatures,
   planExecution,
   drainSteering,
 }: ForgeAgentOptions) {
   const isRestricted = RESTRICTED_MODES.has(forgeMode);
   const repoMap = contextManager.isRepoMapReady() ? contextManager.getRepoMap() : undefined;
+  const skills = contextManager.getActiveSkillEntries();
 
   const modelId =
     typeof model === "object" && model !== null && "modelId" in model
@@ -325,10 +335,16 @@ export function createForgeAgent({
     codeExecution: canUseCodeExecution,
     webSearchModel,
     repoMap,
+    recallStore,
     onApproveFetchPage,
     onApproveOutsideCwd,
     onApproveDestructive,
   });
+
+  const dispatchReadsCb = readTracker
+    ? (reads: import("./agent-bus.js").FileReadRecord[]) =>
+        readTracker.registerSubagentReads(reads, 0)
+    : undefined;
 
   const subagentTools = isRestricted
     ? {
@@ -344,6 +360,8 @@ export function createForgeAgent({
           repoMap,
           sharedCacheRef,
           agentFeatures,
+          skills,
+          onDispatchReads: dispatchReadsCb,
         }).dispatch,
       }
     : buildSubagentTools({
@@ -361,6 +379,8 @@ export function createForgeAgent({
         repoMap,
         sharedCacheRef,
         agentFeatures,
+        skills,
+        onDispatchReads: dispatchReadsCb,
       });
 
   const cachedReadFile =
@@ -374,6 +394,11 @@ export function createForgeAgent({
     ...subagentTools,
     ...(interactive ? buildInteractiveTools(interactive, { cwd, sessionId }) : {}),
   };
+
+  if (readTracker) {
+    wrapToolsWithReadTracker(allTools, readTracker);
+    onFileEdited((absPath) => readTracker.invalidateFile(absPath));
+  }
 
   const allToolNames = Object.keys(allTools) as (keyof typeof allTools)[];
   const restrictedSet = new Set(RESTRICTED_TOOL_NAMES);
@@ -408,6 +433,41 @@ export function createForgeAgent({
     ...(providerOptions && Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
     ...(headers ? { headers } : {}),
   });
+}
+
+const READ_TRACKER_CHECK_TOOLS = new Set([
+  "read_file",
+  "read_code",
+  "grep",
+  "soul_grep",
+  "glob",
+  "soul_find",
+  "navigate",
+  "soul_analyze",
+  "soul_impact",
+]);
+
+function wrapToolsWithReadTracker(tools: Record<string, unknown>, tracker: ReadTracker): void {
+  const stepCounter = { value: 0 };
+
+  for (const [name, t] of Object.entries(tools)) {
+    if (!READ_TRACKER_CHECK_TOOLS.has(name)) continue;
+    // biome-ignore lint/suspicious/noExplicitAny: AI SDK tool types are opaque; wrapping execute requires runtime duck-typing
+    const aiTool = t as { execute?: (...a: any[]) => any };
+    if (!aiTool?.execute) continue;
+
+    const origExecute = aiTool.execute;
+    // biome-ignore lint/suspicious/noExplicitAny: wrapping opaque SDK tool execute
+    aiTool.execute = async (...executeArgs: any[]) => {
+      stepCounter.value++;
+      const args = (executeArgs[0] ?? {}) as Record<string, unknown>;
+      const block = tracker.check(name, args, stepCounter.value);
+      if (block) return { success: true, output: block };
+      const result = await origExecute(...executeArgs);
+      tracker.record(name, args, stepCounter.value, `s${String(stepCounter.value)}`);
+      return result;
+    };
+  }
 }
 
 function wrapReadFileWithDispatchCache(

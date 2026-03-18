@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamSegment } from "../components/StreamSegmentList.js";
 import type { LiveToolCall } from "../components/ToolCallDisplay.js";
 import { createForgeAgent } from "../core/agents/index.js";
+import { ReadTracker } from "../core/agents/read-tracker.js";
+import { RecallStore } from "../core/agents/recall-store.js";
 import { getSmoothStreamOptions } from "../core/agents/stream-options.js";
 import { onAgentStats, onMultiAgentEvent } from "../core/agents/subagent-events.js";
 import type { SharedCacheRef } from "../core/agents/subagent-tools.js";
@@ -450,6 +452,9 @@ export function useChat({
     })(),
   );
 
+  const recallStoreRef = useRef(new RecallStore());
+  const readTrackerRef = useRef(new ReadTracker());
+
   useEffect(() => {
     return onFileEdited((absPath, content) => sharedCacheRef.current.updateFile(absPath, content));
   }, []);
@@ -875,6 +880,8 @@ export function useChat({
 
         const newMessages = [summaryMsg, ackMsg, ...recentMessages];
         setCoreMessages(newMessages);
+        recallStoreRef.current.clear();
+        readTrackerRef.current.clear();
 
         const trackedFiles = contextManager.getTrackedFiles();
         contextManager.resetConversationTracking();
@@ -1452,6 +1459,8 @@ export function useChat({
           cwd,
           sessionId: sessionIdRef.current,
           sharedCacheRef: sharedCacheRef.current,
+          recallStore: recallStoreRef.current,
+          readTracker: readTrackerRef.current,
           agentFeatures: effectiveConfig.agentFeatures,
           planExecution: planExecutionRef.current,
           drainSteering,
@@ -1488,6 +1497,8 @@ export function useChat({
                           codeExecution: effectiveConfig.codeExecution,
                           cwd,
                           sessionId: sessionIdRef.current,
+                          recallStore: recallStoreRef.current,
+                          readTracker: readTrackerRef.current,
                           agentFeatures: effectiveConfig.agentFeatures,
                           planExecution: planExecutionRef.current,
                         });
