@@ -2235,30 +2235,45 @@ export class RepoMap {
       }
 
       // Expand export * refs: copy exported symbols from target to re-exporting file
-      const starRefs = this.db
-        .query<{ file_id: number; source_file_id: number }, []>(
-          "SELECT file_id, source_file_id FROM refs WHERE name = '*' AND source_file_id IS NOT NULL",
-        )
-        .all();
-      for (const star of starRefs) {
-        const targetSymbols = this.db
-          .query<{ name: string; kind: string }, [number]>(
-            "SELECT name, kind FROM symbols WHERE file_id = ? AND is_exported = 1",
+      // Multi-pass: handles deep chains (A→B→C) and prevents circular duplication
+      const expanded = new Set<string>();
+      for (let pass = 0; pass < 10; pass++) {
+        const starRefs = this.db
+          .query<{ file_id: number; source_file_id: number }, []>(
+            "SELECT file_id, source_file_id FROM refs WHERE name = '*' AND source_file_id IS NOT NULL",
           )
-          .all(star.source_file_id);
-        for (const sym of targetSymbols) {
-          // Add the symbol as a re-export of the barrel file
-          const existing = this.db
-            .query<{ id: number }, [number, string]>(
-              "SELECT id FROM symbols WHERE file_id = ? AND name = ?",
+          .all();
+        let changed = false;
+        for (const star of starRefs) {
+          const key = `${String(star.file_id)}:${String(star.source_file_id)}`;
+          if (expanded.has(key)) continue;
+          expanded.add(key);
+          const targetSymbols = this.db
+            .query<{ name: string; kind: string }, [number]>(
+              "SELECT name, kind FROM symbols WHERE file_id = ? AND is_exported = 1",
             )
-            .get(star.file_id, sym.name);
-          if (!existing) {
-            insertSymbol.run(star.file_id, sym.name, sym.kind);
+            .all(star.source_file_id);
+          for (const sym of targetSymbols) {
+            const existing = this.db
+              .query<{ id: number }, [number, string]>(
+                "SELECT id FROM symbols WHERE file_id = ? AND name = ?",
+              )
+              .get(star.file_id, sym.name);
+            if (!existing) {
+              insertSymbol.run(star.file_id, sym.name, sym.kind);
+              changed = true;
+            }
+            const existingRef = this.db
+              .query<{ rowid: number }, [number, string, number]>(
+                "SELECT rowid FROM refs WHERE file_id = ? AND name = ? AND source_file_id = ?",
+              )
+              .get(star.file_id, sym.name, star.source_file_id);
+            if (!existingRef) {
+              insertRef.run(star.file_id, sym.name, star.source_file_id, null);
+            }
           }
-          // Add a ref in the barrel file pointing to the target
-          insertRef.run(star.file_id, sym.name, star.source_file_id, null);
         }
+        if (!changed) break;
       }
     });
     tx();
@@ -3636,7 +3651,8 @@ export class RepoMap {
         const content = raw
           .replace(/\/\/.*$/gm, "")
           .replace(/\/\*[\s\S]*?\*\//g, "")
-          .replace(/(["'`])(?:(?!\1|\\).|\\.)*\1/g, "");
+          .replace(/(["'`])(?:(?!\1|\\).|\\.)*\1/g, "")
+          .replace(/^\s*export\s+(type\s+)?\{[^}]*\}/gm, "");
         const re = new RegExp(`\\b${escaped(row.name)}\\b`, "g");
         const matches = content.match(re);
         usedInternally = (matches?.length ?? 0) > 1;
@@ -4380,15 +4396,13 @@ export class RepoMap {
     this.db.run("DROP TRIGGER IF EXISTS symbols_ai");
     this.db.run("DROP TRIGGER IF EXISTS symbols_ad");
     this.db.run("DROP TABLE IF EXISTS symbols_fts");
-    this.db.run(`
-      CREATE VIRTUAL TABLE symbols_fts USING fts5(name, kind);
-      CREATE TRIGGER symbols_ai AFTER INSERT ON symbols BEGIN
-        INSERT INTO symbols_fts(rowid, name, kind) VALUES (new.id, new.name, new.kind);
-      END;
-      CREATE TRIGGER symbols_ad AFTER DELETE ON symbols BEGIN
-        DELETE FROM symbols_fts WHERE rowid = old.id;
-      END;
-    `);
+    this.db.run("CREATE VIRTUAL TABLE symbols_fts USING fts5(name, kind)");
+    this.db.run(`CREATE TRIGGER symbols_ai AFTER INSERT ON symbols BEGIN
+      INSERT INTO symbols_fts(rowid, name, kind) VALUES (new.id, new.name, new.kind);
+    END`);
+    this.db.run(`CREATE TRIGGER symbols_ad AFTER DELETE ON symbols BEGIN
+      DELETE FROM symbols_fts WHERE rowid = old.id;
+    END`);
     this.db.run("INSERT INTO symbols_fts(rowid, name, kind) SELECT id, name, kind FROM symbols");
   }
 

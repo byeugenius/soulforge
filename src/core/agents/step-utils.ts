@@ -468,7 +468,8 @@ export function buildPrepareStep({
     }
 
     if (stepNumber > 0 && messages.length >= 2) {
-      const msgs = result.messages ?? messages;
+      if (!result.messages) result.messages = [...messages];
+      const msgs = result.messages;
       for (const msg of msgs) {
         if (msg.providerOptions?.anthropic) {
           const { anthropic: _, ...rest } = msg.providerOptions;
@@ -565,7 +566,14 @@ export function buildSymbolLookup(repoMap?: {
   return (absPath: string) => {
     if (!repoMap.isReady) return [];
     const cwd = repoMap.getCwd();
-    const rel = absPath.startsWith(cwd) ? absPath.slice(cwd.length + 1) : absPath;
+    let rel: string;
+    if (absPath.startsWith(`${cwd}/`)) {
+      rel = absPath.slice(cwd.length + 1);
+    } else if (absPath.startsWith("./")) {
+      rel = absPath.slice(2);
+    } else {
+      rel = absPath;
+    }
     return repoMap.getFileSymbols(rel);
   };
 }
