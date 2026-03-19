@@ -57,6 +57,16 @@ export function unusedFunction(): void {
 `,
   );
 
+  // A file that uses parseDate without importing it (unique export → should resolve)
+  write(
+    "src/consumer.ts",
+    `export function handleInput(s: string): void {
+  const d = parseDate(s);
+  console.log(d);
+}
+`,
+  );
+
   // A JSON file — should NOT produce identifier refs
   write(
     "package.json",
@@ -111,11 +121,26 @@ describe("identifier ref resolution", () => {
     expect(appCaller!.callerName).toBe("renderTimestamp");
   });
 
-  it("should NOT link unrelated.ts formatDate to utils.ts (no import edge)", () => {
-    // unrelated.ts has a local formatDate but does NOT import from utils.ts
+  it("should NOT link unrelated.ts formatDate to utils.ts (local symbol shadow)", () => {
+    // unrelated.ts has a local formatDate — local shadow prevents false resolution
     const callers = repoMap.getCallers("formatDate", "src/utils.ts");
     const unrelatedCaller = callers.find((c) => c.callerPath === "src/unrelated.ts");
     expect(unrelatedCaller).toBeUndefined();
+  });
+
+  it("should resolve unique export ref without import edge", () => {
+    // consumer.ts uses parseDate (unique export from utils.ts) without importing it
+    // The identifier ref should still be resolved via unique-export matching
+    const db = (repoMap as any).db;
+    const row = db
+      .query(
+        `SELECT r.source_file_id FROM refs r
+         JOIN files f ON f.id = r.file_id
+         WHERE f.path = 'src/consumer.ts' AND r.name = 'parseDate'`,
+      )
+      .get();
+    expect(row).toBeDefined();
+    expect(row.source_file_id).not.toBeNull();
   });
 });
 

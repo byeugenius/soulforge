@@ -1,6 +1,6 @@
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
-import { NoOutputGeneratedError, tool } from "ai";
+import { NoObjectGeneratedError, NoOutputGeneratedError, tool } from "ai";
 import { z } from "zod";
 import { logBackgroundError } from "../../stores/errors.js";
 import type { AgentFeatures } from "../../types/index.js";
@@ -997,10 +997,10 @@ async function runAgentTask(
           ...callbacks,
         });
       } catch (genErr: unknown) {
-        // Output schema can throw NoOutputGeneratedError if the model fails to
-        // produce valid structured JSON after the tool loop. In AI SDK v6, this
-        // error has NO .steps property (vercel/ai#13075), so we synthesize from
-        // bus data (files read, findings) as a fallback.
+        // Output.object() throws NoObjectGeneratedError when the model's final
+        // response can't be parsed into the Zod schema. ToolLoopAgent throws
+        // NoOutputGeneratedError when no output is produced at all. Both lack
+        // .steps in AI SDK v6 (vercel/ai#13075), so we synthesize from bus data.
         const errWithSteps = genErr as { steps?: unknown[]; text?: string; totalUsage?: unknown };
         if (errWithSteps.steps && Array.isArray(errWithSteps.steps)) {
           result = {
@@ -1013,17 +1013,38 @@ async function runAgentTask(
             task.agentId,
             `Output schema failed: ${genErr instanceof Error ? genErr.message : String(genErr)}`,
           );
-        } else if (NoOutputGeneratedError.isInstance(genErr)) {
+        } else if (
+          NoObjectGeneratedError.isInstance(genErr) ||
+          NoOutputGeneratedError.isInstance(genErr)
+        ) {
+          const errObj = genErr as {
+            text?: string;
+            cause?: unknown;
+            finishReason?: string;
+            usage?: { inputTokens?: number; outputTokens?: number };
+          };
           result = {
-            text: "",
+            text: errObj.text ?? "",
             output: undefined,
             steps: [],
             totalUsage: {
-              inputTokens: callbacks._acc.input,
-              outputTokens: callbacks._acc.output,
+              inputTokens: errObj.usage?.inputTokens ?? callbacks._acc.input,
+              outputTokens: errObj.usage?.outputTokens ?? callbacks._acc.output,
             },
           };
-          logBackgroundError(task.agentId, `Output schema failed (no steps): ${genErr.message}`);
+          const diagParts = [
+            `Output schema failed: ${genErr instanceof Error ? genErr.message : String(genErr)}`,
+          ];
+          if (errObj.finishReason) diagParts.push(`finishReason: ${errObj.finishReason}`);
+          if (errObj.cause)
+            diagParts.push(
+              `cause: ${errObj.cause instanceof Error ? errObj.cause.message : String(errObj.cause)}`,
+            );
+          if (errObj.text)
+            diagParts.push(
+              `text (${String(errObj.text.length)} chars): ${errObj.text.slice(0, 500)}`,
+            );
+          logBackgroundError(task.agentId, diagParts.join("\n"));
         } else {
           throw genErr;
         }
@@ -1075,6 +1096,13 @@ async function runAgentTask(
 
       if (!doneResult) {
         doneResult = synthesizeDoneFromResults(result, agentFindings, task);
+        // When steps are empty (NoObjectGeneratedError recovery), enrich with bus file reads
+        if (result.steps.length === 0) {
+          const busReads = bus.getFileReadRecords(task.agentId);
+          if (busReads.length > 0 && doneResult.filesExamined?.length === 0) {
+            doneResult.filesExamined = busReads.map((r) => r.path);
+          }
+        }
       }
 
       const resultText = formatDoneResult(doneResult);

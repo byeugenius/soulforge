@@ -12,7 +12,7 @@ const categorySchema = z
 export function createMemoryTool(manager: MemoryManager) {
   return tool({
     description:
-      "Persistent memory for facts worth remembering across sessions. NOT a scratchpad — only long-term knowledge (decisions, conventions, architecture facts). Never save session state or progress.",
+      "Persistent memory across sessions. Search to recall past decisions/conventions. Write ONLY when the user explicitly asks you to remember something — never proactively save.",
     inputSchema: z.object({
       action: z.enum(["write", "list", "search", "delete"]),
       scope: scopeOrBothSchema.optional().describe("Memory scope"),

@@ -175,7 +175,7 @@ export class MemoryManager {
     if (projectIdx.total === 0 && globalIdx.total === 0) return null;
 
     const parts = [
-      "You have persistent memory. Use memory(action: write) to save, memory(action: search) to find.",
+      "You have persistent memory. Use memory(action: search) to recall. Only write when the USER explicitly asks you to remember something.",
       `Write scope: ${this._scopeConfig.writeScope} | Read scope: ${this._scopeConfig.readScope}`,
       "",
     ];

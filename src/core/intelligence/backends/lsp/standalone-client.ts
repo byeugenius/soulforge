@@ -449,6 +449,11 @@ export class StandaloneLspClient {
     return this.initialized && this.process !== null;
   }
 
+  /** The language this server is configured for */
+  get language(): string {
+    return this.config.language;
+  }
+
   /** The server command name (e.g. "typescript-language-server") */
   get serverCommand(): string {
     return this.config.command;

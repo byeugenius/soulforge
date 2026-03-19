@@ -41,7 +41,7 @@ import {
   lspSymbolKindToSymbolKind,
   uriToFilePath,
 } from "./protocol.js";
-import { findServerForLanguage } from "./server-registry.js";
+import { findServersForLanguage } from "./server-registry.js";
 import { StandaloneLspClient } from "./standalone-client.js";
 
 const SUPPORTED_LANGUAGES: Set<Language> = new Set([
@@ -69,10 +69,12 @@ export class LspBackend implements IntelligenceBackend {
   readonly tier = 1;
 
   private cwd = "";
-  /** language:cwd → client */
+  /** command:projectRoot → client */
   private standaloneClients = new Map<string, StandaloneLspClient>();
-  /** Languages where no server was found — skip retrying */
-  private failedLanguages = new Set<string>();
+  /** language:projectRoot → client[] (index for fast lookup) */
+  private languageClients = new Map<string, StandaloneLspClient[]>();
+  /** Servers that failed to start — skip retrying (keyed by command:projectRoot) */
+  private failedServers = new Set<string>();
 
   async initialize(cwd: string): Promise<void> {
     this.cwd = cwd;
@@ -638,25 +640,38 @@ export class LspBackend implements IntelligenceBackend {
       return null;
     }
 
-    const client = await this.getStandaloneClient(file);
-    if (!client) return null;
-    try {
-      const diags = await client.getDiagnostics(file);
-      if (diags.length > 0) {
-        return diags.map((d) => ({
-          file,
-          line: d.range.start.line + 1,
-          column: d.range.start.character + 1,
-          severity: lspSeverityToSeverity(d.severity),
-          message: d.message,
-          code: d.code,
-          source: d.source,
-        }));
-      }
-    } catch {
-      /* fall through */
-    }
-    return null;
+    // Diagnostics: merge from ALL servers (e.g. biome lint + tsserver types)
+    const clients = await this.getStandaloneClients(file);
+    if (clients.length === 0) return null;
+
+    const merged: Diagnostic[] = [];
+    const seen = new Set<string>();
+
+    await Promise.all(
+      clients.map(async (client) => {
+        try {
+          const diags = await client.getDiagnostics(file);
+          for (const d of diags) {
+            const key = `${String(d.range.start.line)}:${String(d.range.start.character)}:${d.message}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push({
+              file,
+              line: d.range.start.line + 1,
+              column: d.range.start.character + 1,
+              severity: lspSeverityToSeverity(d.severity),
+              message: d.message,
+              code: d.code,
+              source: d.source,
+            });
+          }
+        } catch {
+          /* skip this server */
+        }
+      }),
+    );
+
+    return merged.length > 0 ? merged : null;
   }
 
   async getTypeInfo(
@@ -748,7 +763,7 @@ export class LspBackend implements IntelligenceBackend {
       return null;
     }
 
-    // Standalone: try any existing client
+    // Standalone: try each client until one returns results
     for (const client of this.standaloneClients.values()) {
       if (!client.isReady) continue;
       try {
@@ -967,18 +982,17 @@ export class LspBackend implements IntelligenceBackend {
     return workspaceEditToRefactorResult(edit, symbol, newName);
   }
 
-  /** Ensure a standalone LSP server is running for a file, regardless of Neovim state. */
+  /** Ensure all standalone LSP servers are running for a file, regardless of Neovim state. */
   async ensureStandaloneReady(file: string): Promise<void> {
-    await this.getStandaloneClient(file);
+    await this.getStandaloneClients(file);
   }
 
   /** Get info about active standalone LSP servers */
   getActiveServers(): Array<{ language: string; command: string }> {
     const servers: Array<{ language: string; command: string }> = [];
-    for (const [key, client] of this.standaloneClients) {
+    for (const client of this.standaloneClients.values()) {
       if (!client.isReady) continue;
-      const language = key.split(":")[0] ?? "unknown";
-      servers.push({ language, command: client.serverCommand });
+      servers.push({ language: client.language, command: client.serverCommand });
     }
     return servers;
   }
@@ -1006,10 +1020,9 @@ export class LspBackend implements IntelligenceBackend {
       diagnostics: Array<{ file: string; message: string; severity: number }>;
       ready: boolean;
     }> = [];
-    for (const [key, client] of this.standaloneClients) {
-      const language = key.split(":")[0] ?? "unknown";
+    for (const client of this.standaloneClients.values()) {
       servers.push({
-        language,
+        language: client.language,
         command: client.serverCommand,
         args: client.serverArgs,
         pid: client.pid,
@@ -1040,7 +1053,8 @@ export class LspBackend implements IntelligenceBackend {
       client.stop().catch(() => {});
     }
     this.standaloneClients.clear();
-    this.failedLanguages.clear();
+    this.languageClients.clear();
+    this.failedServers.clear();
   }
 
   // ─── Private ───
@@ -1094,32 +1108,54 @@ export class LspBackend implements IntelligenceBackend {
     return null;
   }
 
-  /** Get or create a standalone LSP client for the file's project */
-  private async getStandaloneClient(file: string): Promise<StandaloneLspClient | null> {
+  /**
+   * Get or create ALL standalone LSP clients for a file's language.
+   * Starts all available servers (not just the first match).
+   */
+  private async getStandaloneClients(file: string): Promise<StandaloneLspClient[]> {
     const language = detectLanguage(file);
-    if (!language || this.failedLanguages.has(language)) return null;
+    if (!language) return [];
 
     const projectRoot = findProjectRootForLanguage(file, language) ?? this.cwd;
-    const key = `${language}:${projectRoot}`;
-    const existing = this.standaloneClients.get(key);
-    if (existing?.isReady) return existing;
+    const langKey = `${language}:${projectRoot}`;
 
-    // Find a server for this language
-    const config = findServerForLanguage(language);
-    if (!config) {
-      this.failedLanguages.add(language);
-      return null;
+    const existing = this.languageClients.get(langKey);
+    if (existing && existing.length > 0 && existing.every((c) => c.isReady)) {
+      return existing;
     }
 
-    const client = new StandaloneLspClient(config, projectRoot);
-    try {
-      await client.start();
-      this.standaloneClients.set(key, client);
-      return client;
-    } catch {
-      this.failedLanguages.add(language);
-      return null;
+    const configs = findServersForLanguage(language);
+    if (configs.length === 0) return [];
+
+    const clients: StandaloneLspClient[] = [];
+    for (const config of configs) {
+      const serverKey = `${config.command}:${projectRoot}`;
+      if (this.failedServers.has(serverKey)) continue;
+
+      const existingClient = this.standaloneClients.get(serverKey);
+      if (existingClient?.isReady) {
+        clients.push(existingClient);
+        continue;
+      }
+
+      const client = new StandaloneLspClient(config, projectRoot);
+      try {
+        await client.start();
+        this.standaloneClients.set(serverKey, client);
+        clients.push(client);
+      } catch {
+        this.failedServers.add(serverKey);
+      }
     }
+
+    this.languageClients.set(langKey, clients);
+    return clients;
+  }
+
+  /** Get the first available standalone client (for operations where first-wins is fine) */
+  private async getStandaloneClient(file: string): Promise<StandaloneLspClient | null> {
+    const clients = await this.getStandaloneClients(file);
+    return clients[0] ?? null;
   }
 }
 

@@ -160,22 +160,32 @@ function isServerDisabled(cmd: string): boolean {
  * Skips servers that are disabled in user config.
  */
 export function findServerForLanguage(language: Language): LspServerConfig | null {
-  const candidates = SERVER_CANDIDATES[language];
-  if (!candidates) return null;
+  const all = findServersForLanguage(language);
+  return all[0] ?? null;
+}
 
+/**
+ * Find ALL available LSP servers for the given language.
+ * Returns them in priority order (first = highest priority).
+ * Skips servers that are disabled in user config or not found on PATH.
+ */
+export function findServersForLanguage(language: Language): LspServerConfig[] {
+  const candidates = SERVER_CANDIDATES[language];
+  if (!candidates) return [];
+
+  const results: LspServerConfig[] = [];
   for (const candidate of candidates) {
     if (isServerDisabled(candidate.command)) continue;
     const resolved = resolveCommand(candidate.command);
     if (resolved) {
-      return {
+      results.push({
         command: resolved,
         args: candidate.args,
         language,
-      };
+      });
     }
   }
-
-  return null;
+  return results;
 }
 
 /** Clear the probe cache (useful for testing) */
