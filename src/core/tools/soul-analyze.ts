@@ -3,12 +3,20 @@ import type { ToolResult } from "../../types";
 import type { RepoMap } from "../intelligence/repo-map.js";
 import { isForbidden } from "../security/forbidden.js";
 
-type AnalyzeAction = "identifier_frequency" | "unused_exports" | "file_profile" | "duplication";
+type AnalyzeAction =
+  | "identifier_frequency"
+  | "unused_exports"
+  | "file_profile"
+  | "duplication"
+  | "top_files"
+  | "packages"
+  | "symbols_by_kind";
 
 interface SoulAnalyzeArgs {
   action: AnalyzeAction;
   file?: string;
   name?: string;
+  kind?: string;
   limit?: number;
 }
 
@@ -23,7 +31,11 @@ export const soulAnalyzeTool = {
     "- file_profile: dependencies, dependents, blast radius, cochanges, and top symbols for a file. Requires file param.\n" +
     "- duplication: find duplicated code across the codebase. Three tiers: exact structural clones (AST shape hash), " +
     "near-duplicates (>70% token similarity via MinHash), and repeated code fragments (same token patterns across functions). " +
-    "Optional file param to check clones of a specific file. Catches patterns invisible to grep.",
+    "Optional file param to check clones of a specific file. Catches patterns invisible to grep.\n" +
+    "- top_files: most important files ranked by PageRank. Instant codebase overview.\n" +
+    "- packages: external dependencies with usage counts and specifiers. Answers 'what does this project use?'\n" +
+    "- symbols_by_kind: all exported symbols of a given kind (interface, class, function, type, enum, trait, struct, etc.). " +
+    "Requires kind param. Optional name param to get signature of a specific symbol.",
 
   createExecute: (repoMap?: RepoMap) => {
     return async (args: SoulAnalyzeArgs): Promise<ToolResult> => {
@@ -46,6 +58,12 @@ export const soulAnalyzeTool = {
           return fileProfile(repoMap, cwd, args.file);
         case "duplication":
           return duplication(repoMap, cwd, args.file, args.limit);
+        case "top_files":
+          return topFiles(repoMap, cwd, args.limit);
+        case "packages":
+          return packages(repoMap, args.name, args.limit);
+        case "symbols_by_kind":
+          return symbolsByKind(repoMap, cwd, args.kind, args.name, args.limit);
         default:
           return {
             success: false,
@@ -196,7 +214,9 @@ function fileProfile(repoMap: RepoMap, cwd: string, file: string | undefined): T
   if (symbols.length > 0) {
     lines.push(`Exports (${String(symbols.length)}):`);
     for (const s of symbols) {
-      lines.push(`  ${s.kind} ${s.name}`);
+      const sigs = repoMap.getSymbolSignature(s.name);
+      const sig = sigs.find((x) => x.path === relPath || x.path.endsWith(`/${relPath}`));
+      lines.push(`  ${sig?.signature ?? `${s.kind} ${s.name}`}`);
     }
     lines.push("");
   }
@@ -323,5 +343,105 @@ function duplication(
   }
 
   lines.push("Use read_code to inspect specific pairs and determine if they can be unified.");
+  return { success: true, output: lines.join("\n") };
+}
+
+function topFiles(repoMap: RepoMap, cwd: string, limit: number | undefined): ToolResult {
+  const files = repoMap.getTopFiles(limit ?? 20);
+  if (files.length === 0) {
+    return { success: true, output: "No files indexed." };
+  }
+
+  const lines = [`Top ${String(files.length)} files by importance (PageRank):\n`];
+  for (const f of files) {
+    if (isForbidden(f.path) !== null) continue;
+    const rel = relative(cwd, `${cwd}/${f.path}`);
+    lines.push(
+      `  ${rel}  ${f.language} ${String(f.lines)}L ${String(f.symbols)} symbols  PR:${f.pagerank.toFixed(3)}`,
+    );
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+function packages(
+  repoMap: RepoMap,
+  name: string | undefined,
+  limit: number | undefined,
+): ToolResult {
+  if (name) {
+    const files = repoMap.getFilesByPackage(name);
+    if (files.length === 0) {
+      return { success: true, output: `No files import "${name}" (or package not indexed).` };
+    }
+
+    const lines = [`${String(files.length)} files import "${name}":\n`];
+    for (const f of files) {
+      if (isForbidden(f.path) !== null) continue;
+      const specs = f.specifiers ? ` — ${f.specifiers}` : "";
+      lines.push(`  ${f.path}${specs}`);
+    }
+    return { success: true, output: lines.join("\n") };
+  }
+
+  const pkgs = repoMap.getExternalPackages(limit ?? 20);
+  if (pkgs.length === 0) {
+    return { success: true, output: "No external packages detected." };
+  }
+
+  const lines = [`${String(pkgs.length)} external packages:\n`];
+  for (const p of pkgs) {
+    const specs = p.specifiers.length > 0 ? ` — ${p.specifiers.join(", ")}` : "";
+    lines.push(`  ${p.package} (${String(p.fileCount)} files)${specs}`);
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+function symbolsByKind(
+  repoMap: RepoMap,
+  cwd: string,
+  kind: string | undefined,
+  name: string | undefined,
+  limit: number | undefined,
+): ToolResult {
+  if (name) {
+    const sigs = repoMap.getSymbolSignature(name);
+    if (sigs.length === 0) {
+      return { success: true, output: `Symbol "${name}" not found in index.` };
+    }
+
+    const lines = [`Symbol "${name}":\n`];
+    for (const s of sigs) {
+      if (isForbidden(s.path) !== null) continue;
+      const rel = relative(cwd, `${cwd}/${s.path}`);
+      const sig = s.signature ? `  ${s.signature}` : "";
+      lines.push(`  ${rel}:${String(s.line)} (${s.kind})${sig}`);
+    }
+    return { success: true, output: lines.join("\n") };
+  }
+
+  if (!kind) {
+    return {
+      success: false,
+      output:
+        "kind param required (e.g., interface, class, function, type, enum, trait, struct). Use name param to look up a specific symbol's signature.",
+      error: "missing kind",
+    };
+  }
+
+  const symbols = repoMap.getSymbolsByKind(kind, limit ?? 30);
+  if (symbols.length === 0) {
+    return { success: true, output: `No exported ${kind} symbols found.` };
+  }
+
+  const lines = [`${String(symbols.length)} exported ${kind} symbols:\n`];
+  for (const s of symbols) {
+    if (isForbidden(s.path) !== null) continue;
+    const rel = relative(cwd, `${cwd}/${s.path}`);
+    const sig = s.signature ?? s.name;
+    lines.push(`  ${rel}:${String(s.line)}  ${sig}`);
+  }
+
   return { success: true, output: lines.join("\n") };
 }

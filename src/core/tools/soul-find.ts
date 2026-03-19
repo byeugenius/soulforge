@@ -181,30 +181,26 @@ function buildSymbolDetails(repoMap: RepoMap | undefined, results: RankedFile[])
   const lines: string[] = [`${String(results.length)} results:\n`];
 
   for (const r of results) {
-    const symStr =
-      r.symbols.length > 0
-        ? r.symbols
-            .slice(0, 4)
-            .map((s) => `${s.kind} ${s.name}`)
-            .join(", ")
-        : "";
+    lines.push(`  ${r.relPath}`);
 
     if (repoMap) {
-      const fileSyms = repoMap.getFileSymbols(r.relPath);
-      const extra = fileSyms.filter((fs) => !r.symbols.some((s) => s.name === fs.name)).slice(0, 3);
-      const allSyms = symStr
-        ? extra.length > 0
-          ? `${symStr} | also: ${extra.map((s) => s.name).join(", ")}`
-          : symStr
-        : fileSyms
-            .slice(0, 4)
-            .map((s) => `${s.kind} ${s.name}`)
-            .join(", ");
-
-      lines.push(`  ${r.relPath}`);
-      if (allSyms) lines.push(`    ${allSyms}`);
+      const matchedNames = new Set(r.symbols.map((s) => s.name));
+      for (const sym of r.symbols.slice(0, 4)) {
+        const sigs = repoMap.getSymbolSignature(sym.name);
+        const sig = sigs.find((s) => s.path === r.relPath || s.path.endsWith(`/${r.relPath}`));
+        lines.push(`    ${sig?.signature ?? `${sym.kind} ${sym.name}`}`);
+      }
+      const extra = repoMap
+        .getFileSymbols(r.relPath)
+        .filter((fs) => !matchedNames.has(fs.name))
+        .slice(0, 3);
+      if (extra.length > 0) {
+        lines.push(`    also: ${extra.map((s) => s.name).join(", ")}`);
+      }
     } else {
-      lines.push(`  ${r.relPath}${symStr ? ` — ${symStr}` : ""}`);
+      for (const sym of r.symbols.slice(0, 4)) {
+        lines.push(`    ${sym.kind} ${sym.name}`);
+      }
     }
   }
 

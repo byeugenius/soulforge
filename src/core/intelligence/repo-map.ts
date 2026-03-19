@@ -1163,7 +1163,36 @@ export class RepoMap {
         }
       }
     } catch {}
-    for (const p of ["src/main.rs", "src/lib.rs", "main.go"]) {
+    const commonEntryPoints = [
+      // Rust
+      "src/main.rs",
+      "src/lib.rs",
+      // Go
+      "main.go",
+      "cmd/main.go",
+      // Python
+      "main.py",
+      "__main__.py",
+      "app.py",
+      "manage.py",
+      // Java/Kotlin
+      "src/main/java/Main.java",
+      "src/main/kotlin/Main.kt",
+      // Swift
+      "Sources/main.swift",
+      "Sources/App.swift",
+      // C/C++
+      "src/main.c",
+      "src/main.cpp",
+      // Dart/Flutter
+      "lib/main.dart",
+      // Elixir
+      "lib/application.ex",
+      // Ruby
+      "app.rb",
+      "config.ru",
+    ];
+    for (const p of commonEntryPoints) {
       if (existsSync(join(this.cwd, p))) this.entryPointsCache.push(p);
     }
     return this.entryPointsCache;
@@ -2021,13 +2050,18 @@ export class RepoMap {
       )
       .all();
 
-    const pattern = (name: string) =>
-      new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    const escaped = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return rows.map((row) => {
       let usedInternally = false;
       try {
-        const content = readFileSync(join(this.cwd, row.path), "utf-8");
-        const matches = content.match(pattern(row.name));
+        const raw = readFileSync(join(this.cwd, row.path), "utf-8");
+        // Strip single-line comments and strings to avoid false matches
+        const content = raw
+          .replace(/\/\/.*$/gm, "")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/(["'`])(?:(?!\1|\\).|\\.)*\1/g, "");
+        const re = new RegExp(`\\b${escaped(row.name)}\\b`, "g");
+        const matches = content.match(re);
         usedInternally = (matches?.length ?? 0) > 1;
       } catch {
         // file unreadable — assume not used internally
@@ -2300,6 +2334,107 @@ export class RepoMap {
     }
 
     return results;
+  }
+
+  getTopFiles(
+    limit = 20,
+  ): Array<{ path: string; pagerank: number; lines: number; symbols: number; language: string }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<
+        {
+          path: string;
+          pagerank: number;
+          line_count: number;
+          symbol_count: number;
+          language: string;
+        },
+        [number]
+      >(
+        `SELECT path, pagerank, line_count, symbol_count, language
+         FROM files
+         ORDER BY pagerank DESC
+         LIMIT ?`,
+      )
+      .all(limit)
+      .map((r) => ({
+        path: r.path,
+        pagerank: r.pagerank,
+        lines: r.line_count,
+        symbols: r.symbol_count,
+        language: r.language,
+      }));
+  }
+
+  getExternalPackages(
+    limit = 20,
+  ): Array<{ package: string; fileCount: number; specifiers: string[] }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<{ package: string; file_count: number; all_specs: string | null }, [number]>(
+        `SELECT package, COUNT(DISTINCT file_id) AS file_count,
+                GROUP_CONCAT(specifiers) AS all_specs
+         FROM external_imports
+         GROUP BY package
+         ORDER BY file_count DESC
+         LIMIT ?`,
+      )
+      .all(limit)
+      .map((r) => {
+        const specs = r.all_specs
+          ? [...new Set(r.all_specs.split(",").filter(Boolean))].slice(0, 10)
+          : [];
+        return { package: r.package, fileCount: r.file_count, specifiers: specs };
+      });
+  }
+
+  getSymbolsByKind(
+    kind: string,
+    limit = 30,
+  ): Array<{ name: string; path: string; signature: string | null; line: number }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<
+        { name: string; path: string; signature: string | null; line: number },
+        [string, number]
+      >(
+        `SELECT s.name, f.path, s.signature, s.line
+         FROM symbols s
+         JOIN files f ON f.id = s.file_id
+         WHERE s.kind = ? AND s.is_exported = 1
+         ORDER BY f.pagerank DESC
+         LIMIT ?`,
+      )
+      .all(kind, limit);
+  }
+
+  getSymbolSignature(
+    name: string,
+  ): Array<{ path: string; kind: string; signature: string | null; line: number }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<{ path: string; kind: string; signature: string | null; line: number }, [string]>(
+        `SELECT f.path, s.kind, s.signature, s.line
+         FROM symbols s
+         JOIN files f ON f.id = s.file_id
+         WHERE s.name = ?
+         ORDER BY s.is_exported DESC, f.pagerank DESC
+         LIMIT 10`,
+      )
+      .all(name);
+  }
+
+  getFilesByPackage(pkg: string): Array<{ path: string; specifiers: string }> {
+    if (!this.ready) return [];
+    return this.db
+      .query<{ path: string; specifiers: string }, [string]>(
+        `SELECT f.path, ei.specifiers
+         FROM external_imports ei
+         JOIN files f ON f.id = ei.file_id
+         WHERE ei.package = ?
+         ORDER BY f.pagerank DESC`,
+      )
+      .all(pkg);
   }
 
   getStats(): { files: number; symbols: number; edges: number; summaries: number } {

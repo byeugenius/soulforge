@@ -266,10 +266,29 @@ export function buildTools(
       description: soulAnalyzeTool.description,
       inputSchema: z.object({
         action: z
-          .enum(["identifier_frequency", "unused_exports", "file_profile", "duplication"])
+          .enum([
+            "identifier_frequency",
+            "unused_exports",
+            "file_profile",
+            "duplication",
+            "top_files",
+            "packages",
+            "symbols_by_kind",
+          ])
           .describe("Analysis action"),
         file: z.string().optional().describe("File path (required for file_profile)"),
-        name: z.string().optional().describe("Identifier name (for identifier_frequency lookup)"),
+        name: z
+          .string()
+          .optional()
+          .describe(
+            "Identifier/package name (for identifier_frequency, packages, symbols_by_kind)",
+          ),
+        kind: z
+          .string()
+          .optional()
+          .describe(
+            "Symbol kind (for symbols_by_kind: interface, class, function, type, enum, trait, struct)",
+          ),
         limit: z.number().optional().describe("Max results"),
       }),
       execute: deferExecute((args) => {
@@ -1139,9 +1158,19 @@ export function buildSubagentExploreTools(opts?: {
             description: soulAnalyzeTool.description,
             inputSchema: z.object({
               action: z
-                .enum(["identifier_frequency", "unused_exports", "file_profile", "duplication"])
+                .enum([
+                  "identifier_frequency",
+                  "unused_exports",
+                  "file_profile",
+                  "duplication",
+                  "top_files",
+                  "packages",
+                  "symbols_by_kind",
+                ])
                 .describe("Analysis action"),
               file: z.string().optional().describe("File path (for file_profile)"),
+              name: z.string().optional().describe("Identifier/package name"),
+              kind: z.string().optional().describe("Symbol kind (for symbols_by_kind)"),
               limit: z.number().optional().describe("Max results"),
             }),
             execute: deferExecute((args) => {
