@@ -28,7 +28,6 @@ import { moveSymbolTool } from "./move-symbol.js";
 import { multiEditTool } from "./multi-edit.js";
 import { navigateTool } from "./navigate.js";
 import { projectTool } from "./project.js";
-import { readCodeTool } from "./read-code.js";
 import { readFileTool } from "./read-file";
 import { refactorTool } from "./refactor.js";
 import { renameSymbolTool } from "./rename-symbol.js";
@@ -120,6 +119,14 @@ export function buildTools(
         path: z.string().describe("File path to read"),
         startLine: z.number().optional().describe("Start line (1-indexed)"),
         endLine: z.number().optional().describe("End line (1-indexed)"),
+        target: z
+          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
+          .optional()
+          .describe("Symbol type to extract (AST-based). Omit for raw file read."),
+        name: z
+          .string()
+          .optional()
+          .describe("Symbol name (required when target is set, except scope)"),
         fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
       }),
       execute: deferExecute(async (args) => {
@@ -225,7 +232,9 @@ export function buildTools(
     }),
 
     soul_grep: tool({
-      description: soulGrepTool.description,
+      description:
+        soulGrepTool.description +
+        " Use dep to search inside dependency/vendor directories (bypasses .gitignore).",
       inputSchema: z.object({
         pattern: z.string().describe("Regex or literal search pattern"),
         path: z.string().optional().describe("Directory to search"),
@@ -243,6 +252,13 @@ export function buildTools(
           .describe(
             "Whole-word matching (\\bpattern\\b). Prevents substring false positives. " +
               "Essential for counting variable/identifier occurrences.",
+          ),
+        dep: z
+          .union([z.string(), z.boolean()])
+          .optional()
+          .describe(
+            "Search dependency/vendor directories (bypasses .gitignore). " +
+              "Pass package name (e.g. 'react') to auto-locate, or true to search all with --no-ignore.",
           ),
         fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
       }),
@@ -521,32 +537,6 @@ export function buildTools(
       }),
     }),
 
-    read_code: tool({
-      description: readCodeTool.description,
-      inputSchema: z.object({
-        target: z
-          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
-          .describe("What to read"),
-        name: z.string().optional().describe("Symbol name (required unless target is scope)"),
-        file: z.string().describe("File path"),
-        startLine: z.number().optional().describe("Start line for scope target"),
-        endLine: z.number().optional().describe("End line for scope target"),
-      }),
-      execute: deferExecute(async (args) => {
-        const result = await readCodeTool.execute(args);
-        sequentialReads++;
-        if (result.success) {
-          if (sequentialReads >= READ_NUDGE_HARD) {
-            return { ...result, output: result.output + NUDGE_HARD };
-          }
-          if (sequentialReads >= READ_NUDGE_SOFT) {
-            return { ...result, output: result.output + NUDGE_SOFT };
-          }
-        }
-        return result;
-      }),
-    }),
-
     rename_symbol: tool({
       description: renameSymbolTool.description,
       inputSchema: z.object({
@@ -756,7 +746,6 @@ export const RESTRICTED_TOOL_NAMES: string[] = [
   "web_search",
   "editor",
   "navigate",
-  "read_code",
   "analyze",
   "discover_pattern",
   "memory",
@@ -790,7 +779,6 @@ export function buildRestrictedModeTools(
     fetch_page: all.fetch_page,
     editor: all.editor,
     navigate: all.navigate,
-    read_code: all.read_code,
     analyze: all.analyze,
     discover_pattern: all.discover_pattern,
     memory: all.memory,
@@ -820,7 +808,6 @@ export function buildReadOnlyTools(
     fetch_page: all.fetch_page,
     editor: all.editor,
     navigate: all.navigate,
-    read_code: all.read_code,
     analyze: all.analyze,
     discover_pattern: all.discover_pattern,
     memory: all.memory,
@@ -836,7 +823,6 @@ export function buildReadOnlyTools(
  *  No dispatch, explore, discover_pattern, web_search, test_scaffold — the plan already contains everything. */
 export const PLAN_EXECUTION_TOOL_NAMES: string[] = [
   "read_file",
-  "read_code",
   "edit_file",
   "undo_edit",
   "multi_edit",
@@ -886,7 +872,6 @@ export function buildPlanModeTools(
     fetch_page: all.fetch_page,
     editor: all.editor,
     navigate: all.navigate,
-    read_code: all.read_code,
     analyze: all.analyze,
     discover_pattern: all.discover_pattern,
     test_scaffold: all.test_scaffold,
@@ -943,10 +928,19 @@ export function buildSubagentExploreTools(opts?: {
         path: z.string().describe("File path to read"),
         startLine: z.number().optional().describe("Start line (1-indexed)"),
         endLine: z.number().optional().describe("End line (1-indexed)"),
+        target: z
+          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
+          .optional()
+          .describe("Symbol type to extract (AST-based). Omit for raw file read."),
+        name: z
+          .string()
+          .optional()
+          .describe("Symbol name (required when target is set, except scope)"),
       }),
       execute: deferExecute(async (args) => {
         const result = await readFileTool.execute(args);
         if (!result.success) return result;
+        if (args.target) return result;
         return { ...result, output: truncateLines(result.output) };
       }),
     }),
@@ -994,20 +988,6 @@ export function buildSubagentExploreTools(opts?: {
         }
         return globTool.execute(args);
       }),
-    }),
-
-    read_code: tool({
-      description: readCodeTool.description,
-      inputSchema: z.object({
-        target: z
-          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
-          .describe("What to read"),
-        name: z.string().optional().describe("Symbol name (required unless target is scope)"),
-        file: z.string().describe("File path"),
-        startLine: z.number().optional().describe("Start line for scope target"),
-        endLine: z.number().optional().describe("End line for scope target"),
-      }),
-      execute: deferExecute((args) => readCodeTool.execute(args)),
     }),
 
     navigate: tool({
@@ -1313,7 +1293,6 @@ export function getToolNames(): string[] {
     "web_search",
     "memory",
     navigateTool.name,
-    readCodeTool.name,
     renameSymbolTool.name,
     moveSymbolTool.name,
     refactorTool.name,
@@ -1621,27 +1600,6 @@ export function wrapWithBusCache(
     keyFn: (args: Record<string, unknown>) => string | null;
     onExecute?: (args: Record<string, unknown>, cached: boolean) => void;
   }> = [
-    {
-      name: "read_code",
-      keyFn: (a) => {
-        const file = normalizePath(String(a.file ?? ""));
-        const target = String(a.target ?? "");
-        if (target === "scope") {
-          return JSON.stringify(["read_code", file, "scope", a.startLine ?? "", a.endLine ?? ""]);
-        }
-        return JSON.stringify(["read_code", file, target, a.name ?? ""]);
-      },
-      onExecute: (a, cached) => {
-        bus.recordFileRead(agentId, normalizePath(String(a.file ?? "")), {
-          tool: "read_code",
-          target: String(a.target ?? ""),
-          name: a.name ? String(a.name) : undefined,
-          startLine: typeof a.startLine === "number" ? a.startLine : undefined,
-          endLine: typeof a.endLine === "number" ? a.endLine : undefined,
-          cached,
-        });
-      },
-    },
     {
       name: "grep",
       keyFn: (a) =>

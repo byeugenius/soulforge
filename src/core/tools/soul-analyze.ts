@@ -475,7 +475,9 @@ function duplication(
     return { success: true, output: "No duplication detected in the codebase." };
   }
 
-  lines.push("Use read_code to inspect specific pairs and determine if they can be unified.");
+  lines.push(
+    "Use read_file with target + name to inspect specific pairs and determine if they can be unified.",
+  );
   return { success: true, output: lines.join("\n") };
 }
 

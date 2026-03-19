@@ -583,7 +583,7 @@ const VERIFY_PROMPT = [
   '- "This is probably fine" — probably is not verified. Check it.',
   "",
   "PROCESS:",
-  "1. Read each edited file with read_code to understand what changed",
+  "1. Read each edited file with read_file (target + name) to understand what changed",
   "2. Run project typecheck — type errors in edited files are automatic FAIL",
   "3. Run project lint — lint errors in edited files are FAIL",
   "4. Run project test if tests exist — failures are FAIL",
@@ -1352,7 +1352,7 @@ export function buildSubagentTools(models: SubagentModels) {
               .string()
               .min(10)
               .describe(
-                "Why dispatch instead of direct reads? Must justify why this requires parallel agents rather than sequential read_code/read_file calls.",
+                "Why dispatch instead of direct reads? Must justify why this requires parallel agents rather than sequential read_file calls.",
               ),
           })
           .describe(
@@ -1490,7 +1490,7 @@ export function buildSubagentTools(models: SubagentModels) {
                 `⛔ dispatch [rejected → read directly]\n` +
                 `You only need ${String(totalFiles)} file(s) — read them directly:\n` +
                 fileList.join("\n") +
-                `\nUse read_code for specific symbols or read_file for full files. Dispatch is for 7+ files or parallel edits.`
+                `\nUse read_file with target + name for specific symbols or read_file for full files. Dispatch is for 7+ files or parallel edits.`
               );
             }
           }
@@ -1581,7 +1581,7 @@ export function buildSubagentTools(models: SubagentModels) {
                 .join("\n");
               return (
                 `⛔ dispatch [rejected → repeat dispatch]\nThis is dispatch #${String(turnDispatchCount + 1)} this turn. Previous dispatch(es):\n${prev}\n` +
-                `Act on these results before dispatching again. If they lack what you need, use read_file/read_code/soul_grep for targeted follow-up. ` +
+                `Act on these results before dispatching again. If they lack what you need, use read_file/soul_grep for targeted follow-up. ` +
                 `Set force: true only after confirming previous results genuinely lack the specific information you need.`
               );
             }
@@ -1660,7 +1660,7 @@ export function buildSubagentTools(models: SubagentModels) {
               ) {
                 const fileList = [...uniqueFiles].map((f) => `\`${f}\``).join(", ");
                 return (
-                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — read directly with read_code or read_file. ` +
+                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — read directly with read_file. ` +
                   `Dispatch is for parallel work across ${String(MAX_EXPLORE_FILES + 1)}+ files or when agents need to EDIT. ` +
                   `Set force: true only if you need agents to do multi-step research beyond simple reads.`
                 );
@@ -2068,7 +2068,7 @@ export function buildSubagentTools(models: SubagentModels) {
 
         if (truncatedLines > 0) {
           compact.push(
-            `\n[${String(truncatedLines)} lines compacted — use read_file/read_code on specific files if you need full content]`,
+            `\n[${String(truncatedLines)} lines compacted — use read_file on specific files if you need full content]`,
           );
         }
 
@@ -2076,7 +2076,7 @@ export function buildSubagentTools(models: SubagentModels) {
           compact.push(
             "\n---\n**Next step: act on these results.** You have the dispatch output above — plan your implementation, write code, or respond to the user. " +
               "Reading files that dispatch already returned wastes a tool call (the cache will block the re-read). " +
-              "If you need a specific symbol from a large file, use read_code with the symbol name.",
+              "If you need a specific symbol from a large file, use read_file with target + name.",
           );
         }
 

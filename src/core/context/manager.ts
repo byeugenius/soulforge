@@ -25,7 +25,7 @@ const TOOL_GUIDANCE_BASE = [
   "BEFORE reaching for grep or read_file, ask which question you're answering:",
   "Where is this symbol defined? → navigate(action: definition) — gives exact file + line. Not grep.",
   "Who calls this function? What references it? → navigate(action: references) — gives all call sites. Not grep.",
-  "What does this function do? Read its code. → read_code(target, name, file) — extracts by name. Not read_file.",
+  "What does this function do? Read its code. → read_file(path, target, name) — extracts by name via AST.",
   "What's the structure of this file? → analyze(action: outline) — symbols without reading content. Not read_file.",
   "Are there type errors after my edit? → analyze(action: diagnostics) — instant LSP check. Not project(typecheck).",
   "How widespread is this pattern? → soul_grep(count: true) — per-file counts from index. Not grep.",
@@ -808,7 +808,7 @@ export class ContextManager {
 
     if (hasRepoMap && !isMinimal) {
       parts.push(
-        "The Soul Map is your index. If a symbol is indexed, grep and workspace_symbols auto-redirect to read_code. Use map paths directly.",
+        "The Soul Map is your index. If a symbol is indexed, grep and workspace_symbols auto-redirect to read_file. Use map paths directly.",
       );
     }
 

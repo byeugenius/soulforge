@@ -119,7 +119,7 @@ export const discoverPatternTool = {
       );
       for (const { file: f, exports, lines } of fileExports) {
         const sizeHint = lines
-          ? ` (${String(lines)} lines${lines > 100 ? " — use read_code for specific symbols" : ""})`
+          ? ` (${String(lines)} lines${lines > 100 ? " — use read_file with target + name for specific symbols" : ""})`
           : "";
         if (exports && exports.length > 0) {
           parts.push(`  ${f}${sizeHint}:`);

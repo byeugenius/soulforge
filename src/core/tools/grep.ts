@@ -151,7 +151,7 @@ export async function enrichWithSymbolContext(output: string): Promise<string> {
   }
 
   if (sections.length === 0) return output;
-  return `${output}\n\n[Symbol context — use read_code(target, name, file) for precise reading]\n${sections.join("\n")}`;
+  return `${output}\n\n[Symbol context — use read_file(path, target, name) for precise reading]\n${sections.join("\n")}`;
 }
 
 function findEnclosingSymbol(symbols: SymbolInfo[], line: number): SymbolInfo | null {

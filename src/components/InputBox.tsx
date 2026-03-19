@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { BoxRenderable, InputRenderable, ScrollBoxRenderable } from "@opentui/core";
+import type { BoxRenderable, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -133,56 +133,12 @@ const HighlightedText = memo(function HighlightedText({
   );
 });
 
-interface CollapsedBlock {
-  start: number;
-  end: number;
-  id: number;
-}
-
-function findBlock(blocks: CollapsedBlock[], line: number): CollapsedBlock | undefined {
-  return blocks.find((b) => line >= b.start && line <= b.end);
-}
-
-function shiftBlocks(blocks: CollapsedBlock[], afterLine: number, delta: number): CollapsedBlock[] {
-  return blocks.map((b) =>
-    b.start > afterLine ? { ...b, start: b.start + delta, end: b.end + delta } : b,
-  );
-}
-
-/** Wrap a string into visual rows of `width` characters. */
-function wrapText(text: string, width: number): string[] {
-  if (width <= 0 || text.length <= width) return [text];
-  const rows: string[] = [];
-  for (let i = 0; i < text.length; i += width) {
-    rows.push(text.slice(i, i + width));
-  }
-  return rows.length > 0 ? rows : [""];
-}
-
-/** Rendered visual rows for the entire multiline buffer with wrapping. */
-interface VisualRow {
-  text: string;
-  lineIdx: number;
-  wrapIdx: number;
-  isLastWrap: boolean;
-}
-
-function buildVisualRows(lines: string[], width: number): VisualRow[] {
-  const rows: VisualRow[] = [];
-  for (let li = 0; li < lines.length; li++) {
-    const line = lines[li] ?? "";
-    const wrapped = wrapText(line, width);
-    for (let wi = 0; wi < wrapped.length; wi++) {
-      rows.push({
-        text: wrapped[wi] ?? "",
-        lineIdx: li,
-        wrapIdx: wi,
-        isLastWrap: wi === wrapped.length - 1,
-      });
-    }
-  }
-  return rows;
-}
+/** Override textarea defaults: Enter=submit, Shift+Enter=newline */
+const INPUT_KEY_BINDINGS = [
+  { name: "return", action: "submit" as const },
+  { name: "return", shift: true, action: "newline" as const },
+  { name: "linefeed", action: "newline" as const },
+];
 
 export const InputBox = memo(function InputBox({
   onSubmit,
@@ -198,15 +154,21 @@ export const InputBox = memo(function InputBox({
   const valueRef = useRef(value);
   valueRef.current = value;
   const [selectedIdx, setSelectedIdx] = useState(0);
-  const [inputKey, setInputKey] = useState(0);
   const renderer = useRenderer();
   const { height: termRows, width: termWidth } = useTerminalDimensions();
   const acScrollRef = useRef<ScrollBoxRenderable>(null);
-  const inputRef = useRef<InputRenderable>(null);
+  const textareaRef = useRef<TextareaRenderable>(null);
   const containerRef = useRef<BoxRenderable>(null);
-  const [cursorLine, setCursorLine] = useState(0);
-  const [collapsedBlocks, setCollapsedBlocks] = useState<CollapsedBlock[]>([]);
-  const pasteCounter = useRef(0);
+  // Track logical cursor line for history gating (up on first line / down on last line)
+  const cursorLineRef = useRef(0);
+  const lineCountRef = useRef(1);
+  // Guard: when true, handleContentChange skips historyIdx reset (programmatic setText)
+  const isNavigatingHistory = useRef(false);
+  // Visual line count (after char-wrapping) for textarea height
+  const [visualLines, setVisualLines] = useState(1);
+  // Paste blocks: collapsed pasted text regions
+  const pasteBlocks = useRef<Array<{ id: number; text: string; collapsed: boolean }>>([]);
+  const pasteIdCounter = useRef(0);
 
   const showBusy = isLoading || isCompacting;
 
@@ -320,106 +282,13 @@ export const InputBox = memo(function InputBox({
   const acceptCompletion = useCallback(() => {
     const completed = matches[selectedIdx]?.cmd;
     if (!completed) return;
+    isNavigatingHistory.current = true;
     setValue(completed);
-    setInputKey((k) => k + 1);
+    textareaRef.current?.setText(completed);
+    lineCountRef.current = (completed.match(/\n/g)?.length ?? 0) + 1;
+    cursorLineRef.current = 0;
+    isNavigatingHistory.current = false;
   }, [matches, selectedIdx]);
-
-  const insertNewline = useCallback(() => {
-    const currentLines = valueRef.current.split("\n");
-    const block = findBlock(collapsedBlocks, cursorLine);
-    if (block) {
-      const updated = [...currentLines];
-      updated.splice(block.start, 0, "");
-      setValue(updated.join("\n"));
-      setCollapsedBlocks(shiftBlocks(collapsedBlocks, cursorLine - 1, 1));
-      setInputKey((k) => k + 1);
-      return;
-    }
-    const line = currentLines[cursorLine] ?? "";
-    const offset = inputRef.current?.cursorOffset ?? line.length;
-    const before = line.slice(0, offset);
-    const after = line.slice(offset);
-    const updated = [...currentLines];
-    updated.splice(cursorLine, 1, before, after);
-    setValue(updated.join("\n"));
-    setCollapsedBlocks(shiftBlocks(collapsedBlocks, cursorLine, 1));
-    setCursorLine((prev) => prev + 1);
-    setInputKey((k) => k + 1);
-  }, [cursorLine, collapsedBlocks]);
-
-  const handleBlockInput = useCallback(
-    (typed: string) => {
-      const block = findBlock(collapsedBlocks, cursorLine);
-      if (!block) return;
-      const currentLines = valueRef.current.split("\n");
-      const updated = [...currentLines];
-      updated.splice(block.start, 0, typed);
-      setValue(updated.join("\n"));
-      setCollapsedBlocks(shiftBlocks(collapsedBlocks, cursorLine - 1, 1));
-      setInputKey((k) => k + 1);
-    },
-    [collapsedBlocks, cursorLine],
-  );
-
-  const handleChange = useCallback((newValue: string) => {
-    historyIdx.current = -1;
-    setValue(newValue);
-  }, []);
-
-  // Intercept paste — 3+ lines get collapsed on their own line, 1-2 lines paste inline
-  useEffect(() => {
-    const handler = (event: { text: string; preventDefault: () => void }) => {
-      if (!isFocused) return;
-      const text = event.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      const pastedLines = text.split("\n");
-
-      // 1-3 lines: let <input> handle it normally
-      if (pastedLines.length <= 3) return;
-
-      event.preventDefault();
-
-      const currentLines = valueRef.current.split("\n");
-      const activeLine = currentLines[cursorLine] ?? "";
-      const cursor = inputRef.current?.cursorOffset ?? activeLine.length;
-      const before = activeLine.slice(0, cursor);
-      const after = activeLine.slice(cursor);
-
-      // Keep existing text on its own line, pasted block always on a new line
-      const hasTextBefore = before.length > 0;
-      const insertAt = hasTextBefore ? cursorLine + 1 : cursorLine;
-      const collapseStart = insertAt;
-      const collapseEnd = collapseStart + pastedLines.length - 1;
-
-      const newLines = [
-        ...currentLines.slice(0, cursorLine),
-        ...(hasTextBefore ? [before] : []),
-        ...pastedLines,
-        after || "", // trailing line for cursor
-        ...currentLines.slice(cursorLine + 1),
-      ];
-
-      // Shift existing blocks that come after the insert point
-      const linesAdded =
-        pastedLines.length +
-        (hasTextBefore ? 1 : 0) +
-        (after || !currentLines[cursorLine + 1] ? 1 : 0) -
-        1;
-      const shifted = shiftBlocks(collapsedBlocks, cursorLine - 1, linesAdded);
-
-      pasteCounter.current += 1;
-      setValue(newLines.join("\n"));
-      setCollapsedBlocks([
-        ...shifted,
-        { start: collapseStart, end: collapseEnd, id: pasteCounter.current },
-      ]);
-      setCursorLine(collapseEnd + 1);
-      setInputKey((k) => k + 1);
-    };
-    renderer.keyInput.on("paste", handler);
-    return () => {
-      renderer.keyInput.off("paste", handler);
-    };
-  }, [isFocused, cursorLine, renderer, collapsedBlocks]);
 
   const pushHistory = useCallback(
     (input: string) => {
@@ -432,75 +301,115 @@ export const InputBox = memo(function InputBox({
   );
 
   const resetInput = useCallback(() => {
+    isNavigatingHistory.current = true;
     setValue("");
-    setCursorLine(0);
-    setCollapsedBlocks([]);
-    pasteCounter.current = 0;
+    textareaRef.current?.setText("");
+    cursorLineRef.current = 0;
+    lineCountRef.current = 1;
     historyIdx.current = -1;
-    setInputKey((k) => k + 1);
+    pasteBlocks.current = [];
+    setVisualLines(1);
+    isNavigatingHistory.current = false;
   }, []);
 
-  const handleSubmit = (input: string) => {
-    // Autocomplete match — complete or submit the command
-    if (hasMatches && matches[selectedIdx]) {
-      const completed = matches[selectedIdx].cmd;
-      if (completed === "/open" || completed === "/branch") {
-        setValue(`${completed} `);
-        setInputKey((k) => k + 1);
-      } else {
-        pushHistory(completed);
-        onSubmit(completed);
-        resetInput();
+  const handleSubmit = useCallback(
+    (input: string) => {
+      // Autocomplete match — complete or submit the command
+      if (hasMatches && matches[selectedIdx]) {
+        const completed = matches[selectedIdx].cmd;
+        if (completed === "/open" || completed === "/branch") {
+          const withSpace = `${completed} `;
+          isNavigatingHistory.current = true;
+          setValue(withSpace);
+          textareaRef.current?.setText(withSpace);
+          lineCountRef.current = 1;
+          cursorLineRef.current = 0;
+          isNavigatingHistory.current = false;
+        } else {
+          pushHistory(completed);
+          onSubmit(completed);
+          resetInput();
+        }
+        return;
       }
-      return;
-    }
 
-    if (input.trim() === "") return;
+      if (input.trim() === "") return;
 
-    // During loading or compacting: slash commands execute immediately, messages queue
-    if ((isLoading || isCompacting) && !input.trim().startsWith("/")) {
-      onQueue?.(input.trim());
+      // Expand any collapsed paste blocks before submitting
+      let finalInput = input;
+      for (const block of pasteBlocks.current) {
+        if (block.collapsed) {
+          const pastedLines = block.text.split("\n");
+          const placeholder = `📋 [Pasted ${pastedLines.length} lines — ^E to expand]`;
+          finalInput = finalInput.replace(placeholder, block.text);
+        }
+      }
+
+      // During loading or compacting: slash commands execute immediately, messages queue
+      if ((isLoading || isCompacting) && !finalInput.trim().startsWith("/")) {
+        onQueue?.(finalInput.trim());
+        resetInput();
+        return;
+      }
+
+      pushHistory(finalInput.trim());
+      onSubmit(finalInput.trim());
       resetInput();
-      return;
-    }
-
-    pushHistory(input.trim());
-    onSubmit(input.trim());
-    resetInput();
-  };
-
-  // Compute available width for text content (inside padding, no border)
-  // Read ref width as state so layout changes trigger re-render
-  const [measuredWidth, setMeasuredWidth] = useState(0);
-  const measuredWidthRef = useRef(0);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure layout width when terminal resizes
-  useEffect(() => {
-    const w = containerRef.current?.width ?? 0;
-    if (w > 0 && w !== measuredWidthRef.current) {
-      measuredWidthRef.current = w;
-      setMeasuredWidth(w);
-    }
-  }, [termWidth]);
-  const contentWidth = useMemo(
-    () => Math.max(10, measuredWidth > 0 ? measuredWidth - 6 : termWidth - 8),
-    [measuredWidth, termWidth],
+    },
+    [
+      hasMatches,
+      matches,
+      selectedIdx,
+      pushHistory,
+      onSubmit,
+      resetInput,
+      isLoading,
+      isCompacting,
+      onQueue,
+    ],
   );
 
-  // Build visual rows for display
-  const lines = useMemo(() => value.split("\n"), [value]);
-  const isMultiline = lines.length > 1;
-  const visualRows = useMemo(() => buildVisualRows(lines, contentWidth), [lines, contentWidth]);
-
-  // Max rows for the input area before it scrolls
-  const maxInputRows = Math.max(4, Math.floor(termRows * 0.4));
-
-  // Find which visual row the active input sits on (last wrap of cursorLine)
-  const activeVisualIdx = useMemo(() => {
-    for (let i = visualRows.length - 1; i >= 0; i--) {
-      if (visualRows[i]?.lineIdx === cursorLine && visualRows[i]?.isLastWrap) return i;
+  // Sync textarea content → React state
+  const handleContentChange = useCallback(() => {
+    const text = textareaRef.current?.plainText ?? "";
+    // Don't reset historyIdx when we're programmatically setting text (history nav, reset, etc.)
+    if (!isNavigatingHistory.current) {
+      historyIdx.current = -1;
     }
-    return visualRows.length - 1;
-  }, [visualRows, cursorLine]);
+    setValue(text);
+    lineCountRef.current = textareaRef.current?.lineCount ?? 1;
+    // Update visual line count for height calculation (accounts for char-wrapping)
+    const vLines = textareaRef.current?.virtualLineCount ?? 1;
+    setVisualLines(vLines);
+  }, []);
+
+  // Track cursor line for history gating
+  const handleCursorChange = useCallback((event: { line: number; visualColumn: number }) => {
+    cursorLineRef.current = event.line;
+  }, []);
+
+  // Intercept paste — 4+ lines get collapsed like Claude Code
+  useEffect(() => {
+    const handler = (event: { text: string; preventDefault: () => void }) => {
+      if (!isFocused) return;
+      const text = event.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const pastedLines = text.split("\n");
+
+      // 1-3 lines: let textarea handle normally
+      if (pastedLines.length <= 3) return;
+
+      // 4+ lines: store as a collapsible block, insert placeholder
+      event.preventDefault();
+      const id = ++pasteIdCounter.current;
+      pasteBlocks.current.push({ id, text, collapsed: true });
+      const placeholder = `📋 [Pasted ${pastedLines.length} lines — ^E to expand]`;
+      textareaRef.current?.insertText(placeholder);
+    };
+    renderer.keyInput.on("paste", handler);
+    return () => {
+      renderer.keyInput.off("paste", handler);
+    };
+  }, [isFocused, renderer]);
 
   useKeyboard((evt) => {
     // ── Autocomplete navigation ──
@@ -543,9 +452,12 @@ export const InputBox = memo(function InputBox({
       if (evt.name === "return") {
         const selected = fuzzyResults[fuzzyCursor];
         if (selected) {
+          isNavigatingHistory.current = true;
           setValue(selected.entry);
-          setCursorLine(0);
-          setInputKey((k) => k + 1);
+          textareaRef.current?.setText(selected.entry);
+          lineCountRef.current = (selected.entry.match(/\n/g)?.length ?? 0) + 1;
+          cursorLineRef.current = 0;
+          isNavigatingHistory.current = false;
         }
         setFuzzyMode(false);
         setFuzzyQuery("");
@@ -587,139 +499,54 @@ export const InputBox = memo(function InputBox({
       return;
     }
 
-    // ── Shift+Left/Right — word skip ──
-    if (focused && evt.shift && (evt.name === "left" || evt.name === "right")) {
-      if (evt.name === "left") inputRef.current?.moveWordBackward();
-      else inputRef.current?.moveWordForward();
+    // ── Enter (without shift) — submit from useKeyboard so closure stays fresh ──
+    // The textarea's onSubmit prop is NOT updated by the React reconciler (TextareaRenderable
+    // isn't wired in setProperty), so we handle submit here instead.
+    if (focused && evt.name === "return" && !evt.shift && !evt.ctrl && !evt.meta) {
+      handleSubmit(valueRef.current);
       evt.preventDefault();
       return;
     }
 
-    // ── Shift+Enter / Meta+Enter — insert newline ──
-    // Terminals send linefeed (\n) for Shift+Enter, not return (\r)
-    if (
-      focused &&
-      (evt.name === "linefeed" || (evt.name === "return" && (evt.shift || evt.meta)))
-    ) {
-      insertNewline();
+    // ── Ctrl+E — toggle expand/collapse paste blocks ──
+    if (focused && evt.name === "e" && evt.ctrl) {
+      const blocks = pasteBlocks.current;
+      if (blocks.length > 0) {
+        const currentText = textareaRef.current?.plainText ?? "";
+        let newText = currentText;
+        for (const block of blocks) {
+          const pastedLines = block.text.split("\n");
+          const placeholder = `📋 [Pasted ${pastedLines.length} lines — ^E to expand]`;
+          if (block.collapsed && newText.includes(placeholder)) {
+            // Expand: replace placeholder with full text
+            newText = newText.replace(placeholder, block.text);
+            block.collapsed = false;
+          } else if (!block.collapsed && newText.includes(block.text)) {
+            // Collapse: replace full text with placeholder
+            newText = newText.replace(block.text, placeholder);
+            block.collapsed = true;
+          }
+        }
+        if (newText !== currentText) {
+          isNavigatingHistory.current = true;
+          setValue(newText);
+          textareaRef.current?.setText(newText);
+          lineCountRef.current = (newText.match(/\n/g)?.length ?? 0) + 1;
+          isNavigatingHistory.current = false;
+        }
+      }
       evt.preventDefault();
       return;
     }
 
-    // ── Normal editing mode ──
+    // ── Normal editing mode — textarea handles most keys natively ──
     if (!focused || hasMatches || fuzzyMode) return;
 
-    // Left/Right on collapsed block — move cursor before/after it
-    const curBlock = findBlock(collapsedBlocks, cursorLine);
-    if (curBlock && (evt.name === "right" || evt.name === "left")) {
-      const target = evt.name === "right" ? curBlock.end + 1 : Math.max(0, curBlock.start - 1);
-      const currentLines = valueRef.current.split("\n");
-      if (target >= 0 && target < currentLines.length) {
-        setCursorLine(target);
-        setInputKey((k) => k + 1);
-      }
-      evt.preventDefault();
-      return;
-    }
+    const lineCount = lineCountRef.current;
+    const curLine = cursorLineRef.current;
 
-    const currentLines = valueRef.current.split("\n");
-    const multiline = currentLines.length > 1;
-
-    // Ctrl+U — clear line (single-line: clear all; multiline: delete current line or collapsed block)
-    if (evt.ctrl && evt.name === "u") {
-      if (!multiline) {
-        resetInput();
-      } else if (findBlock(collapsedBlocks, cursorLine)) {
-        const block = findBlock(collapsedBlocks, cursorLine) as CollapsedBlock;
-        const count = block.end - block.start + 1;
-        const updated = [...currentLines];
-        updated.splice(block.start, count);
-        if (updated.length === 0) {
-          resetInput();
-        } else {
-          const newCursor = Math.min(block.start, updated.length - 1);
-          setValue(updated.join("\n"));
-          setCursorLine(newCursor);
-          setCollapsedBlocks(
-            collapsedBlocks
-              .filter((b) => b !== block)
-              .map((b) =>
-                b.start > block.start ? { ...b, start: b.start - count, end: b.end - count } : b,
-              ),
-          );
-          setInputKey((k) => k + 1);
-        }
-      } else {
-        const updated = [...currentLines];
-        updated.splice(cursorLine, 1);
-        if (updated.length === 0) {
-          resetInput();
-        } else {
-          const newCursor = Math.min(cursorLine, updated.length - 1);
-          setValue(updated.join("\n"));
-          setCursorLine(newCursor);
-          setInputKey((k) => k + 1);
-        }
-      }
-      evt.preventDefault();
-      return;
-    }
-
-    // Ctrl+W — delete word backward
-    if (evt.ctrl && evt.name === "w") {
-      const curLine = currentLines[cursorLine] ?? "";
-      const offset = inputRef.current?.cursorOffset ?? curLine.length;
-      const before = curLine.slice(0, offset);
-      const after = curLine.slice(offset);
-      // Delete trailing spaces, then word chars
-      const trimmed = before.replace(/\s+$/, "");
-      const wordRemoved = trimmed.replace(/[^\s]+$/, "");
-      const updated = [...currentLines];
-      updated[cursorLine] = wordRemoved + after;
-      setValue(updated.join("\n"));
-      setInputKey((k) => k + 1);
-      evt.preventDefault();
-      return;
-    }
-
-    // Ctrl+A — move cursor to start of line
-    if (evt.ctrl && evt.name === "a") {
-      // Remount input to reset cursor to position 0
-      setInputKey((k) => k + 1);
-      evt.preventDefault();
-      return;
-    }
-
-    // Ctrl+K — delete from cursor to end of line
-    if (evt.ctrl && evt.name === "k") {
-      const curLine = currentLines[cursorLine] ?? "";
-      const offset = inputRef.current?.cursorOffset ?? curLine.length;
-      const updated = [...currentLines];
-      updated[cursorLine] = curLine.slice(0, offset);
-      setValue(updated.join("\n"));
-      setInputKey((k) => k + 1);
-      evt.preventDefault();
-      return;
-    }
-
-    // Up arrow — multiline cursor navigation
-    if (evt.name === "up" && multiline && cursorLine > 0) {
-      let target = cursorLine - 1;
-      const hitBlock = findBlock(collapsedBlocks, target);
-      if (hitBlock) {
-        const onBlock = findBlock(collapsedBlocks, cursorLine);
-        target = onBlock === hitBlock ? hitBlock.start - 1 : hitBlock.start;
-      }
-      if (target >= 0) {
-        setCursorLine(target);
-        setInputKey((k) => k + 1);
-      }
-      evt.preventDefault();
-      return;
-    }
-
-    // Up arrow — single-line history navigation
-    if (evt.name === "up" && !multiline) {
+    // Up arrow — history only when cursor is on first line
+    if (evt.name === "up" && curLine === 0) {
       const history = historyCacheRef.current;
       if (history.length === 0) return;
       if (historyIdx.current === -1) {
@@ -730,105 +557,41 @@ export const InputBox = memo(function InputBox({
       }
       const entry = history[historyIdx.current];
       if (entry != null) {
+        isNavigatingHistory.current = true;
         setValue(entry);
-        setCursorLine(0);
-        setInputKey((k) => k + 1);
+        textareaRef.current?.setText(entry);
+        lineCountRef.current = (entry.match(/\n/g)?.length ?? 0) + 1;
+        cursorLineRef.current = 0;
+        isNavigatingHistory.current = false;
       }
       evt.preventDefault();
       return;
     }
 
-    // Down arrow — multiline cursor navigation
-    if (evt.name === "down" && multiline && cursorLine < currentLines.length - 1) {
-      let target = cursorLine + 1;
-      const hitBlock = findBlock(collapsedBlocks, target);
-      if (hitBlock) {
-        const onBlock = findBlock(collapsedBlocks, cursorLine);
-        target = onBlock === hitBlock ? hitBlock.end + 1 : hitBlock.start;
-      }
-      if (target < currentLines.length) {
-        setCursorLine(target);
-        setInputKey((k) => k + 1);
-      }
-      evt.preventDefault();
-      return;
-    }
-
-    // Down arrow — single-line history navigation
-    if (evt.name === "down" && !multiline) {
+    // Down arrow — history only when cursor is on last line
+    if (evt.name === "down" && curLine >= lineCount - 1) {
       if (historyIdx.current === -1) return;
+      isNavigatingHistory.current = true;
       if (historyIdx.current === 0) {
         historyIdx.current = -1;
-        setValue(historyStash.current);
-        setCursorLine(0);
-        setInputKey((k) => k + 1);
+        const stashed = historyStash.current;
+        setValue(stashed);
+        textareaRef.current?.setText(stashed);
+        lineCountRef.current = (stashed.match(/\n/g)?.length ?? 0) + 1;
+        cursorLineRef.current = 0;
       } else {
         historyIdx.current -= 1;
         const entry = historyCacheRef.current[historyIdx.current];
         if (entry != null) {
           setValue(entry);
-          setCursorLine(0);
-          setInputKey((k) => k + 1);
+          textareaRef.current?.setText(entry);
+          lineCountRef.current = (entry.match(/\n/g)?.length ?? 0) + 1;
+          cursorLineRef.current = 0;
         }
       }
+      isNavigatingHistory.current = false;
       evt.preventDefault();
       return;
-    }
-
-    // Backspace — delete collapsed block or merge with previous line
-    if (evt.name === "backspace" && multiline) {
-      const deleteBlock = (block: CollapsedBlock) => {
-        const count = block.end - block.start + 1;
-        const updated = [...currentLines];
-        updated.splice(block.start, count);
-        if (updated.length === 0) {
-          resetInput();
-        } else {
-          const newCursor = Math.min(block.start, updated.length - 1);
-          setValue(updated.join("\n"));
-          setCursorLine(newCursor);
-          setCollapsedBlocks(
-            collapsedBlocks
-              .filter((b) => b !== block)
-              .map((b) =>
-                b.start > block.start ? { ...b, start: b.start - count, end: b.end - count } : b,
-              ),
-          );
-          setInputKey((k) => k + 1);
-        }
-        evt.preventDefault();
-      };
-      // Cursor is on a collapsed block → delete it
-      const onBlock = findBlock(collapsedBlocks, cursorLine);
-      if (onBlock) {
-        deleteBlock(onBlock);
-        return;
-      }
-      // Backspacing from line after a collapsed block → delete it
-      const aboveBlock = findBlock(collapsedBlocks, cursorLine - 1);
-      if (aboveBlock && aboveBlock.end === cursorLine - 1) {
-        const atStart = !inputRef.current || inputRef.current.cursorOffset === 0;
-        if (atStart) {
-          deleteBlock(aboveBlock);
-          return;
-        }
-      }
-      // Normal: merge with previous line at start of line
-      if (cursorLine > 0) {
-        const atStart = !inputRef.current || inputRef.current.cursorOffset === 0;
-        if (atStart) {
-          const prevLine = currentLines[cursorLine - 1] ?? "";
-          const curLine = currentLines[cursorLine] ?? "";
-          const updated = [...currentLines];
-          updated[cursorLine - 1] = prevLine + curLine;
-          updated.splice(cursorLine, 1);
-          setValue(updated.join("\n"));
-          setCursorLine((prev) => prev - 1);
-          setInputKey((k) => k + 1);
-          evt.preventDefault();
-          return;
-        }
-      }
     }
   });
 
@@ -855,6 +618,9 @@ export const InputBox = memo(function InputBox({
 
   // ── Rendering ──
 
+  // Max rows for the textarea before it scrolls internally
+  const maxInputRows = Math.max(4, Math.floor(termRows * 0.4));
+
   // Border color per state
   const slashMode = value.startsWith("/") && focused;
   const borderColor = fuzzyMode
@@ -866,6 +632,9 @@ export const InputBox = memo(function InputBox({
         : focused
           ? "#FF0040"
           : "#333";
+
+  const lines = value.split("\n");
+  const isMultiline = lines.length > 1;
 
   return (
     <box flexDirection="column" width="100%" flexShrink={0}>
@@ -984,17 +753,24 @@ export const InputBox = memo(function InputBox({
               width="100%"
               justifyContent="space-between"
             >
-              <box flexGrow={1}>
-                <input
-                  ref={inputRef}
-                  key={inputKey}
-                  value={value}
-                  onInput={handleChange}
-                  onSubmit={() => handleSubmit(value)}
-                  placeholder="'/' for commands · or interrupt by sending a new messages"
+              <box flexGrow={1} flexDirection="row">
+                <text fg="#FF0040" attributes={TextAttributes.BOLD} flexShrink={0}>
+                  {">"}{" "}
+                </text>
+                <textarea
+                  ref={textareaRef}
+                  initialValue={value}
+                  onContentChange={handleContentChange}
+                  onCursorChange={handleCursorChange}
+                  keyBindings={INPUT_KEY_BINDINGS}
+                  placeholder="'/' for commands · or interrupt by sending a new message"
                   placeholderColor="#555"
                   focused={focused}
-                  scrollMargin={0.01}
+                  wrapMode="char"
+                  height={1}
+                  flexGrow={1}
+                  backgroundColor="transparent"
+                  textColor="#ccc"
                 />
               </box>
               <text fg="#555"> ^X stop</text>
@@ -1008,22 +784,31 @@ export const InputBox = memo(function InputBox({
               <text fg="#FF8C00">▌</text>
             </box>
           ) : (
-            <InputEditor
-              visualRows={visualRows}
-              lines={lines}
-              cursorLine={cursorLine}
-              activeVisualIdx={activeVisualIdx}
-              maxInputRows={maxInputRows}
-              inputRef={inputRef}
-              inputKey={inputKey}
-              value={value}
-              ghost={ghost}
-              focused={focused}
-              collapsedBlocks={collapsedBlocks}
-              handleChange={handleChange}
-              handleBlockInput={handleBlockInput}
-              handleSubmit={handleSubmit}
-            />
+            <box flexDirection="row" width="100%">
+              <text fg="#FF0040" attributes={TextAttributes.BOLD} flexShrink={0}>
+                {">"}{" "}
+              </text>
+              <textarea
+                ref={textareaRef}
+                initialValue={value}
+                onContentChange={handleContentChange}
+                onCursorChange={handleCursorChange}
+                keyBindings={INPUT_KEY_BINDINGS}
+                placeholder="speak to the forge..."
+                placeholderColor="#555"
+                focused={focused}
+                wrapMode="char"
+                height={Math.min(maxInputRows, Math.max(1, visualLines))}
+                flexGrow={1}
+                backgroundColor="transparent"
+                textColor="#ccc"
+              />
+              {ghost ? (
+                <text fg="#444" flexShrink={0}>
+                  {ghost}
+                </text>
+              ) : null}
+            </box>
           )}
         </box>
 
@@ -1031,214 +816,12 @@ export const InputBox = memo(function InputBox({
         {focused && !fuzzyMode && isMultiline && (
           <box paddingX={2} height={1}>
             <text fg="#333">
-              <span fg="#444">^U</span> del <span fg="#444">^K</span> cut <span fg="#444">S-⏎</span>{" "}
-              newline
-              {collapsedBlocks.length > 0 ? (
-                <>
-                  {" "}
-                  <span fg="#444">BS</span> rm paste
-                </>
-              ) : null}
+              <span fg="#444">S-⏎</span> newline <span fg="#444">^U</span> del line{" "}
+              <span fg="#444">^K</span> cut to EOL
             </text>
           </box>
         )}
       </box>
     </box>
   );
-});
-
-/** The actual text editor area — handles all 3 cases: single, wrapped, multiline */
-const InputEditor = memo(function InputEditor({
-  visualRows,
-  lines,
-  cursorLine,
-  activeVisualIdx,
-  maxInputRows,
-  inputRef,
-  inputKey,
-  value,
-  ghost,
-  focused,
-  collapsedBlocks,
-  handleChange,
-  handleBlockInput,
-  handleSubmit,
-}: {
-  visualRows: VisualRow[];
-  lines: string[];
-  cursorLine: number;
-  activeVisualIdx: number;
-  maxInputRows: number;
-  inputRef: React.RefObject<InputRenderable | null>;
-  inputKey: number;
-  value: string;
-  ghost: string;
-  focused: boolean;
-  collapsedBlocks: CollapsedBlock[];
-  handleChange: (v: string) => void;
-  handleBlockInput: (typed: string) => void;
-  handleSubmit: (v: string) => void;
-}) {
-  const scrollRef = useRef<ScrollBoxRenderable>(null);
-  const activeRenderedRef = useRef(0);
-  const renderedCountRef = useRef(0);
-  const isSingleRow = visualRows.length === 1 && lines.length === 1;
-
-  // Keep active row visible in scrollbox
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on active row change
-  useEffect(() => {
-    if (renderedCountRef.current <= maxInputRows) return;
-    scrollRef.current?.scrollTo(activeRenderedRef.current);
-  }, [activeVisualIdx, maxInputRows]);
-
-  // Simple single-line (most common case — optimized path)
-  if (isSingleRow) {
-    return (
-      <box flexDirection="row" width="100%">
-        <text fg="#FF0040" attributes={TextAttributes.BOLD} flexShrink={0}>
-          {">"}{" "}
-        </text>
-        <input
-          ref={inputRef}
-          key={inputKey}
-          value={value}
-          onInput={handleChange}
-          onSubmit={() => handleSubmit(value)}
-          placeholder="speak to the forge..."
-          placeholderColor="#555"
-          focused={focused}
-          flexGrow={1}
-          scrollMargin={0.01}
-        />
-        {ghost ? (
-          <text fg="#444" flexShrink={0}>
-            {ghost}
-          </text>
-        ) : null}
-      </box>
-    );
-  }
-
-  // Build rendered rows array, tracking active row's rendered index
-  // biome-ignore lint/suspicious/noExplicitAny: JSX elements from map
-  const renderedRows: any[] = [];
-  const renderedBlockIds = new Set<number>();
-
-  for (let vi = 0; vi < visualRows.length; vi++) {
-    const row = visualRows[vi] as VisualRow;
-
-    // Check if this row belongs to a collapsed block
-    const block = findBlock(collapsedBlocks, row.lineIdx);
-    if (block) {
-      if (!renderedBlockIds.has(block.id)) {
-        renderedBlockIds.add(block.id);
-        const firstLine = lines[block.start] ?? "";
-        const count = block.end - block.start + 1;
-        const isOnBlock = cursorLine >= block.start && cursorLine <= block.end;
-        if (isOnBlock) activeRenderedRef.current = renderedRows.length;
-        const preview = firstLine.length > 40 ? `${firstLine.slice(0, 37)}…` : firstLine;
-        const blockIdx = collapsedBlocks.indexOf(block) + 1;
-        const label = `clipboard [${String(blockIdx)}] `;
-        const suffix = ` +${String(count)} line${count === 1 ? "" : "s"}`;
-        renderedRows.push(
-          <box key={vi} flexDirection="row" width="100%">
-            <text
-              fg={isOnBlock ? "#FF0040" : "#555"}
-              attributes={isOnBlock ? TextAttributes.BOLD : undefined}
-              flexShrink={0}
-            >
-              {isOnBlock ? "› " : "… "}
-            </text>
-            {isOnBlock ? (
-              <input
-                ref={inputRef}
-                key={inputKey}
-                value=""
-                onInput={handleBlockInput}
-                onSubmit={() => handleSubmit(value)}
-                focused={focused}
-                flexShrink={0}
-              />
-            ) : null}
-            <text fg="#6A0DAD" flexShrink={0}>
-              {label}
-            </text>
-            <text fg={isOnBlock ? "#fff" : "#666"} flexShrink={1}>
-              {preview}
-            </text>
-            <text fg="#555" flexShrink={0}>
-              {suffix}
-            </text>
-          </box>,
-        );
-      }
-      continue;
-    }
-
-    const isFirstRow = renderedRows.length === 0;
-    const isActiveRow = vi === activeVisualIdx;
-    if (isActiveRow) activeRenderedRef.current = renderedRows.length;
-    const prefix = isFirstRow ? ">" : "…";
-    const prefixColor = isFirstRow ? "#FF0040" : "#555";
-    const prefixAttrs = isFirstRow ? TextAttributes.BOLD : undefined;
-
-    if (isActiveRow) {
-      const activeLine = lines[cursorLine] ?? "";
-      const wrapOffset = row.wrapIdx;
-      const charsBeforeThisWrap = visualRows
-        .filter((r) => r.lineIdx === cursorLine && r.wrapIdx < wrapOffset)
-        .reduce((sum, r) => sum + r.text.length, 0);
-
-      renderedRows.push(
-        <box key={vi} flexDirection="row" width="100%">
-          <text fg={prefixColor} attributes={prefixAttrs} flexShrink={0}>
-            {prefix}{" "}
-          </text>
-          <input
-            ref={inputRef}
-            key={inputKey}
-            value={row.isLastWrap ? activeLine.slice(charsBeforeThisWrap) : row.text}
-            scrollMargin={0.01}
-            onInput={
-              row.isLastWrap && lines.length === 1
-                ? (newVal: string) => {
-                    handleChange(activeLine.slice(0, charsBeforeThisWrap) + newVal);
-                  }
-                : row.isLastWrap
-                  ? (newVal: string) => {
-                      const updated = [...lines];
-                      updated[cursorLine] = activeLine.slice(0, charsBeforeThisWrap) + newVal;
-                      handleChange(updated.join("\n"));
-                    }
-                  : handleChange
-            }
-            onSubmit={() => handleSubmit(value)}
-            focused={focused}
-            flexGrow={1}
-          />
-        </box>,
-      );
-    } else {
-      renderedRows.push(
-        <box key={vi} flexDirection="row" width="100%">
-          <text fg={prefixColor} attributes={prefixAttrs} flexShrink={0}>
-            {prefix}{" "}
-          </text>
-          <text fg="#ccc">{row.text || " "}</text>
-        </box>,
-      );
-    }
-  }
-
-  renderedCountRef.current = renderedRows.length;
-
-  if (renderedRows.length > maxInputRows) {
-    return (
-      <scrollbox ref={scrollRef} height={maxInputRows}>
-        {renderedRows}
-      </scrollbox>
-    );
-  }
-
-  return <box flexDirection="column">{renderedRows}</box>;
 });

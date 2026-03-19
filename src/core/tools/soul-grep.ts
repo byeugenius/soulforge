@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { ToolResult } from "../../types";
 import type { RepoMap } from "../intelligence/repo-map.js";
 import { isForbidden } from "../security/forbidden.js";
@@ -7,6 +8,31 @@ import { enrichWithSymbolContext } from "./grep.js";
 
 const ENRICHMENT_TIMEOUT_MS = 2000;
 
+const DEP_DIRS = [
+  "node_modules",
+  "vendor",
+  ".venv/lib",
+  "venv/lib",
+  "__pypackages__",
+  "site-packages",
+  ".cargo/registry",
+  "Packages",
+  "pkg/mod",
+  "bower_components",
+];
+
+function resolveDepPath(dep: string | boolean, explicitPath?: string): string {
+  if (explicitPath) return explicitPath;
+  if (typeof dep === "string" && dep.length > 0) {
+    for (const dir of DEP_DIRS) {
+      const candidate = `${dir}/${dep}`;
+      if (existsSync(candidate)) return candidate;
+    }
+    return `node_modules/${dep}`;
+  }
+  return ".";
+}
+
 interface SoulGrepArgs {
   pattern: string;
   path?: string;
@@ -14,6 +40,7 @@ interface SoulGrepArgs {
   count?: boolean;
   wordBoundary?: boolean;
   maxCount?: number;
+  dep?: string | boolean;
 }
 
 export const soulGrepTool = {
@@ -22,10 +49,10 @@ export const soulGrepTool = {
     "Token-efficient search with count mode and word-boundary matching. Count mode returns per-file counts. Non-count mode includes symbol context.",
   createExecute: (repoMap?: RepoMap) => {
     return async (args: SoulGrepArgs): Promise<ToolResult> => {
-      const { pattern, count, wordBoundary } = args;
-      const searchPath = args.path ?? ".";
+      const { pattern, count, wordBoundary, dep } = args;
+      const searchPath = dep ? resolveDepPath(dep, args.path) : (args.path ?? ".");
 
-      if (count && wordBoundary && repoMap?.isReady && !args.path && !args.glob) {
+      if (!dep && count && wordBoundary && repoMap?.isReady && !args.path && !args.glob) {
         const intercept = tryRepoMapCount(repoMap, pattern);
         if (intercept) return intercept;
       }
@@ -33,6 +60,7 @@ export const soulGrepTool = {
       const rgBin = getVendoredPath("rg") ?? "rg";
       const rgArgs: string[] = ["--color=never", "--max-filesize=256K"];
 
+      if (dep) rgArgs.push("--no-ignore");
       if (wordBoundary) rgArgs.push("--word-regexp");
 
       if (count) {

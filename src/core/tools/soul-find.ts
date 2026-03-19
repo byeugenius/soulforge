@@ -204,7 +204,7 @@ function buildSymbolDetails(repoMap: RepoMap | undefined, results: RankedFile[])
     }
   }
 
-  lines.push("\nUse read_code(target, name, file) for precise symbol reading.");
+  lines.push("\nUse read_file(path, target, name) for precise symbol reading.");
   return lines.join("\n");
 }
 

@@ -231,6 +231,22 @@ SoulForge checks for prerequisites on first launch and offers to install Neovim 
 
 ## Usage
 
+### CLI Flags
+
+```bash
+soulforge                                    # Launch TUI
+soulforge --session <id>                     # Resume a saved session
+soulforge --headless "your prompt here"      # Run without TUI, stream to stdout
+soulforge --headless --json "your prompt"    # Structured JSON output
+soulforge --headless --model provider/model  # Override model
+echo "prompt" | soulforge --headless         # Pipe from stdin
+soulforge --list-providers                   # Show providers + key status
+soulforge --list-models [provider]           # Show available models
+soulforge --set-key <provider> <key>         # Save API key to keychain
+```
+
+[Headless mode deep dive →](docs/headless.md)
+
 ### Keyboard Shortcuts
 
 | Key | Action |
@@ -503,6 +519,7 @@ bun run lint:fix      # auto-fix
 | Document | Description |
 |----------|-------------|
 | **[Command Reference](docs/commands-reference.md)** | All 60 slash commands by category |
+| **[Headless Mode](docs/headless.md)** | Non-interactive CLI for CI/CD, scripting, automation |
 | **[Architecture](docs/architecture.md)** | System overview, data flow, component lifecycle |
 | **[Repo Map](docs/repo-map.md)** | PageRank, cochange, blast radius, clone detection |
 | **[Agent Bus](docs/agent-bus.md)** | Multi-agent coordination, shared cache, edit ownership |
@@ -526,14 +543,14 @@ bun run lint:fix      # auto-fix
        ↑
 @soulforge/mcp             MCP server — plug into Claude Code, Cursor, Copilot
        ↑
-sf --headless              CLI mode — CI/CD, scripts, automation
+sf --headless              CLI mode — CI/CD, scripts, automation  ✓ shipped
        ↑
 SoulForge TUI              Full experience (what you're looking at now)
 ```
 
 - **`@soulforge/intelligence`** — graph intelligence, 30+ tools, and agent orchestration as an importable package. Build your own AI tools on top of SoulForge's brain.
 - **`@soulforge/mcp`** — expose soul_grep, soul_find, soul_analyze, soul_impact, navigate, read_code as MCP tools. Any AI tool that supports MCP gets SoulForge's graph intelligence.
-- **`sf --headless`** — non-interactive mode. Pipe in a prompt, get back results. For CI/CD, automation, and benchmarks.
+- **`sf --headless`** — non-interactive mode. Pipe in a prompt, get back results. For CI/CD, automation, and benchmarks. [Documentation →](docs/headless.md)
 
 **In progress:**
 - **MCP support** — consume external MCP servers from within SoulForge + expose tools as an MCP server

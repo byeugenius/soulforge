@@ -3,6 +3,7 @@
 ## User Reference
 
 - **[Command Reference](commands-reference.md)** — All 60 slash commands organized by category
+- **[Headless Mode](headless.md)** — Non-interactive CLI for CI/CD, scripting, and automation
 - **[Project Tool](project-tool.md)** — Toolchain detection, pre-commit checks, monorepo discovery
 - **[Steering](steering.md)** — Type while the agent works, messages inject mid-stream
 - **[Provider Options](provider-options.md)** — Thinking modes, effort, speed, context management

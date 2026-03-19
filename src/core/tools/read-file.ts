@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import type { ToolResult } from "../../types";
 import { readBufferContent } from "../editor/instance";
+import type { SymbolKind } from "../intelligence/types.js";
 import { isForbidden } from "../security/forbidden.js";
 import { emitFileRead } from "./file-events.js";
 
@@ -36,18 +37,35 @@ const CODE_EXTENSIONS = new Set([
   ".zig",
 ]);
 
+export type ReadTarget =
+  | "function"
+  | "class"
+  | "type"
+  | "interface"
+  | "variable"
+  | "enum"
+  | "scope";
+
 interface ReadFileArgs {
   path: string;
   startLine?: number;
   endLine?: number;
+  target?: ReadTarget;
+  name?: string;
 }
 
 export const readFileTool = {
   name: "read_file",
-  description: "Read file contents with line numbers.",
+  description:
+    "Read file contents, or read a specific symbol (function/class/type) by name. " +
+    "Pass target + name for symbol extraction (AST-based, no line numbers needed).",
   execute: async (args: ReadFileArgs): Promise<ToolResult> => {
     try {
       const filePath = resolve(args.path);
+
+      if (args.target) {
+        return readSymbolFromFile(filePath, args);
+      }
 
       const blocked = isForbidden(filePath);
       if (blocked) {
@@ -185,8 +203,95 @@ async function getCompactOutline(filePath: string): Promise<string | null> {
     });
     const more = meaningful.length > 30 ? `\n  ... +${String(meaningful.length - 30)} more` : "";
 
-    return `[Outline: ${String(meaningful.length)} symbols — use read_code for targeted reading]\n${symbolLines.join("\n")}${more}\n`;
+    return `[Outline: ${String(meaningful.length)} symbols — use target + name for targeted reading]\n${symbolLines.join("\n")}${more}\n`;
   } catch {
     return null;
   }
+}
+
+async function readSymbolFromFile(filePath: string, args: ReadFileArgs): Promise<ToolResult> {
+  const blocked = isForbidden(filePath);
+  if (blocked) {
+    return {
+      success: false,
+      output: `Access denied: "${filePath}" matches forbidden pattern "${blocked}"`,
+      error: "forbidden",
+    };
+  }
+
+  const { getIntelligenceRouter } = await import("../intelligence/index.js");
+  const router = getIntelligenceRouter(process.cwd());
+  const language = router.detectLanguage(filePath);
+
+  if (args.target === "scope") {
+    const scopeStart = args.startLine;
+    if (!scopeStart) {
+      return {
+        success: false,
+        output: "startLine is required for scope",
+        error: "missing startLine",
+      };
+    }
+    const tracked = await router.executeWithFallbackTracked(language, "readScope", (b) =>
+      b.readScope ? b.readScope(filePath, scopeStart, args.endLine) : Promise.resolve(null),
+    );
+    if (!tracked) {
+      return { success: false, output: "Could not read scope", error: "failed" };
+    }
+    const block = tracked.value;
+    const range = block.location.endLine
+      ? `${String(block.location.line)}-${String(block.location.endLine)}`
+      : String(block.location.line);
+    emitFileRead(filePath);
+    return {
+      success: true,
+      output: `${filePath}:${range}\n\n${block.content}`,
+      backend: tracked.backend,
+    };
+  }
+
+  const name = args.name;
+  if (!name) {
+    return {
+      success: false,
+      output: `name is required for target '${args.target}'`,
+      error: "missing name",
+    };
+  }
+
+  const kindMap: Record<string, SymbolKind> = {
+    function: "function",
+    class: "class",
+    type: "type",
+    interface: "interface",
+    variable: "variable",
+    enum: "enum",
+  };
+
+  const targetKind = kindMap[args.target as string];
+  let tracked = await router.executeWithFallbackTracked(language, "readSymbol", (b) =>
+    b.readSymbol ? b.readSymbol(filePath, name, targetKind) : Promise.resolve(null),
+  );
+
+  if (!tracked) {
+    tracked = await router.executeWithFallbackTracked(language, "readSymbol", (b) =>
+      b.readSymbol ? b.readSymbol(filePath, name) : Promise.resolve(null),
+    );
+  }
+
+  if (!tracked) {
+    return { success: false, output: `'${name}' not found in ${filePath}`, error: "not found" };
+  }
+
+  const block = tracked.value;
+  const range = block.location.endLine
+    ? `${String(block.location.line)}-${String(block.location.endLine)}`
+    : String(block.location.line);
+  const header = block.symbolKind ? `${block.symbolKind} ${block.symbolName ?? name}` : name;
+  emitFileRead(filePath);
+  return {
+    success: true,
+    output: `${header} — ${filePath}:${range}\n\n${block.content}`,
+    backend: tracked.backend,
+  };
 }

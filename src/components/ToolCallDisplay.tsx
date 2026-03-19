@@ -111,10 +111,10 @@ function formatArgs(toolName: string, args?: string): string {
       const q = String(parsed.question);
       return q.length > 50 ? `${q.slice(0, 47)}...` : q;
     }
-    if (toolName === "read_code" && parsed.file) {
+    if (toolName === "read_file" && parsed.target && parsed.path) {
       const label = parsed.name
-        ? `${String(parsed.name)} in ${String(parsed.file)}`
-        : String(parsed.file);
+        ? `${String(parsed.name)} in ${String(parsed.path)}`
+        : String(parsed.path);
       return label.length > 50 ? `${label.slice(0, 47)}...` : label;
     }
     if (toolName === "navigate") {

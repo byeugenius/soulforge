@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FileReadRecord } from "./agent-bus.js";
 
@@ -24,6 +25,7 @@ interface ReadRecord {
   step: number;
   recallId: string;
   fromSubagent: boolean;
+  mtimeMs?: number;
 }
 
 const READ_FILE_TOOLS = new Set(["read_file"]);
@@ -36,6 +38,20 @@ function extractPath(args: Record<string, unknown>): string | undefined {
   const raw = args.path ?? args.file ?? args.filePath;
   if (typeof raw === "string") return resolve(raw);
   return undefined;
+}
+
+function getMtimeMs(filePath: string): number | undefined {
+  try {
+    return statSync(filePath).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function isMtimeStale(rec: ReadRecord): boolean {
+  if (!rec.path || rec.mtimeMs == null) return false;
+  const current = getMtimeMs(rec.path);
+  return current != null && current !== rec.mtimeMs;
 }
 
 function rangeCovers(
@@ -75,6 +91,11 @@ export class ReadTracker {
     const existing = this.records.get(key);
     if (!existing) return null;
 
+    if (existing.path && isMtimeStale(existing)) {
+      this.invalidateFile(existing.path);
+      return null;
+    }
+
     if (existing.fromSubagent) {
       return "This file was read by a subagent during dispatch. The findings are in your context above.";
     }
@@ -82,7 +103,7 @@ export class ReadTracker {
     const step = String(existing.step);
     const hint =
       this.mode === "subagent"
-        ? "The content is in your context above. Use read_code for specific symbols."
+        ? "The content is in your context above. Use read_file with target + name for specific symbols."
         : `Use recall('${existing.recallId}') for the content.`;
     const freshHint = this.mode === "subagent" ? "" : " Set fresh: true to re-execute.";
 
@@ -115,6 +136,7 @@ export class ReadTracker {
       step,
       recallId,
       fromSubagent: false,
+      mtimeMs: path ? getMtimeMs(path) : undefined,
     };
 
     if (READ_FILE_TOOLS.has(toolName)) {
@@ -203,6 +225,11 @@ export class ReadTracker {
       const rec = this.records.get(key);
       if (!rec || !READ_FILE_TOOLS.has(rec.tool)) continue;
 
+      if (isMtimeStale(rec)) {
+        this.invalidateFile(path);
+        return null;
+      }
+
       if (rangeCovers(rec, { startLine: requestedStart, endLine: requestedEnd })) {
         if (rec.fromSubagent) {
           return "This file was read by a subagent during dispatch. The findings are in your context above.";
@@ -213,8 +240,8 @@ export class ReadTracker {
             : `lines ${String(rec.startLine ?? 1)}-${String(rec.endLine ?? "end")}`;
         const hint =
           this.mode === "subagent"
-            ? "The content is in your context above. Use read_code for specific symbols."
-            : `Use recall('${rec.recallId}') for the content, or read_code for specific symbols.`;
+            ? "The content is in your context above. Use read_file with target + name for specific symbols."
+            : `Use recall('${rec.recallId}') for the content, or read_file with target + name for specific symbols.`;
         return `You read this file at step ${String(rec.step)} (${rangeDesc}). ${hint}`;
       }
     }

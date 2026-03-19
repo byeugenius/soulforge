@@ -33,7 +33,6 @@ export const TOOL_CATEGORIES: Record<string, ToolCategory> = {
 
   // Code intelligence — backend resolved dynamically (ts-morph > lsp > tree-sitter > regex)
   navigate: "code",
-  read_code: "code",
   analyze: "code",
   rename_symbol: "code",
   move_symbol: "code",
@@ -125,7 +124,6 @@ const TOOL_ICON_MAP: Record<string, string> = {
   memory: "bookmark",
   editor: "pencil",
   git: "git",
-  read_code: "code",
   navigate: "arrow_right",
   analyze: "search",
   rename_symbol: "rename",
@@ -173,7 +171,6 @@ export const TOOL_LABELS: Record<string, string> = {
   memory: "Memory",
   editor: "Editor",
   git: "Git",
-  read_code: "Reading code",
   navigate: "Navigating",
   analyze: "Analyzing",
   rename_symbol: "Renaming symbol",
@@ -209,7 +206,6 @@ export const TOOL_ICON_COLORS: Record<string, string> = {
   memory: "#b87333",
   editor: "#5C9FD6",
   git: "#4a7",
-  read_code: "#8B5CF6",
   navigate: "#8B5CF6",
   analyze: "#8B5CF6",
   rename_symbol: "#c89030",

@@ -2,6 +2,22 @@
 
 globalThis.AI_SDK_LOG_WARNINGS = false;
 
+// ─── Headless mode (must run before any TUI imports) ───
+
+const cliArgs = process.argv.slice(2);
+const hasCli =
+  cliArgs.includes("--headless") ||
+  cliArgs.includes("--list-providers") ||
+  cliArgs.includes("--list-models") ||
+  cliArgs.includes("--set-key");
+
+if (hasCli) {
+  const { parseHeadlessArgs, runHeadless } = await import("./headless.js");
+  const action = await parseHeadlessArgs(cliArgs);
+  if (action) await runHeadless(action);
+  process.exit(0);
+}
+
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

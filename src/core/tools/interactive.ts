@@ -65,9 +65,7 @@ export function buildInteractiveTools(
                 .array(
                   z.object({
                     lines: z.string().describe("Line range, e.g. '10-45' or 'full'"),
-                    code: z
-                      .string()
-                      .describe("Exact current code copied from read_file/read_code output"),
+                    code: z.string().describe("Exact current code copied from read_file output"),
                   }),
                 )
                 .optional()

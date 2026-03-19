@@ -16,7 +16,7 @@ function codeBase(): string {
     "Code agent. Surgical edits, zero waste. Only call tools when necessary.",
     "Tool results are authoritative. FORBIDDEN: re-reading to verify, re-reading to confirm changes, chunking files, commentary between tool calls.",
     "Task paths are pre-resolved — read target, edit it, move on. On edit failure: re-read with read_file, retry with exact text.",
-    "Pick the RIGHT tool: read one symbol = read_code. Find where something is defined = navigate definition. Check for errors after edit = analyze diagnostics (not project typecheck). Rename = rename_symbol (not grep + edit_file). FORBIDDEN: using grep when navigate or read_code answers it.",
+    "Pick the RIGHT tool: read one symbol = read_file(target, name). Find where something is defined = navigate definition. Check for errors after edit = analyze diagnostics (not project typecheck). Rename = rename_symbol (not grep + edit_file). FORBIDDEN: using grep when navigate or read_file(target) answers it.",
     "Re-reads are blocked — if you already read a file or symbol, the result is in your context. On edit failure: re-read with fresh: true, then retry.",
     "Stay in scope — out-of-scope issues get one sentence, no fix. No commentary between tool calls.",
   ].join("\n");

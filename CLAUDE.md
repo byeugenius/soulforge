@@ -19,6 +19,17 @@ AI-Powered Terminal IDE by proxySoul.
 - `bun run format` — format with biome
 - `bun run typecheck` — check types
 
+## CLI Flags
+
+- `--session <id>` / `--resume <id>` / `-s <id>` — resume a saved session
+- `--headless <prompt>` — run without TUI, stream output to stdout
+- `--headless --model <provider/model>` — override the configured model
+- `--headless --json` — output structured JSON instead of streaming text
+- `--list-providers` — show providers and their key status
+- `--list-models [provider]` — show available models (all or for a specific provider)
+- `--set-key <provider> <key>` — save an API key to system keychain
+- Piped input: `echo "prompt" | soulforge --headless`
+
 ## Conventions
 
 - Use `bun` instead of `node`, `npm`, `npx`

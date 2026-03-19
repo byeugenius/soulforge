@@ -1,14 +1,14 @@
 import type { ForgeMode } from "../../types/index.js";
 
 const READ_ONLY =
-  "Read-only mode. No edit/shell/git tools. Available: read_file, grep, glob, web_search, fetch_page, navigate, read_code, analyze, soul_grep, soul_find, soul_analyze, soul_impact, memory, dispatch (explore).";
+  "Read-only mode. No edit/shell/git tools. Available: read_file (with target/name for symbols), grep, glob, web_search, fetch_page, navigate, analyze, soul_grep, soul_find, soul_analyze, soul_impact, memory, dispatch (explore).";
 
 const PLAN_FULL = [
   "PLAN MODE — research then plan. Implementation tools are unavailable.",
   READ_ONLY,
   'Context is above 50% — use depth: "full" so the plan is self-contained for Clear & Implement.',
   "Workflow:",
-  "1. Use discover_pattern to map the architecture. Read only the files you'll modify — use read_code for files over 100 lines.",
+  "1. Use discover_pattern to map the architecture. Read only the files you'll modify — use read_file with target + name for files over 100 lines.",
   '2. Call `plan` with depth "full" as soon as you have enough context. Do not read extra files for confirmation.',
   "   - files[].code_snippets: paste current code (executor sees only the plan)",
   "   - steps[].edits: old→new diffs (old must be verbatim from code_snippets)",
@@ -24,7 +24,7 @@ const PLAN_LIGHT = [
   'Context is low — use depth: "light" for a fast plan (just steps, no code_snippets or diffs needed).',
   "The executor keeps the current context and can read files on the fly.",
   "Workflow:",
-  "1. Briefly review the architecture with discover_pattern. Skim the files you'll modify — read_code for large files.",
+  "1. Briefly review the architecture with discover_pattern. Skim the files you'll modify — read_file with target + name for large files.",
   '2. Call `plan` with depth "light" as soon as you understand the shape of the change.',
   "   - files[]: list paths + action + description (no code_snippets needed)",
   "   - steps[]: ordered steps with labels and targetFiles (no edits/diffs needed)",
