@@ -413,6 +413,88 @@ console.log(formatName('John', 'Doe'));
 `,
   );
 
+  // ── TypeScript: path-like imports (not aliases, just deep relative) ──
+  write(
+    "src/deep/nested/helper.ts",
+    `export function deepHelper(): string { return "deep"; }
+export function deadDeepHelper(): string { return "dead"; }
+`,
+  );
+
+  write(
+    "src/deep/consumer.ts",
+    `import { deepHelper } from "./nested/helper";
+console.log(deepHelper());
+`,
+  );
+
+  // ── TypeScript: same name, different kind (function + type) ──
+  write(
+    "src/models/user.ts",
+    `export interface Validator { validate(): boolean; }
+export class UserValidator implements Validator {
+  validate() { return true; }
+}
+`,
+  );
+
+  write(
+    "src/models/product.ts",
+    `export interface Validator { check(): boolean; }
+export class ProductValidator implements Validator {
+  check() { return true; }
+}
+`,
+  );
+
+  write(
+    "src/validation.ts",
+    `import { UserValidator } from "./models/user";
+const v = new UserValidator();
+v.validate();
+`,
+  );
+
+  // ── TypeScript: default export ──
+  write(
+    "src/logger.ts",
+    `export default class Logger {
+  log(msg: string) { console.log(msg); }
+}
+export function createLogger(): Logger { return new Logger(); }
+`,
+  );
+
+  write(
+    "src/main-logger.ts",
+    `import Logger from "./logger";
+const l = new Logger();
+l.log("hello");
+`,
+  );
+
+  // ── Short symbol names that could collide ──
+  write(
+    "src/short/a.ts",
+    `export function run(): void {}
+export function go(): void {}
+`,
+  );
+
+  write(
+    "src/short/b.ts",
+    `export function run(): void {}
+export function stop(): void {}
+`,
+  );
+
+  write(
+    "src/short/consumer.ts",
+    `import { run } from "./a";
+run();
+`,
+  );
+
   repoMap = new RepoMap(TMP);
   await repoMap.scan();
 });
@@ -606,5 +688,65 @@ describe("unused exports — legacy JavaScript (CommonJS)", () => {
 
   it("does not flag formatName as unused", () => {
     expect(unusedNames()).not.toContain("formatName");
+  });
+});
+
+describe("unused exports — deep relative imports", () => {
+  it("does not flag deepHelper (imported via ./nested/helper)", () => {
+    expect(unusedNames()).not.toContain("deepHelper");
+  });
+
+  it("detects deadDeepHelper as unused", () => {
+    expect(unusedNames()).toContain("deadDeepHelper");
+  });
+});
+
+describe("unused exports — duplicate names different kinds", () => {
+  it("does not flag UserValidator (imported by validation.ts)", () => {
+    expect(unusedNames()).not.toContain("UserValidator");
+  });
+
+  it("detects ProductValidator as unused (never imported)", () => {
+    expect(unusedNames()).toContain("ProductValidator");
+  });
+
+  it("detects product Validator interface as unused when source resolution works", () => {
+    const unused = getUnused();
+    const productValidator = unused.find(
+      (u) => u.name === "Validator" && u.path.includes("product"),
+    );
+    expect(productValidator).toBeDefined();
+  });
+});
+
+describe("unused exports — short/colliding symbol names", () => {
+  it("does not flag run in a.ts (imported by consumer.ts)", () => {
+    const unused = getUnused();
+    const aRun = unused.find((u) => u.name === "run" && u.path.includes("short/a"));
+    expect(aRun).toBeUndefined();
+  });
+
+  it("detects run in b.ts as unused (same name, different file, not imported)", () => {
+    const unused = getUnused();
+    const bRun = unused.find((u) => u.name === "run" && u.path.includes("short/b"));
+    expect(bRun).toBeDefined();
+  });
+
+  it("detects go as unused (only in a.ts, never imported)", () => {
+    expect(unusedNames()).toContain("go");
+  });
+
+  it("detects stop as unused (only in b.ts, never imported)", () => {
+    expect(unusedNames()).toContain("stop");
+  });
+});
+
+describe("unused exports — default exports", () => {
+  it("does not flag Logger (default import by main-logger.ts)", () => {
+    expect(unusedNames()).not.toContain("Logger");
+  });
+
+  it("detects createLogger as unused (never imported)", () => {
+    expect(unusedNames()).toContain("createLogger");
   });
 });

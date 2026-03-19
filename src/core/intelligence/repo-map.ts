@@ -431,17 +431,23 @@ export class RepoMap {
       CREATE TABLE IF NOT EXISTS refs (
         file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
-        source_file_id INTEGER REFERENCES files(id) ON DELETE CASCADE
+        source_file_id INTEGER REFERENCES files(id) ON DELETE CASCADE,
+        import_source TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_refs_file ON refs(file_id);
       CREATE INDEX IF NOT EXISTS idx_refs_name ON refs(name);
     `);
 
-    // Migration: add source_file_id column if missing
+    // Migration: add source_file_id and import_source columns if missing
     try {
       this.db.run(
         "ALTER TABLE refs ADD COLUMN source_file_id INTEGER REFERENCES files(id) ON DELETE CASCADE",
       );
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.run("ALTER TABLE refs ADD COLUMN import_source TEXT");
     } catch {
       // Column already exists
     }
@@ -608,6 +614,7 @@ export class RepoMap {
       }
 
       if (toIndex.length > 0 || stale.length > 0) {
+        this.resolveUnresolvedRefs();
         this.onProgress?.(-1, -1);
         await tick();
         this.buildEdges();
@@ -767,17 +774,26 @@ export class RepoMap {
     }
 
     // Refs with resolved source_file_id (from import statements)
-    const resolvedRefs: Array<{ name: string; sourceFileId: number | null }> = [];
-    // Unresolved refs (from identifier regex extraction)
+    const resolvedRefs: Array<{
+      name: string;
+      sourceFileId: number | null;
+      importSource: string | null;
+    }> = [];
     const allRefNames = new Set<string>();
 
     if (outline && outline.imports.length > 0) {
       const extImports = new Map<string, Set<string>>();
       for (const imp of outline.imports) {
         const sourceFileId = this.resolveImportSource(imp.source, absPath);
+        const importSource =
+          imp.source.startsWith(".") ||
+          imp.source.startsWith("crate::") ||
+          imp.source.startsWith("super::")
+            ? imp.source
+            : null;
         for (const s of imp.specifiers) {
           allRefNames.add(s);
-          resolvedRefs.push({ name: s, sourceFileId });
+          resolvedRefs.push({ name: s, sourceFileId, importSource });
         }
 
         if (
@@ -815,17 +831,17 @@ export class RepoMap {
       if (allRefNames.size >= MAX_REFS_PER_FILE) break;
       if (!allRefNames.has(id)) {
         allRefNames.add(id);
-        resolvedRefs.push({ name: id, sourceFileId: null });
+        resolvedRefs.push({ name: id, sourceFileId: null, importSource: null });
       }
     }
 
     if (resolvedRefs.length > 0) {
       const insertRef = this.db.prepare(
-        "INSERT INTO refs (file_id, name, source_file_id) VALUES (?, ?, ?)",
+        "INSERT INTO refs (file_id, name, source_file_id, import_source) VALUES (?, ?, ?, ?)",
       );
       const tx = this.db.transaction(() => {
         for (const ref of resolvedRefs) {
-          insertRef.run(fileId, ref.name, ref.sourceFileId);
+          insertRef.run(fileId, ref.name, ref.sourceFileId, ref.importSource);
         }
       });
       tx();
@@ -907,18 +923,29 @@ export class RepoMap {
 
     const importerDir = dirname(importerAbsPath);
 
-    // Python relative imports: ".foo" → "./foo", "..foo.bar" → "../foo/bar"
-    const normalized =
+    // Python relative imports: ".utils" → "./utils", "..models.user" → "../models/user"
+    let normalized = importSource;
+    if (
       importSource.startsWith(".") &&
       !importSource.startsWith("./") &&
       !importSource.startsWith("../")
-        ? importSource
-            .replace(/^(\.+)/, (dots) => {
-              const levels = dots.length - 1;
-              return levels === 0 ? "./" : "../".repeat(levels);
-            })
-            .replace(/\./g, "/")
-        : importSource;
+    ) {
+      const dotMatch = importSource.match(/^(\.+)(.*)/);
+      if (dotMatch) {
+        const dots = dotMatch[1]!;
+        const rest = dotMatch[2]!.replace(/\./g, "/");
+        const levels = dots.length - 1;
+        const prefix = levels === 0 ? "./" : "../".repeat(levels);
+        normalized = prefix + rest;
+      }
+    }
+
+    // Rust crate-relative imports: "crate::utils" → "./utils"
+    if (importSource.startsWith("crate::")) {
+      normalized = "./" + importSource.slice(7).replace(/::/g, "/");
+    } else if (importSource.startsWith("super::")) {
+      normalized = "../" + importSource.slice(7).replace(/::/g, "/");
+    }
 
     const base = resolve(importerDir, normalized);
 
@@ -951,6 +978,37 @@ export class RepoMap {
     return null;
   }
 
+  /**
+   * Second-pass resolution: resolve refs that have import_source stored but
+   * source_file_id = NULL (because the target file hadn't been indexed yet).
+   */
+  private resolveUnresolvedRefs(): void {
+    const unresolved = this.db
+      .query<{ rowid: number; file_id: number; import_source: string }, []>(
+        "SELECT rowid, file_id, import_source FROM refs WHERE source_file_id IS NULL AND import_source IS NOT NULL",
+      )
+      .all();
+    if (unresolved.length === 0) return;
+
+    const getFilePath = this.db.prepare<{ path: string }, [number]>(
+      "SELECT path FROM files WHERE id = ?",
+    );
+    const update = this.db.prepare("UPDATE refs SET source_file_id = ? WHERE rowid = ?");
+
+    const tx = this.db.transaction(() => {
+      for (const ref of unresolved) {
+        const fileRow = getFilePath.get(ref.file_id);
+        if (!fileRow) continue;
+        const absPath = join(this.cwd, fileRow.path);
+        const resolved = this.resolveImportSource(ref.import_source, absPath);
+        if (resolved !== null) {
+          update.run(resolved, ref.rowid);
+        }
+      }
+    });
+    tx();
+  }
+
   private buildEdges(): void {
     this.db.run("DELETE FROM edges");
 
@@ -965,14 +1023,16 @@ export class RepoMap {
         },
         []
       >(
-        `SELECT r.file_id AS source_file_id, s.file_id AS target_file_id,
+        `SELECT r.file_id AS source_file_id,
+                COALESCE(r.source_file_id, s.file_id) AS target_file_id,
                 r.name, COUNT(*) AS ref_count,
                 (SELECT COUNT(*) FROM symbols s2 WHERE s2.name = r.name AND s2.is_exported = 1) AS def_count
          FROM refs r
          JOIN symbols s ON r.name = s.name
-         WHERE r.file_id != s.file_id
+           AND (r.source_file_id IS NULL OR r.source_file_id = s.file_id)
+         WHERE r.file_id != COALESCE(r.source_file_id, s.file_id)
            AND s.is_exported = 1
-         GROUP BY r.file_id, s.file_id, r.name`,
+         GROUP BY r.file_id, COALESCE(r.source_file_id, s.file_id), r.name`,
       )
       .all();
 
