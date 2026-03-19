@@ -1127,32 +1127,72 @@ async function runAgentTask(
     `Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
   logBackgroundError(task.agentId, errMsg);
 
+  const agentFindings = bus.getFindings().filter((f) => f.agentId === task.agentId);
+  const agentReads = bus.getFileReadRecords(task.agentId);
+  const agentEdits = [...bus.getEditedFiles().entries()]
+    .filter(([_, editors]) => editors.includes(task.agentId))
+    .map(([path]) => path);
+
+  let salvaged = "";
+  if (agentFindings.length > 0 || agentReads.length > 0 || agentEdits.length > 0) {
+    const parts = [`Agent failed but produced partial results:`];
+    if (agentReads.length > 0) {
+      parts.push(`Files read: ${agentReads.map((r) => r.path).join(", ")}`);
+    }
+    if (agentEdits.length > 0) {
+      parts.push(`Files edited: ${agentEdits.join(", ")}`);
+    }
+    for (const f of agentFindings) {
+      parts.push(`Finding [${f.label}]: ${f.content}`);
+    }
+    salvaged = parts.join("\n");
+  }
+
+  const resultText = salvaged || errMsg;
+
   const agentResult: BusAgentResult = {
     agentId: task.agentId,
     role: task.role,
     task: task.task,
-    result: errMsg,
-    success: false,
+    result: resultText,
+    success: salvaged.length > 0,
     error: errMsg,
   };
   bus.setResult(agentResult);
 
   emitMultiAgentEvent({
     parentToolCallId,
-    type: "agent-error",
+    type: salvaged ? "agent-done" : "agent-error",
     agentId: task.agentId,
     role: task.role,
     task: task.task,
     totalAgents,
-    error: errMsg,
+    completedAgents: bus.completedAgentIds.length,
+    findingCount: bus.findingCount,
+    ...(salvaged ? {} : { error: errMsg }),
   });
   if (task.taskId != null) {
-    taskListTool.execute({ action: "update", id: task.taskId, status: "blocked" });
+    taskListTool.execute({
+      action: "update",
+      id: task.taskId,
+      status: salvaged ? "done" : "blocked",
+    });
   }
 
+  const doneResult: DoneToolResult | null = salvaged
+    ? {
+        summary: `Partial result (agent errored): ${errMsg.slice(0, 200)}`,
+        filesExamined: agentReads.map((r) => r.path),
+        ...(agentEdits.length > 0
+          ? { filesEdited: agentEdits.map((f) => ({ file: f, changes: "edited" })) }
+          : {}),
+        keyFindings: agentFindings.map((f) => ({ file: f.label, detail: f.content })),
+      }
+    : null;
+
   return {
-    doneResult: null,
-    resultText: errMsg,
+    doneResult,
+    resultText,
     callbacks: buildStepCallbacks(parentToolCallId, task.agentId),
     result: agentResult,
   };
