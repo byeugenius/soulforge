@@ -83,7 +83,7 @@ const IGNORED_DIRS = new Set([
 
 const MAX_FILE_SIZE = 500_000;
 const MAX_DEPTH = 10;
-const MAX_REFS_PER_FILE = 500;
+const MAX_REFS_PER_FILE = 5000;
 const PAGERANK_ITERATIONS = 20;
 const PAGERANK_DAMPING = 0.85;
 const DEFAULT_TOKEN_BUDGET = 2500;
@@ -652,21 +652,13 @@ export class RepoMap {
       this.extractTokenSignatures(fileId, outline.symbols, content);
     }
 
-    const identifiers = this.extractIdentifiers(content, language);
-    if (identifiers.size > 0) {
-      const insertRef = this.db.prepare("INSERT INTO refs (file_id, name) VALUES (?, ?)");
-      const refs = [...identifiers].slice(0, MAX_REFS_PER_FILE);
-      const tx = this.db.transaction(() => {
-        for (const name of refs) {
-          insertRef.run(fileId, name);
-        }
-      });
-      tx();
-    }
+    const refs = new Set<string>();
 
     if (outline && outline.imports.length > 0) {
       const extImports = new Map<string, Set<string>>();
       for (const imp of outline.imports) {
+        for (const s of imp.specifiers) refs.add(s);
+
         if (
           imp.source.startsWith(".") ||
           imp.source.startsWith("/") ||
@@ -695,6 +687,22 @@ export class RepoMap {
         });
         tx();
       }
+    }
+
+    const identifiers = this.extractIdentifiers(content, language);
+    for (const id of identifiers) {
+      if (refs.size >= MAX_REFS_PER_FILE) break;
+      refs.add(id);
+    }
+
+    if (refs.size > 0) {
+      const insertRef = this.db.prepare("INSERT INTO refs (file_id, name) VALUES (?, ?)");
+      const tx = this.db.transaction(() => {
+        for (const name of refs) {
+          insertRef.run(fileId, name);
+        }
+      });
+      tx();
     }
   }
 

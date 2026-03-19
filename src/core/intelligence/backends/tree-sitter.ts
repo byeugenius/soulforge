@@ -229,6 +229,208 @@ type TSQuery = import("web-tree-sitter").Query;
 type TSQueryCapture = import("web-tree-sitter").QueryCapture;
 type TSNode = import("web-tree-sitter").Node;
 
+// ─── Import specifier extraction from AST nodes ───
+
+function extractImportSpecifiers(node: TSNode, language: Language): string[] {
+  const specifiers: string[] = [];
+  collectSpecifiers(node, language, specifiers);
+  return specifiers;
+}
+
+function collectSpecifiers(node: TSNode, language: Language, out: string[]): void {
+  const type = node.type;
+
+  if (language === "typescript" || language === "javascript") {
+    if (type === "import_specifier") {
+      const alias = node.childForFieldName("alias");
+      const name = alias ?? node.childForFieldName("name");
+      if (name) out.push(name.text);
+      return;
+    }
+    if (type === "identifier" && node.parent?.type === "import_clause") {
+      out.push(node.text);
+      return;
+    }
+    if (type === "namespace_import") {
+      const name = node.namedChildren.find((c: TSNode | null) => c != null && c.type === "identifier");
+      if (name) out.push(name.text);
+      return;
+    }
+  } else if (language === "python") {
+    if (type === "aliased_import") {
+      const alias = node.childForFieldName("alias");
+      const name = alias ?? node.childForFieldName("name");
+      if (name) {
+        const text = name.text;
+        const last = text.split(".").pop();
+        if (last) out.push(last);
+      }
+      return;
+    }
+    if (type === "dotted_name" && node.parent?.type === "import_from_statement") {
+      const field = node.parent.childForFieldName("module_name");
+      if (node !== field) {
+        const last = node.text.split(".").pop();
+        if (last) out.push(last);
+        return;
+      }
+    }
+    if (type === "dotted_name" && node.parent?.type === "import_statement") {
+      const last = node.text.split(".").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "rust") {
+    if (type === "use_as_clause") {
+      const alias = node.childForFieldName("alias");
+      if (alias) {
+        out.push(alias.text);
+        return;
+      }
+    }
+    if (type === "identifier" && (
+      node.parent?.type === "use_list" ||
+      node.parent?.type === "scoped_use_list" ||
+      node.parent?.type === "use_declaration"
+    )) {
+      out.push(node.text);
+      return;
+    }
+    if (type === "scoped_identifier" && !node.parent?.type?.includes("use_list")) {
+      const name = node.childForFieldName("name");
+      if (name) out.push(name.text);
+      return;
+    }
+  } else if (language === "java" || language === "kotlin" || language === "scala") {
+    if (type === "identifier" || type === "type_identifier" || type === "simple_identifier") {
+      if (node.nextSibling === null || node.nextSibling?.type === ";") {
+        out.push(node.text);
+        return;
+      }
+    }
+    if (type === "scoped_identifier" || type === "scoped_type_identifier") {
+      const name = node.childForFieldName("name");
+      if (name) out.push(name.text);
+      return;
+    }
+  } else if (language === "csharp") {
+    if (type === "qualified_name" || type === "identifier_name") {
+      const last = node.text.split(".").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "go") {
+    // import "fmt" → package name is last path segment
+    // import alias "pkg/path" → alias is the specifier
+    if (type === "import_spec") {
+      const name = node.childForFieldName("name");
+      const path = node.childForFieldName("path");
+      if (name && name.text !== ".") {
+        out.push(name.text);
+      } else if (path) {
+        const raw = path.text.replace(/['"]/g, "");
+        const last = raw.split("/").pop();
+        if (last) out.push(last);
+      }
+      return;
+    }
+    if (type === "interpreted_string_literal") {
+      const raw = node.text.replace(/['"]/g, "");
+      const last = raw.split("/").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "ruby") {
+    // require "foo" / require_relative "foo" → last path segment
+    if (type === "string" || type === "string_content") {
+      const raw = node.text.replace(/['"]/g, "");
+      const last = raw.split("/").pop()?.replace(/\.rb$/, "");
+      if (last) out.push(last);
+      return;
+    }
+    if (type === "constant") {
+      out.push(node.text);
+      return;
+    }
+  } else if (language === "php") {
+    // use Foo\Bar\Baz → Baz
+    // use Foo\Bar\{Baz, Qux} → Baz, Qux
+    if (type === "namespace_use_clause") {
+      const name = node.namedChildren.at(-1);
+      if (name && (name.type === "name" || name.type === "qualified_name")) {
+        const last = name.text.split("\\").pop();
+        if (last) out.push(last);
+      }
+      return;
+    }
+    if (type === "qualified_name" && node.parent?.type === "namespace_use_declaration") {
+      const last = node.text.split("\\").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "swift") {
+    // import Foundation → Foundation
+    // import struct Module.Struct → Struct
+    if (type === "identifier") {
+      out.push(node.text);
+      return;
+    }
+  } else if (language === "dart") {
+    // import "package:foo/bar.dart" show Baz, Qux
+    if (type === "identifier" && (
+      node.parent?.type === "combinator" ||
+      node.parent?.type === "show_combinator" ||
+      node.parent?.type === "hide_combinator"
+    )) {
+      out.push(node.text);
+      return;
+    }
+    // Fallback: grab the filename from the import URI
+    if (type === "string_literal" || type === "uri") {
+      const raw = node.text.replace(/['"]/g, "");
+      const last = raw.split("/").pop()?.replace(/\.dart$/, "");
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "elixir") {
+    // alias Foo.Bar → Bar
+    // import Foo.Bar → Bar
+    if (type === "alias") {
+      const last = node.text.split(".").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "ocaml") {
+    // open Foo → Foo
+    if (type === "module_name" || type === "module_path") {
+      const last = node.text.split(".").pop();
+      if (last) out.push(last);
+      return;
+    }
+  } else if (language === "solidity") {
+    // import {Foo, Bar} from "file.sol"
+    if (type === "import_declaration" && node.text.includes("{")) {
+      const braceMatch = node.text.match(/\{([^}]+)\}/);
+      if (braceMatch) {
+        for (const item of braceMatch[1]!.split(",")) {
+          const parts = item.trim().split(/\s+as\s+/);
+          const name = (parts[1] || parts[0] || "").trim();
+          if (name) out.push(name);
+        }
+        return;
+      }
+    }
+  }
+
+  // C, C++, Zig, Objective-C: #include / @import — no named specifiers, refs come from identifier regex
+  // Generic fallback: recurse into children
+  const childCount = node.namedChildCount;
+  for (let i = 0; i < childCount; i++) {
+    const child = node.namedChild(i);
+    if (child) collectSpecifiers(child, language, out);
+  }
+}
+
 // Use canonical map — tree-sitter also needs .hh and .sc which may not be in EXT_TO_LANGUAGE
 // Those extras are added to the canonical map in types.ts
 
@@ -369,19 +571,22 @@ export class TreeSitterBackend implements IntelligenceBackend {
 
         if (!importNode) continue;
 
+        const node = importNode.node;
         const source = sourceNode
           ? sourceNode.node.text.replace(/['"]/g, "")
-          : importNode.node.text;
+          : node.text;
+        const specifiers = extractImportSpecifiers(node, language);
 
         imports.push({
           source,
-          specifiers: [],
-          isDefault: false,
-          isNamespace: false,
+          specifiers,
+          isDefault: specifiers.length > 0 && node.text.includes("import ") &&
+            !node.text.includes("{") && !node.text.includes("*"),
+          isNamespace: node.text.includes("* as "),
           location: {
             file: resolve(file),
-            line: importNode.node.startPosition.row + 1,
-            column: importNode.node.startPosition.column + 1,
+            line: node.startPosition.row + 1,
+            column: node.startPosition.column + 1,
           },
         });
       }
@@ -500,18 +705,23 @@ export class TreeSitterBackend implements IntelligenceBackend {
 
           // Handle imports
           if (patternCapture?.name === "import") {
+            const node = patternCapture.node;
             const source = sourceCapture
               ? sourceCapture.node.text.replace(/['"]/g, "")
-              : patternCapture.node.text;
+              : node.text;
+            const specifiers = extractImportSpecifiers(node, language);
+            const isDefault = specifiers.length > 0 && node.text.includes("import ") &&
+              !node.text.includes("{") && !node.text.includes("*");
+            const isNamespace = node.text.includes("* as ");
             imports.push({
               source,
-              specifiers: [],
-              isDefault: false,
-              isNamespace: false,
+              specifiers,
+              isDefault,
+              isNamespace,
               location: {
                 file: absFile,
-                line: patternCapture.node.startPosition.row + 1,
-                column: patternCapture.node.startPosition.column + 1,
+                line: node.startPosition.row + 1,
+                column: node.startPosition.column + 1,
               },
             });
             continue;

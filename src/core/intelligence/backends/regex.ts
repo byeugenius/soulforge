@@ -229,7 +229,7 @@ export class RegexBackend implements IntelligenceBackend {
           specifiers.push(
             ...cleaned
               .split(",")
-              .map((s) => s.trim())
+              .map((s) => s.trim().replace(/^type\s+/, ""))
               .filter(Boolean),
           );
         }
@@ -241,8 +241,48 @@ export class RegexBackend implements IntelligenceBackend {
           isNamespace: !!namespaceImport,
           location: { file: resolve(file), line: i + 1, column: 1 },
         });
+      } else if (language === "python") {
+        const module = (match[1] || "").trim();
+        const importList = (match[2] || "").trim();
+        const specifiers = importList
+          .split(",")
+          .map((s) => {
+            const parts = s.trim().split(/\s+as\s+/);
+            const name = (parts[1] || parts[0] || "").trim();
+            const last = name.split(".").pop();
+            return last || "";
+          })
+          .filter(Boolean);
+        imports.push({
+          source: module || importList,
+          specifiers,
+          isDefault: false,
+          isNamespace: false,
+          location: { file: resolve(file), line: i + 1, column: 1 },
+        });
+      } else if (language === "rust") {
+        const usePath = (match[1] || "").trim();
+        const specifiers: string[] = [];
+        const braceMatch = usePath.match(/\{([^}]+)\}/);
+        if (braceMatch) {
+          for (const item of braceMatch[1]!.split(",")) {
+            const parts = item.trim().split(/\s+as\s+/);
+            const name = (parts[1] || parts[0] || "").trim();
+            if (name && name !== "self") specifiers.push(name);
+          }
+        } else {
+          const segments = usePath.replace(/;$/, "").split("::");
+          const last = segments.pop()?.trim();
+          if (last && last !== "*" && last !== "self") specifiers.push(last);
+        }
+        imports.push({
+          source: usePath,
+          specifiers,
+          isDefault: false,
+          isNamespace: false,
+          location: { file: resolve(file), line: i + 1, column: 1 },
+        });
       } else {
-        // Generic: just capture the source
         imports.push({
           source: (match[1] || match[2] || "").trim(),
           specifiers: (match[2] || "")

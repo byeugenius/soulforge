@@ -1394,9 +1394,9 @@ export function useChat({
           completedCalls.length = 0;
           finalSegments.length = 0;
 
-          // Clear streaming display buffers
-          streamSegmentsBuffer.current = [];
-          liveToolCallsBuffer.current = [];
+          // Clear streaming display buffers (mutate in-place — closures hold direct refs)
+          streamSegmentsBuffer.current.length = 0;
+          liveToolCallsBuffer.current.length = 0;
           lastFlushedSegments.current = [];
           lastFlushedToolCalls.current = [];
           lastFlushedStreamingChars.current = 0;
