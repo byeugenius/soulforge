@@ -236,19 +236,24 @@ SoulForge checks for prerequisites on first launch and offers to install Neovim 
 ```bash
 soulforge                                    # Launch TUI
 soulforge --session <id>                     # Resume a saved session
-soulforge --headless "your prompt here"      # Run without TUI, stream to stdout
-soulforge --headless --json "your prompt"    # Structured JSON after completion
-soulforge --headless --events "prompt"       # JSONL event stream (real-time)
+soulforge --headless "your prompt here"      # Stream to stdout
+soulforge --headless --json "prompt"         # Structured JSON
+soulforge --headless --events "prompt"       # JSONL event stream
 soulforge --headless --model provider/model  # Override model
-soulforge --headless --mode architect        # Read-only analysis mode
-soulforge --headless --max-steps 10          # Limit agent steps
+soulforge --headless --mode architect        # Read-only analysis
+soulforge --headless --system "role" "prompt"# Inject system prompt
+soulforge --headless --include file.ts       # Pre-load files
+soulforge --headless --session <id> "prompt" # Resume session
+soulforge --headless --save-session "prompt" # Save for later
+soulforge --headless --max-steps 10          # Limit steps
 soulforge --headless --timeout 60000         # Abort after 60s
-soulforge --headless --quiet "prompt"        # Suppress header/footer
-soulforge --headless --cwd /path/to/project  # Set working directory
+soulforge --headless --no-repomap "prompt"   # Skip repo map
+soulforge --headless --diff "fix the bug"    # Show changed files
 echo "prompt" | soulforge --headless         # Pipe from stdin
-soulforge --list-providers                   # Show providers + key status
-soulforge --list-models [provider]           # Show available models
-soulforge --set-key <provider> <key>         # Save API key to keychain
+soulforge --list-providers                   # Provider status
+soulforge --list-models [provider]           # Available models
+soulforge --set-key <provider> <key>         # Save API key
+soulforge --version                          # Version info
 ```
 
 [Headless mode deep dive →](docs/headless.md)
