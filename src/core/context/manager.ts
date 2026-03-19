@@ -414,10 +414,10 @@ export class ContextManager {
       }
     } else {
       store.setSemanticModel("");
-      store.setSemanticProgress("");
+      store.setSemanticStatus("generating");
+      store.setSemanticProgress("waiting for generation...");
       const stats = this.repoMap.getStats();
       store.setSemanticCount(stats.summaries);
-      store.setSemanticStatus(stats.summaries > 0 ? "ready" : "off");
     }
   }
 
@@ -510,7 +510,9 @@ export class ContextManager {
       const stats = this.repoMap.getStats();
       store.setSemanticCount(stats.summaries);
       store.setSemanticStatus(stats.summaries > 0 ? "ready" : "off");
-      store.setSemanticProgress("");
+      store.setSemanticProgress(
+        stats.summaries > 0 ? `llm — ${String(stats.summaries)} generated` : "",
+      );
       return count;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

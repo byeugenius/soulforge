@@ -121,7 +121,6 @@ function applyRepoMapToggle(
 function triggerSemanticGeneration(ctx: CommandContext, cm: ContextManager): void {
   const modelId = cm.getSemanticModelId(ctx.chat.activeModel);
   const label = getShortModelLabel(modelId);
-  useRepoMapStore.getState().setSemanticStatus("generating");
   sysMsg(ctx, `Generating semantic summaries [${label}]...`);
   cm.generateSemanticSummaries(modelId)
     .then((count) => {
