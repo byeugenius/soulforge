@@ -264,10 +264,11 @@ export function formatDoneResult(done: DoneToolResult): string {
     );
     if (omitted > 0) {
       const files = done.keyFindings
-        .slice(MAX_FINDINGS_DISPLAY)
+        .slice(MAX_FINDINGS_DISPLAY, MAX_FINDINGS_DISPLAY + 10)
         .map((f) => f.file)
         .join(", ");
-      parts.push(`  ... ${String(omitted)} more findings in: ${files}`);
+      const extra = omitted > 10 ? ` (+${String(omitted - 10)} more)` : "";
+      parts.push(`  ... ${String(omitted)} more findings in: ${files}${extra}`);
     }
   }
   if (done.gaps && done.gaps.length > 0) {
