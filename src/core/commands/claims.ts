@@ -114,13 +114,13 @@ function formatTimeAgo(timestamp: number): string {
 }
 
 export function register(map: Map<string, CommandHandler>): void {
-  map.set("claims", handleClaims);
-  map.set("unclaim-all", handleUnclaimAll);
-  map.set("force-claim", handleForceClaim);
+  map.set("/claims", handleClaims);
+  map.set("/unclaim-all", handleUnclaimAll);
+  map.set("/force-claim", handleForceClaim);
 }
 
 export function matchClaimsPrefix(cmd: string): CommandHandler | null {
-  if (cmd.startsWith("unclaim ") || cmd === "unclaim") return handleUnclaim;
-  if (cmd.startsWith("force-claim ") || cmd === "force-claim") return handleForceClaim;
+  if (cmd.startsWith("/unclaim ") || cmd === "/unclaim") return handleUnclaim;
+  if (cmd.startsWith("/force-claim ") || cmd === "/force-claim") return handleForceClaim;
   return null;
 }
