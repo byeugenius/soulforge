@@ -1821,12 +1821,27 @@ export class RepoMap {
     tx();
   }
 
+  private flushPromise: Promise<void> | null = null;
+
   private flushIfDirty(): void {
-    if (!this.dirty || this.dirtyTimer) return;
+    if (!this.dirty || this.dirtyTimer || this.flushPromise) return;
     this.dirty = false;
-    this.buildCallGraph();
-    this.buildEdges();
-    this.computePageRank();
+    this.flushPromise = this.flushAsync();
+  }
+
+  private async flushAsync(): Promise<void> {
+    const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+    try {
+      this.buildCallGraph();
+      await tick();
+      this.buildEdges();
+      await tick();
+      this.computePageRank();
+    } catch {
+      // DB closed during shutdown or locked — next flush will retry
+    } finally {
+      this.flushPromise = null;
+    }
   }
 
   render(opts: RepoMapOptions = {}): string {
