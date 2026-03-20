@@ -573,7 +573,6 @@ export class ContextManager {
   async refreshRepoMap(): Promise<void> {
     this.syncRepoMapStore("scanning");
     useRepoMapStore.getState().setScanError("");
-    this.repoMap.clear();
     await this.repoMap.scan().catch((err: unknown) => {
       const msg = toErrorMessage(err);
       this.repoMapReady = false;

@@ -316,7 +316,7 @@ export class RepoMap {
   private async doScan(): Promise<void> {
     const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     try {
-      const files = collectFiles(this.cwd);
+      const files = await collectFiles(this.cwd);
 
       const existingFiles = new Map<string, { id: number; mtime_ms: number }>();
       for (const row of this.db
@@ -361,7 +361,7 @@ export class RepoMap {
               // skip files that fail to index
             }
           }
-          if (i % 10 === 0) {
+          if (i % 5 === 0) {
             this.onProgress?.(i + 1, toIndex.length);
             await tick();
           }
@@ -371,14 +371,17 @@ export class RepoMap {
 
       if (toIndex.length > 0 || stale.length > 0) {
         this.resolveUnresolvedRefs();
+        await tick();
         this.resolveIdentifierRefs();
         this.onProgress?.(-1, -1);
         await tick();
         this.buildCallGraph();
+        await tick();
         this.buildEdges();
         this.onProgress?.(-2, -2);
         await tick();
         this.computePageRank();
+        await tick();
       }
 
       this.onProgress?.(-3, -3);
@@ -442,7 +445,7 @@ export class RepoMap {
     let lineCount = 0;
     let content: string;
     try {
-      content = require("node:fs").readFileSync(absPath, "utf-8");
+      content = readFileSync(absPath, "utf-8");
       lineCount = content.split("\n").length;
     } catch {
       return;
@@ -1732,7 +1735,6 @@ export class RepoMap {
   private buildCallGraph(): void {
     this.db.run("DELETE FROM calls");
 
-    // Get all files with both functions and resolved imports
     const filesWithImports = this.db
       .query<{ id: number; path: string }, []>(
         `SELECT DISTINCT f.id, f.path FROM files f
@@ -1742,6 +1744,15 @@ export class RepoMap {
       .all();
 
     if (filesWithImports.length === 0) return;
+
+    // Pre-read all files OUTSIDE the transaction to avoid holding DB lock during file I/O
+    const fileContents = new Map<number, string[]>();
+    for (const file of filesWithImports) {
+      try {
+        const content = readFileSync(join(this.cwd, file.path), "utf-8");
+        fileContents.set(file.id, content.split("\n"));
+      } catch {}
+    }
 
     const getImports = this.db.prepare<{ name: string; source_file_id: number }, [number]>(
       `SELECT DISTINCT r.name, r.source_file_id FROM refs r
@@ -1767,16 +1778,8 @@ export class RepoMap {
 
     const tx = this.db.transaction(() => {
       for (const file of filesWithImports) {
-        let lines: string[];
-        try {
-          const content = require("node:fs").readFileSync(
-            join(this.cwd, file.path),
-            "utf-8",
-          ) as string;
-          lines = content.split("\n");
-        } catch {
-          continue;
-        }
+        const lines = fileContents.get(file.id);
+        if (!lines) continue;
 
         const imports = getImports.all(file.id);
         if (imports.length === 0) continue;
@@ -1784,7 +1787,6 @@ export class RepoMap {
         const functions = getFunctions.all(file.id);
         if (functions.length === 0) continue;
 
-        // Build word-boundary regex for each import
         const importPatterns = imports.map((imp) => ({
           name: imp.name,
           sourceFileId: imp.source_file_id,
@@ -1792,12 +1794,12 @@ export class RepoMap {
         }));
 
         for (const func of functions) {
-          const bodyStart = func.line; // 1-indexed, inclusive
-          const bodyEnd = Math.min(func.end_line, lines.length); // 1-indexed, inclusive
+          const bodyStart = func.line;
+          const bodyEnd = Math.min(func.end_line, lines.length);
           const bodyText = lines.slice(bodyStart - 1, bodyEnd).join("\n");
 
           for (const imp of importPatterns) {
-            if (imp.name === func.name) continue; // skip self-definitions
+            if (imp.name === func.name) continue;
 
             if (imp.re.test(bodyText)) {
               let callLine = func.line;

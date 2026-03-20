@@ -23,14 +23,14 @@ import {
   type SubagentModels,
 } from "./subagent-tools.js";
 
-export const BASE_DELAY_MS = 2000;
-export const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2000;
+const MAX_RETRIES = 3;
 
 export const MAX_CONCURRENT_AGENTS = 3;
 const AGENT_TIMEOUT_MS = 300_000;
 const RETRY_JITTER_MS = 1000;
 
-export const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnFormat, string> = {
+const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnFormat, string> = {
   summary:
     "Return concise findings and reasoning. No code blocks or raw file content. " +
     "Focus on what you found, what it means, and what the implications are.",
@@ -48,7 +48,7 @@ export const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnF
     "No code blocks unless they directly support the verdict.",
 };
 
-export function isRetryable(error: unknown): boolean {
+function isRetryable(error: unknown): boolean {
   if (error instanceof DependencyFailedError) return false;
   const msg = error instanceof Error ? error.message : String(error);
   const lower = msg.toLowerCase();

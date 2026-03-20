@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { IGNORED_DIRS } from "../context/file-tree.js";
 import { isForbidden } from "../security/forbidden.js";
@@ -265,27 +265,28 @@ export function getDirGroup(filePath: string): string | null {
   return parts.length >= 3 ? `${parts[0]}/${parts[1]}` : (parts[0] ?? null);
 }
 
-export function collectFiles(dir: string, depth = 0): CollectedFile[] {
+export async function collectFiles(dir: string, depth = 0): Promise<CollectedFile[]> {
   if (depth > MAX_DEPTH) return [];
   const files: CollectedFile[] = [];
   try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (entry.name.startsWith(".") && entry.name !== ".") continue;
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!IGNORED_DIRS.has(entry.name)) {
-          files.push(...collectFiles(fullPath, depth + 1));
+          files.push(...(await collectFiles(fullPath, depth + 1)));
         }
       } else if (entry.isFile()) {
         if (isForbidden(fullPath)) continue;
         const ext = extname(entry.name).toLowerCase();
         if (ext in INDEXABLE_EXTENSIONS) {
           try {
-            const stat = statSync(fullPath);
-            if (stat.size < MAX_FILE_SIZE) files.push({ path: fullPath, mtimeMs: stat.mtimeMs });
+            const s = await stat(fullPath);
+            if (s.size < MAX_FILE_SIZE) files.push({ path: fullPath, mtimeMs: s.mtimeMs });
           } catch {}
         }
       }
+      if (files.length % 50 === 0) await new Promise<void>((r) => setTimeout(r, 0));
     }
   } catch {}
   return files;

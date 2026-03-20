@@ -14,6 +14,14 @@ export function normalizePath(p: string): string {
   return n.replace(/\/+/g, "/");
 }
 
+function notifyWaiters<T>(waiters: Array<(v: T) => void>, value: T): void {
+  for (const w of waiters) {
+    try {
+      w(value);
+    } catch {}
+  }
+}
+
 export interface SharedCache {
   files: Map<string, string | null>;
   toolResults: Map<string, { result: string; ts: number; agentId: string }>;
@@ -202,13 +210,13 @@ export class AgentBus {
   private drainAllWaiters(): void {
     for (const [, entry] of this.fileCache) {
       if (entry.state === "reading") {
-        for (const w of entry.waiters) w(null);
+        notifyWaiters(entry.waiters, null);
         entry.waiters = [];
         entry.state = "failed";
       }
     }
     for (const [key, waiters] of this.toolResultWaiters) {
-      for (const w of waiters) w(null);
+      notifyWaiters(waiters, null);
       this.toolResultWaiters.delete(key);
     }
     for (const [path, queue] of this._editLockQueues) {
@@ -239,14 +247,23 @@ export class AgentBus {
       if (entry.state === "done") {
         entry.lastAccess = Date.now();
         this._metrics.fileHits++;
-        this.onCacheEvent?.(agentId, "hit", key, entry.agentId);
+        try {
+          this.onCacheEvent?.(agentId, "hit", key, entry.agentId);
+        } catch {}
         return { cached: true, content: entry.content };
       }
       if (entry.state === "reading") {
+        if (entry.agentId === agentId) {
+          return { cached: false, gen: -1 };
+        }
         this._metrics.fileWaits++;
-        this.onCacheEvent?.(agentId, "wait", key, entry.agentId);
+        try {
+          this.onCacheEvent?.(agentId, "wait", key, entry.agentId);
+        } catch {}
         const promise = new Promise<string | null>((resolve) => {
           entry.waiters.push(resolve);
+          // Timeout: don't let waiters hang forever if the reading agent crashes
+          setTimeout(() => resolve(null), 300_000);
         });
         return { cached: "waiting", content: promise };
       }
@@ -275,7 +292,7 @@ export class AgentBus {
     const oldSize = entry.content?.length ?? 0;
     entry.content = content;
     this.fileCacheBytes += (content?.length ?? 0) - oldSize;
-    for (const waiter of entry.waiters) waiter(content);
+    notifyWaiters(entry.waiters, content);
     entry.waiters = [];
     this.evictFileCacheIfNeeded(key);
   }
@@ -288,7 +305,7 @@ export class AgentBus {
     this.fileCacheBytes -= entry.content?.length ?? 0;
     const { waiters } = entry;
     this.fileCache.delete(key);
-    for (const waiter of waiters) waiter(null);
+    notifyWaiters(waiters, null);
   }
 
   invalidateFile(path: string, agentId = "_edit"): void {
@@ -299,13 +316,15 @@ export class AgentBus {
       entry.gen++;
       entry.state = "failed";
       entry.content = null;
-      for (const waiter of entry.waiters) waiter(null);
+      notifyWaiters(entry.waiters, null);
       entry.waiters = [];
     }
     this.fileCache.delete(key);
     const invalidated = this.invalidateToolResultsForFile(key, agentId);
     if (invalidated > 0) {
-      this.onCacheEvent?.(agentId, "invalidate", key, agentId);
+      try {
+        this.onCacheEvent?.(agentId, "invalidate", key, agentId);
+      } catch {}
     }
   }
 
@@ -583,7 +602,9 @@ export class AgentBus {
         this._metrics.toolHits++;
         this.toolResultCache.delete(key);
         this.toolResultCache.set(key, entry);
-        this.onToolCacheEvent?.(agentId, this.toolNameFromKey(key), key, "hit");
+        try {
+          this.onToolCacheEvent?.(agentId, this.toolNameFromKey(key), key, "hit");
+        } catch {}
         return { hit: true, result: entry.result };
       }
     }
@@ -592,6 +613,7 @@ export class AgentBus {
       this._metrics.toolWaits++;
       const promise = new Promise<string | null>((resolve) => {
         waiters.push((r) => resolve(r));
+        setTimeout(() => resolve(null), 300_000);
       });
       return { hit: "waiting", result: promise };
     }
@@ -604,7 +626,7 @@ export class AgentBus {
     const waiters = this.toolResultWaiters.get(key);
     this.toolResultWaiters.delete(key);
     if (waiters) {
-      for (const w of waiters) w(result);
+      notifyWaiters(waiters, result);
     }
     this.toolResultCache.delete(key);
     if (this.toolResultCache.size >= this.toolResultCacheMaxSize) {
@@ -613,7 +635,9 @@ export class AgentBus {
       if (firstKey) this.toolResultCache.delete(firstKey);
     }
     this.toolResultCache.set(key, { result, ts: Date.now(), agentId });
-    this.onToolCacheEvent?.(agentId, this.toolNameFromKey(key), key, "store");
+    try {
+      this.onToolCacheEvent?.(agentId, this.toolNameFromKey(key), key, "store");
+    } catch {}
   }
 
   private toolNameFromKey(key: string): string {

@@ -5,7 +5,7 @@ import { buildFallbackResult } from "./agent-results.js";
 import { emitMultiAgentEvent } from "./subagent-events.js";
 import { buildStepCallbacks, createAgent, type SubagentModels } from "./subagent-tools.js";
 
-export const DESLOPPIFY_PROMPT = [
+const DESLOPPIFY_PROMPT = [
   "You are a cleanup agent. Review the files that were just edited and remove:",
   "- Tests that verify language/framework behavior rather than business logic",
   "- Redundant type checks the type system already enforces",
@@ -136,7 +136,7 @@ export async function runDesloppify(
   }
 }
 
-export const VERIFY_PROMPT = [
+const VERIFY_PROMPT = [
   "You are a verification specialist. Your job is not to confirm the implementation works — it is to try to break it.",
   "",
   "RECOGNIZE YOUR RATIONALIZATIONS:",
