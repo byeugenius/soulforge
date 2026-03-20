@@ -961,7 +961,13 @@ export function buildSubagentTools(models: SubagentModels) {
         const dispatch = output as DispatchOutput | string;
         const rawText = typeof dispatch === "string" ? dispatch : dispatch.output;
 
-        const lines = rawText.split("\n");
+        // Strip skill blocks echoed back from subagent prompts — main agent already has them
+        const stripped = rawText.replace(
+          /\n*--- Relevant skill: .+? ---\n[\s\S]*?(?=\n--- Relevant skill:|\n###|\n---\n|\n## |$)/g,
+          "",
+        );
+
+        const lines = stripped.split("\n");
         const compact: string[] = [];
         let blankRun = 0;
         let inCodeBlock = false;
@@ -1021,7 +1027,7 @@ export function buildSubagentTools(models: SubagentModels) {
           if (dispatch.filesEdited.length > 0) {
             header.push(`Files edited: ${dispatch.filesEdited.join(", ")}`);
           }
-          header.push("All file content from these reads is included below. Act on it directly.\n");
+          header.push("Use read_file on specific files if you need full content.\n");
           compact.unshift(...header);
         }
 
@@ -1033,12 +1039,20 @@ export function buildSubagentTools(models: SubagentModels) {
 
         if (typeof dispatch !== "string") {
           compact.push(
-            "\n---\n**Next step: act on these results.** You have the dispatch output above — plan your implementation, write code, or respond to the user. " +
-              "If you need a specific symbol from a large file, use read_file with target + name.",
+            "\n---\n**Next step: act on these results.** If you need a specific symbol from a large file, use read_file with target + name.",
           );
         }
 
-        return { type: "text" as const, value: compact.join("\n") };
+        let value = compact.join("\n");
+        const DISPATCH_OUTPUT_CAP = 24_000;
+        if (value.length > DISPATCH_OUTPUT_CAP) {
+          value = value.slice(0, DISPATCH_OUTPUT_CAP);
+          const lastNl = value.lastIndexOf("\n");
+          if (lastNl > 0) value = value.slice(0, lastNl);
+          value += `\n[dispatch output truncated — ${String(Math.round((compact.join("\n").length - DISPATCH_OUTPUT_CAP) / 1024))}KB omitted. Use read_file for specific files.]`;
+        }
+
+        return { type: "text" as const, value };
       },
     }),
   };
