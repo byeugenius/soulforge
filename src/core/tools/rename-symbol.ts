@@ -542,6 +542,16 @@ export const renameSymbolTool = {
         );
       }
 
+      try {
+        const { autoFixFiles } = await import("./post-edit-fix.js");
+        const fixes = await autoFixFiles(uniqueFiles);
+        if (fixes.size > 0) {
+          lines.push(`Auto-fixed: ${[...fixes.values()].map((a) => a.join(", ")).join("; ")}`);
+        }
+      } catch {
+        // Auto-fix unavailable
+      }
+
       return {
         success: true,
         output: lines.join("\n"),

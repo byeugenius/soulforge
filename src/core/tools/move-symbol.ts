@@ -567,6 +567,8 @@ export const moveSymbolTool = {
       const handler = getLangHandler(language);
 
       // ── 1. Find symbol definition ──
+      // Priority: LSP readSymbol → LSP findSymbols (DocumentSymbol range) → regex fallback
+      // LSP ranges handle JSX correctly; the regex brace-counter does not.
       let defStart: number;
       let defEnd: number;
 
@@ -578,16 +580,27 @@ export const moveSymbolTool = {
         defStart = block.location.line - 1;
         defEnd = (block.location.endLine ?? block.location.line) - 1;
       } else {
-        const found = findSymbolRange(sourceLines, args.symbol);
-        if (!found) {
-          return {
-            success: false,
-            output: `Symbol '${args.symbol}' not found in ${from}`,
-            error: "symbol not found",
-          };
+        // Try LSP DocumentSymbol for accurate range (handles JSX, arrow functions, etc.)
+        const symbols = await router.executeWithFallback(language, "findSymbols", (b) =>
+          b.findSymbols ? b.findSymbols(from) : Promise.resolve(null),
+        );
+        const match = symbols?.find((s) => s.name === args.symbol);
+        if (match?.location.endLine) {
+          defStart = match.location.line - 1;
+          defEnd = match.location.endLine - 1;
+        } else {
+          // Last resort: regex brace-counting (unreliable for JSX)
+          const found = findSymbolRange(sourceLines, args.symbol);
+          if (!found) {
+            return {
+              success: false,
+              output: `Symbol '${args.symbol}' not found in ${from}`,
+              error: "symbol not found",
+            };
+          }
+          defStart = found.start;
+          defEnd = found.end;
         }
-        defStart = found.start;
-        defEnd = found.end;
       }
 
       // Expand to include export/pub keyword (tree-sitter may start after it)
@@ -824,6 +837,20 @@ export const moveSymbolTool = {
         );
       } else {
         output.push("", "All imports updated atomically. Zero errors.");
+      }
+
+      // Auto-fix all affected files (organize imports, fix unused vars)
+      try {
+        const { autoFixFiles } = await import("./post-edit-fix.js");
+        const fixes = await autoFixFiles(allModified);
+        if (fixes.size > 0) {
+          const fixed = [...fixes.entries()]
+            .map(([f, actions]) => `  ${relative(cwd, f)}: ${actions.join(", ")}`)
+            .join("\n");
+          output.push("", `Auto-fixed:\n${fixed}`);
+        }
+      } catch {
+        // Auto-fix unavailable
       }
 
       return { success: true, output: output.join("\n") };

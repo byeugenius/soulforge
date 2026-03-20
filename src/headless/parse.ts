@@ -124,7 +124,7 @@ export async function parseHeadlessArgs(argv: string[]): Promise<HeadlessAction 
     } else if (arg === "--no-repomap") {
       noRepomap = true;
     } else if (arg === "--include" && argv[i + 1]) {
-      include.push(argv[++i]!);
+      include.push(argv[++i] as string);
     } else if (arg === "--diff") {
       diff = true;
     } else if (arg === "--chat") {

@@ -76,7 +76,7 @@ function buildSummary(toolName: string, text: string, ctx?: SummaryContext): str
   if (charCount <= 200) return null;
 
   const args = ctx?.args;
-  const tag = "[pruned]";
+  const tag = "[summary]";
 
   if (toolName === "read_file" || toolName === "read_code") {
     const parts = [`${tag} ${String(lineCount)} lines`];
@@ -232,7 +232,7 @@ function semanticPrune(messages: ModelMessage[], pathMap?: Map<string, string>):
               changed = true;
               return {
                 ...part,
-                output: { type: "text" as const, value: "[pruned — file edited since this read]" },
+                output: { type: "text" as const, value: "[stale — file edited since this read]" },
               };
             }
           }
@@ -248,7 +248,7 @@ function semanticPrune(messages: ModelMessage[], pathMap?: Map<string, string>):
           const title = titleMatch?.[1] ?? titleMatch?.[2] ?? "plan";
           return {
             ...part,
-            output: { type: "text" as const, value: `[pruned] plan "${title}" — canceled` },
+            output: { type: "text" as const, value: `[summary] plan "${title}" — canceled` },
           };
         }
       }

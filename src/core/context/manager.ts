@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { generateText } from "ai";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { useRepoMapStore } from "../../stores/repomap.js";
 import type { EditorIntegration, ForgeMode, TaskRouter } from "../../types/index.js";
+import { toErrorMessage } from "../../utils/errors.js";
 import { setNeovimFileWrittenHandler } from "../editor/neovim.js";
 import { buildGitContext } from "../git/status.js";
 import { RepoMap, type SymbolForSummary } from "../intelligence/repo-map.js";
@@ -11,6 +12,9 @@ import { MemoryManager } from "../memory/manager.js";
 import { getModeInstructions } from "../modes/prompts.js";
 import { buildForbiddenContext, isForbidden } from "../security/forbidden.js";
 import { emitFileEdited, onFileEdited, onFileRead } from "../tools/file-events.js";
+import { extractConversationTerms } from "./conversation-terms.js";
+import { walkDir } from "./file-tree.js";
+import { detectToolchain } from "./toolchain.js";
 
 // System prompt: question-driven tool routing + prohibition enforcement
 // Pattern: map the QUESTION the agent would ask → the tool that answers it
@@ -35,11 +39,13 @@ const TOOL_GUIDANCE_BASE = [
   "Is this export used anywhere? → soul_analyze(action: unused_exports) — dead code detection.",
   "Rename this symbol across all files? → rename_symbol — compiler-guaranteed atomic rename. FORBIDDEN: grep + manual edit_file for renames.",
   "Move this to another file? → move_symbol — extracts + updates all importers. FORBIDDEN: manual copy + import fixup.",
+  "Rename/move a file? → rename_file — LSP auto-updates all imports. FORBIDDEN: shell mv + manual import fixup.",
   "Run tests/build/lint? → project — auto-detects toolchain. FORBIDDEN: shell for standard project commands.",
   "Need the full file (config/json/markdown)? → read_file once. FORBIDDEN: chunking into sequential reads.",
+  "Editing a file? Read it ONCE in full, plan all changes, apply with multi_edit (one call). FORBIDDEN: re-reading between edits, partial reads before editing, sequential edit_file calls to the same file.",
   "Need string literal or non-code pattern? → grep. This is grep's job, not navigate's.",
   // Compound discipline
-  "Compound tools (rename_symbol, move_symbol, project) do the COMPLETE job. FORBIDDEN: extra verification after them.",
+  "Compound tools (rename_symbol, move_symbol, rename_file, project) do the COMPLETE job. FORBIDDEN: extra verification after them.",
   // Turnover
   "Every response MUST end with an action: a tool call, a plan, an edit, or a direct answer. FORBIDDEN: passive endings, reading more after stating you have enough, summaries without next steps.",
 ];
@@ -82,18 +88,6 @@ function buildDispatchGuidance(hasRepoMap: boolean): string[] {
 
 export { buildDispatchGuidance, buildToolGuidance };
 
-const IGNORED_DIRS = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  "build",
-  ".next",
-  "target",
-  "__pycache__",
-  ".cache",
-  "coverage",
-]);
-
 export interface SharedContextResources {
   repoMap: RepoMap;
   memoryManager: MemoryManager;
@@ -107,6 +101,9 @@ export interface SharedContextResources {
  * instead of creating new ones. Per-tab instances use this to share
  * expensive resources while maintaining independent conversation tracking.
  */
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+const MINIMAL_CONTEXT_THRESHOLD = 32_000;
+
 export class ContextManager {
   private cwd: string;
   private skills = new Map<string, string>();
@@ -130,7 +127,7 @@ export class ContextManager {
   private mentionedFiles = new Set<string>();
   private conversationTerms: string[] = [];
   private conversationTokens = 0;
-  private contextWindowTokens = 200_000;
+  private contextWindowTokens = DEFAULT_CONTEXT_WINDOW;
   private repoMapCache: { content: string; at: number } | null = null;
   private taskRouter: TaskRouter | undefined;
   private lastActiveModel = "";
@@ -157,10 +154,6 @@ export class ContextManager {
     }
   }
 
-  /**
-   * Async factory that yields to the event loop between heavy sync steps.
-   * Use this from boot to keep the spinner alive during DB init.
-   */
   /**
    * Async factory that yields to the event loop between heavy sync steps.
    * Use this from boot to keep the spinner alive during DB init.
@@ -202,7 +195,7 @@ export class ContextManager {
   private startRepoMapScan(): void {
     this.syncRepoMapStore("scanning");
     this.repoMap.scan().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       this.repoMapReady = false;
       this.syncRepoMapStore("error");
       useRepoMapStore.getState().setScanError(`Soul map scan failed: ${msg}`);
@@ -268,12 +261,10 @@ export class ContextManager {
     return this.memoryManager;
   }
 
-  /** Get the current forge mode */
   getForgeMode(): ForgeMode {
     return this.forgeMode;
   }
 
-  /** Set the current forge mode */
   setProjectInstructions(content: string): void {
     this.projectInstructions = content;
   }
@@ -282,18 +273,15 @@ export class ContextManager {
     this.forgeMode = mode;
   }
 
-  /** Set the context window size (in tokens) for the active model */
   setContextWindow(tokens: number): void {
     this.contextWindowTokens = tokens;
   }
 
-  /** Get approximate context fill percentage */
   getContextPercent(): number {
     if (this.contextWindowTokens <= 0) return 0;
     return Math.round((this.conversationTokens / this.contextWindowTokens) * 100);
   }
 
-  /** Set which editor/LSP integrations are active */
   setEditorIntegration(settings: EditorIntegration): void {
     this.editorIntegration = settings;
   }
@@ -382,7 +370,6 @@ export class ContextManager {
     return content;
   }
 
-  /** Get the repo map instance for direct access */
   getRepoMap(): RepoMap {
     return this.repoMap;
   }
@@ -567,7 +554,7 @@ export class ContextManager {
       );
       return count;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       store.setSemanticStatus("error");
       store.setSemanticProgress(msg.slice(0, 80));
       throw new Error(`Semantic summary generation failed: ${msg}`);
@@ -590,7 +577,7 @@ export class ContextManager {
     useRepoMapStore.getState().setScanError("");
     this.repoMap.clear();
     await this.repoMap.scan().catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       this.repoMapReady = false;
       this.syncRepoMapStore("error");
       useRepoMapStore.getState().setScanError(`Soul map scan failed: ${msg}`);
@@ -738,7 +725,7 @@ export class ContextManager {
   /** Build a system prompt with project context, scaled to context window */
   buildSystemPrompt(): string {
     const ctxWindow = this.contextWindowTokens;
-    const isMinimal = ctxWindow <= 32_000;
+    const isMinimal = ctxWindow <= MINIMAL_CONTEXT_THRESHOLD;
 
     const projectInfo = this.getProjectInfo();
     let repoMapContent: string | null = null;
@@ -964,63 +951,7 @@ export class ContextManager {
   }
 
   private detectToolchain(): string | null {
-    const markers: [string, string][] = [
-      // JS/TS runtimes & package managers
-      ["bun.lock", "bun"],
-      ["bun.lockb", "bun"],
-      ["deno.lock", "deno"],
-      ["deno.json", "deno"],
-      ["pnpm-lock.yaml", "pnpm"],
-      ["yarn.lock", "yarn"],
-      ["package-lock.json", "npm"],
-      // Rust
-      ["Cargo.lock", "cargo (rust)"],
-      // Go
-      ["go.sum", "go"],
-      // Python
-      ["uv.lock", "uv (python)"],
-      ["poetry.lock", "poetry (python)"],
-      ["Pipfile.lock", "pipenv (python)"],
-      ["requirements.txt", "pip (python)"],
-      // Ruby
-      ["Gemfile.lock", "bundler (ruby)"],
-      // PHP
-      ["composer.lock", "composer (php)"],
-      // Java/Kotlin/JVM
-      ["gradlew", "gradle (jvm)"],
-      ["mvnw", "maven (jvm)"],
-      ["pom.xml", "maven (jvm)"],
-      ["build.gradle", "gradle (jvm)"],
-      ["build.gradle.kts", "gradle (jvm)"],
-      // .NET / C#
-      ["global.json", "dotnet"],
-      // Elixir
-      ["mix.lock", "mix (elixir)"],
-      // Swift
-      ["Package.resolved", "swift package manager"],
-      // C/C++
-      ["CMakeLists.txt", "cmake (c/c++)"],
-      ["Makefile", "make"],
-      ["meson.build", "meson (c/c++)"],
-      ["conanfile.txt", "conan (c/c++)"],
-      ["vcpkg.json", "vcpkg (c/c++)"],
-      // Zig
-      ["build.zig.zon", "zig"],
-      // Dart/Flutter
-      ["pubspec.lock", "dart/flutter"],
-      // Haskell
-      ["stack.yaml", "stack (haskell)"],
-      ["cabal.project", "cabal (haskell)"],
-      // Scala
-      ["build.sbt", "sbt (scala)"],
-      // Clojure
-      ["deps.edn", "clojure"],
-      ["project.clj", "leiningen (clojure)"],
-    ];
-    for (const [file, tool] of markers) {
-      if (existsSync(join(this.cwd, file))) return tool;
-    }
-    return null;
+    return detectToolchain(this.cwd);
   }
 
   /** Generate a simple file tree (cached with 30s TTL) */
@@ -1030,161 +961,11 @@ export class ContextManager {
       return this.fileTreeCache.tree;
     }
     const lines: string[] = [];
-    this.walkDir(this.cwd, "", maxDepth, lines);
+    walkDir(this.cwd, "", maxDepth, lines);
     const tree = lines.slice(0, 50).join("\n");
     this.fileTreeCache = { tree, at: now };
     return tree;
   }
-
-  private walkDir(dir: string, prefix: string, depth: number, lines: string[]): void {
-    if (depth <= 0) return;
-
-    try {
-      const entries = readdirSync(dir, { withFileTypes: true })
-        .filter((e) => !IGNORED_DIRS.has(e.name) && !e.name.startsWith("."))
-        .sort((a, b) => {
-          if (a.isDirectory() && !b.isDirectory()) return -1;
-          if (!a.isDirectory() && b.isDirectory()) return 1;
-          return a.name.localeCompare(b.name);
-        });
-
-      for (const entry of entries) {
-        const isLast = entry === entries[entries.length - 1];
-        const connector = isLast ? "└── " : "├── ";
-        const childPrefix = isLast ? "    " : "│   ";
-
-        lines.push(`${prefix}${connector}${entry.name}${entry.isDirectory() ? "/" : ""}`);
-
-        if (entry.isDirectory()) {
-          this.walkDir(join(dir, entry.name), prefix + childPrefix, depth - 1, lines);
-        }
-      }
-    } catch {
-      // Skip unreadable directories
-    }
-  }
 }
 
-const STOP_WORDS = new Set([
-  "the",
-  "a",
-  "an",
-  "is",
-  "are",
-  "was",
-  "were",
-  "be",
-  "been",
-  "being",
-  "have",
-  "has",
-  "had",
-  "do",
-  "does",
-  "did",
-  "will",
-  "would",
-  "could",
-  "should",
-  "may",
-  "might",
-  "shall",
-  "can",
-  "need",
-  "must",
-  "to",
-  "of",
-  "in",
-  "for",
-  "on",
-  "with",
-  "at",
-  "by",
-  "from",
-  "as",
-  "into",
-  "about",
-  "that",
-  "this",
-  "it",
-  "its",
-  "and",
-  "or",
-  "but",
-  "not",
-  "no",
-  "if",
-  "then",
-  "so",
-  "than",
-  "too",
-  "very",
-  "just",
-  "also",
-  "how",
-  "what",
-  "when",
-  "where",
-  "which",
-  "who",
-  "why",
-  "all",
-  "each",
-  "every",
-  "both",
-  "few",
-  "more",
-  "most",
-  "some",
-  "any",
-  "other",
-  "new",
-  "old",
-  "make",
-  "like",
-  "use",
-  "get",
-  "add",
-  "fix",
-  "change",
-  "update",
-  "create",
-  "delete",
-  "remove",
-  "move",
-  "set",
-  "let",
-  "please",
-  "want",
-  "look",
-  "file",
-  "code",
-  "function",
-  "method",
-  "class",
-  "type",
-  "we",
-  "me",
-  "my",
-  "you",
-  "your",
-  "they",
-  "them",
-  "i",
-]);
-
-export function extractConversationTerms(input: string): string[] {
-  const words = input.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) ?? [];
-  const seen = new Set<string>();
-  const terms: string[] = [];
-
-  for (const word of words) {
-    const lower = word.toLowerCase();
-    if (STOP_WORDS.has(lower) || seen.has(lower)) continue;
-    seen.add(lower);
-    terms.push(word);
-    if (terms.length >= 15) break;
-  }
-
-  return terms;
-}
+export { extractConversationTerms } from "./conversation-terms.js";

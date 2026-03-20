@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { looksLikeFilePath } from "../src/hooks/useChat.js";
+import { looksLikeFilePath } from "../src/hooks/chat/message-processing.js";
 import { tsJsHandler, pythonHandler } from "../src/core/tools/move-symbol.js";
 
 const BACKTICK_PATH_RE = /`([^`\s]+)`/g;

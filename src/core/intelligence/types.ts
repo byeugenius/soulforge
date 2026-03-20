@@ -394,6 +394,8 @@ export interface IntelligenceBackend {
 
   organizeImports?(file: string): Promise<RefactorResult | null>;
 
+  fixAll?(file: string): Promise<RefactorResult | null>;
+
   // ─── Advanced Intelligence ───
   getCallHierarchy?(
     file: string,
@@ -418,6 +420,13 @@ export interface IntelligenceBackend {
   ): Promise<TypeHierarchyResult | null>;
 
   findUnused?(file: string): Promise<UnusedItem[] | null>;
+
+  // ─── File Operations ───
+  getFileRenameEdits?(
+    files: Array<{ oldPath: string; newPath: string }>,
+  ): Promise<RefactorResult | null>;
+
+  notifyFilesRenamed?(files: Array<{ oldPath: string; newPath: string }>): void;
 }
 
 // ─── Config ───

@@ -34,7 +34,7 @@ if (isCompiledBinary) {
   }
 }
 
-import { BRAND_SEGMENTS, garble, WISP_FRAMES, WORDMARK } from "./components/splash.js";
+import { BRAND_SEGMENTS, garble, WISP_FRAMES, WORDMARK } from "./core/utils/splash.js";
 import { logBackgroundError } from "./stores/errors.js";
 
 // ─── ANSI ───

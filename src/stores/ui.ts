@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { CommandPickerConfig } from "../components/CommandPicker.js";
-import type { InfoPopupConfig } from "../components/InfoPopup.js";
+import type { CommandPickerConfig } from "../components/modals/CommandPicker.js";
+import type { InfoPopupConfig } from "../components/modals/InfoPopup.js";
 import type { ChatStyle, TaskRouter } from "../types/index.js";
 
 export type ModalName =

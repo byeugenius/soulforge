@@ -27,7 +27,7 @@ import {
 	addSessionPattern,
 } from "../src/core/security/forbidden.js";
 import { computeDiff } from "../src/core/diff.js";
-import { extractConversationTerms } from "../src/core/context/manager.js";
+import { extractConversationTerms } from "../src/core/context/conversation-terms.js";
 import { readFileTool } from "../src/core/tools/read-file.js";
 
 // ─── Helpers ───

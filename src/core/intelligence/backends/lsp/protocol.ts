@@ -76,6 +76,12 @@ export interface LspTextDocumentEdit {
   edits: LspTextEdit[];
 }
 
+/** LSP File Rename (workspace/willRenameFiles) */
+export interface LspFileRename {
+  oldUri: string;
+  newUri: string;
+}
+
 /** LSP Code Action */
 export interface LspCodeAction {
   title: string;

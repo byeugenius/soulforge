@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Selection, TextAttributes } from "@opentui/core";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -14,6 +14,7 @@ import {
   saveProjectConfig,
   stripConfigKeys,
 } from "../config/index.js";
+import { handleCommand } from "../core/commands/registry.js";
 import { ContextManager } from "../core/context/manager.js";
 import { setEditorRequestCallback } from "../core/editor/instance.js";
 import { icon, providerIcon, UI_ICONS } from "../core/icons.js";
@@ -23,11 +24,14 @@ import { initForbidden } from "../core/security/forbidden.js";
 import { SessionManager } from "../core/sessions/manager.js";
 import { getMissingRequired } from "../core/setup/prerequisites.js";
 import { suspendAndRun } from "../core/terminal/suspend.js";
+import { garble, WORDMARK as SHUTDOWN_WORDMARK } from "../core/utils/splash.js";
 import type { ChatInstance, WorkspaceSnapshot } from "../hooks/useChat.js";
+import { useConfigSync } from "../hooks/useConfigSync.js";
 import { useEditorFocus } from "../hooks/useEditorFocus.js";
 import { useEditorInput } from "../hooks/useEditorInput.js";
 import { useForgeMode } from "../hooks/useForgeMode.js";
 import { useGitStatus } from "../hooks/useGitStatus.js";
+import { useGlobalKeyboard } from "../hooks/useGlobalKeyboard.js";
 import { useNeovim } from "../hooks/useNeovim.js";
 import { buildSessionMeta } from "../hooks/useSessionBuilder.js";
 import { useTabs } from "../hooks/useTabs.js";
@@ -36,35 +40,26 @@ import { logBackgroundError } from "../stores/errors.js";
 import { startMemoryPoll } from "../stores/statusbar.js";
 import { type ModalName, selectIsAnyModalOpen, useUIStore } from "../stores/ui.js";
 import type { AppConfig, ChatMessage, EditorIntegration } from "../types/index.js";
-import { ApiKeySettings } from "./ApiKeySettings.js";
-import { BrandTag } from "./BrandTag.js";
-import { CommandPicker } from "./CommandPicker.js";
-import { CompactionLog } from "./CompactionLog.js";
-import { ContextBar } from "./ContextBar.js";
-import { handleCommand } from "./commands.js";
-import { EditorPanel } from "./EditorPanel.js";
-import { EditorSettings } from "./EditorSettings.js";
-import { ErrorLog } from "./ErrorLog.js";
-import { Footer } from "./Footer.js";
-import { GitCommitModal } from "./GitCommitModal.js";
-import { GitMenu } from "./GitMenu.js";
-import { HelpPopup } from "./HelpPopup.js";
-import { InfoPopup } from "./InfoPopup.js";
-import { LlmSelector } from "./LlmSelector.js";
-import { LspInstallSearch } from "./LspInstallSearch.js";
-import { LspStatusPopup } from "./LspStatusPopup.js";
-import { ProviderSettings } from "./ProviderSettings.js";
-import { RepoMapStatusPopup } from "./RepoMapStatusPopup.js";
-import { RouterSettings } from "./RouterSettings.js";
-import { SessionPicker } from "./SessionPicker.js";
-import { SetupGuide } from "./SetupGuide.js";
-import { SkillSearch } from "./SkillSearch.js";
-import type { ConfigScope } from "./shared.js";
-import { garble, WORDMARK as SHUTDOWN_WORDMARK } from "./splash.js";
-import { TabBar } from "./TabBar.js";
-import { TabInstance } from "./TabInstance.js";
-import { TokenDisplay } from "./TokenDisplay.js";
-import { WebSearchSettings } from "./WebSearchSettings.js";
+import { BrandTag } from "./layout/BrandTag.js";
+import { ContextBar } from "./layout/ContextBar.js";
+import { EditorPanel } from "./layout/EditorPanel.js";
+import { Footer } from "./layout/Footer.js";
+import type { ConfigScope } from "./layout/shared.js";
+import { TabBar } from "./layout/TabBar.js";
+import { TabInstance } from "./layout/TabInstance.js";
+import { TokenDisplay } from "./layout/TokenDisplay.js";
+import { SimpleModalLayer } from "./ModalLayer.js";
+import { CommandPicker } from "./modals/CommandPicker.js";
+import { GitCommitModal } from "./modals/GitCommitModal.js";
+import { GitMenu } from "./modals/GitMenu.js";
+import { InfoPopup } from "./modals/InfoPopup.js";
+import { LlmSelector } from "./modals/LlmSelector.js";
+import { SessionPicker } from "./modals/SessionPicker.js";
+import { EditorSettings } from "./settings/EditorSettings.js";
+import { LspInstallSearch } from "./settings/LspInstallSearch.js";
+import { ProviderSettings } from "./settings/ProviderSettings.js";
+import { RouterSettings } from "./settings/RouterSettings.js";
+import { SkillSearch } from "./settings/SkillSearch.js";
 
 startMemoryPoll();
 
@@ -127,7 +122,7 @@ function ShutdownSplash({
         ∿~∿
       </text>
       <box height={1} />
-      {SHUTDOWN_WORDMARK.map((line) => (
+      {SHUTDOWN_WORDMARK.map((line: string) => (
         <text key={line} fg="#9B30FF" attributes={TextAttributes.BOLD}>
           {tick < 4 ? garble(line) : line}
         </text>
@@ -368,48 +363,19 @@ export function App({
       })),
     );
 
-  // Individual modal selectors — only the modal that changed triggers a re-render
   const modalLlmSelector = useUIStore((s) => s.modals.llmSelector);
   const modalGitCommit = useUIStore((s) => s.modals.gitCommit);
   const modalGitMenu = useUIStore((s) => s.modals.gitMenu);
   const modalSessionPicker = useUIStore((s) => s.modals.sessionPicker);
   const modalSkillSearch = useUIStore((s) => s.modals.skillSearch);
   const modalLspInstall = useUIStore((s) => s.modals.lspInstall);
-  const modalHelpPopup = useUIStore((s) => s.modals.helpPopup);
   const modalEditorSettings = useUIStore((s) => s.modals.editorSettings);
   const modalProviderSettings = useUIStore((s) => s.modals.providerSettings);
-  const modalWebSearchSettings = useUIStore((s) => s.modals.webSearchSettings);
-  const modalApiKeySettings = useUIStore((s) => s.modals.apiKeySettings);
   const modalRouterSettings = useUIStore((s) => s.modals.routerSettings);
-  const modalSetup = useUIStore((s) => s.modals.setup);
-  const modalErrorLog = useUIStore((s) => s.modals.errorLog);
   const modalCommandPicker = useUIStore((s) => s.modals.commandPicker);
   const modalInfoPopup = useUIStore((s) => s.modals.infoPopup);
-  const modalRepoMapStatus = useUIStore((s) => s.modals.repoMapStatus);
-  const modalLspStatus = useUIStore((s) => s.modals.lspStatus);
-  const modalCompactionLog = useUIStore((s) => s.modals.compactionLog);
-  const isModalOpen =
-    modalLlmSelector ||
-    modalGitCommit ||
-    modalGitMenu ||
-    modalSessionPicker ||
-    modalSkillSearch ||
-    modalLspInstall ||
-    modalHelpPopup ||
-    modalEditorSettings ||
-    modalProviderSettings ||
-    modalWebSearchSettings ||
-    modalApiKeySettings ||
-    modalRouterSettings ||
-    modalSetup ||
-    modalErrorLog ||
-    modalCommandPicker ||
-    modalInfoPopup ||
-    modalRepoMapStatus ||
-    modalLspStatus ||
-    modalCompactionLog;
+  const isModalOpen = useUIStore(selectIsAnyModalOpen);
 
-  // Stable close handlers — cached in ref so memo'd children see stable refs
   const closerCache = useRef<Partial<Record<ModalName, () => void>>>({});
   const getCloser = (name: ModalName) =>
     (closerCache.current[name] ??= () => useUIStore.getState().closeModal(name));
@@ -453,7 +419,6 @@ export function App({
     [projConfig],
   );
 
-  // Initialize security guard once
   // biome-ignore lint/correctness/useExhaustiveDependencies: one-time init
   useEffect(() => {
     initForbidden(cwd);
@@ -465,9 +430,6 @@ export function App({
   );
   const sessionManager = useMemo(() => new SessionManager(cwd), [cwd]);
 
-  const restoreSessionMemory = useCallback((_sessionId: string) => {
-    // Session-scoped memory was removed — memories are now always persisted to project/global
-  }, []);
   const git = useGitStatus(cwd);
   const {
     mode: forgeMode,
@@ -477,73 +439,19 @@ export function App({
     setMode: setForgeMode,
   } = useForgeMode();
 
-  useEffect(() => {
-    contextManager.setForgeMode(forgeMode);
-  }, [forgeMode, contextManager]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: one-time init from config
-  useEffect(() => {
-    if (effectiveConfig.defaultForgeMode) setForgeMode(effectiveConfig.defaultForgeMode);
-  }, []);
-
-  useEffect(() => {
-    contextManager.setEditorState(
-      editorOpen,
-      editorFile,
-      nvimMode,
-      cursorLine,
-      cursorCol,
-      visualSelection,
-    );
-  }, [editorOpen, editorFile, nvimMode, cursorLine, cursorCol, visualSelection, contextManager]);
-
-  useEffect(() => {
-    if (effectiveConfig.editorIntegration) {
-      contextManager.setEditorIntegration(effectiveConfig.editorIntegration);
-    }
-  }, [effectiveConfig.editorIntegration, contextManager]);
-
-  useEffect(() => {
-    if (effectiveConfig.repoMap !== undefined) {
-      contextManager.setRepoMapEnabled(effectiveConfig.repoMap);
-    }
-  }, [effectiveConfig.repoMap, contextManager]);
-
-  useEffect(() => {
-    contextManager.setTaskRouter(effectiveConfig.taskRouter);
-  }, [effectiveConfig.taskRouter, contextManager]);
-
-  useEffect(() => {
-    import("../core/instructions.js").then(({ loadInstructions, buildInstructionPrompt }) => {
-      const loaded = loadInstructions(cwd, effectiveConfig.instructionFiles);
-      contextManager.setProjectInstructions(buildInstructionPrompt(loaded));
-    });
-  }, [effectiveConfig.instructionFiles, cwd, contextManager]);
-
-  useEffect(() => {
-    if (effectiveConfig.semanticSummaries !== undefined) {
-      contextManager.setSemanticSummaries(effectiveConfig.semanticSummaries);
-    }
-  }, [effectiveConfig.semanticSummaries, contextManager]);
-
-  useEffect(() => {
-    if (effectiveConfig.chatStyle) useUIStore.getState().setChatStyle(effectiveConfig.chatStyle);
-  }, [effectiveConfig.chatStyle]);
-
-  useEffect(() => {
-    if (effectiveConfig.showReasoning !== undefined)
-      useUIStore.getState().setShowReasoning(effectiveConfig.showReasoning);
-  }, [effectiveConfig.showReasoning]);
-
-  useEffect(() => {
-    if (effectiveConfig.editorSplit !== undefined)
-      useUIStore.setState({ editorSplit: effectiveConfig.editorSplit });
-  }, [effectiveConfig.editorSplit]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: contextManager is stable (useMemo on cwd)
-  useEffect(() => {
-    contextManager.refreshGitContext();
-  }, []);
+  useConfigSync({
+    effectiveConfig,
+    contextManager,
+    forgeMode,
+    setForgeMode,
+    cwd,
+    editorOpen,
+    editorFile,
+    nvimMode,
+    cursorLine,
+    cursorCol,
+    visualSelection,
+  });
 
   const handleSuspend = useCallback(
     async (opts: { command: string; args?: string[]; noAltScreen?: boolean }) => {
@@ -694,7 +602,6 @@ export function App({
     if (data) {
       tabMgr.restoreFromMeta(data.meta.tabs, data.meta.activeTabId, data.tabMessages);
       setForgeMode(data.meta.forgeMode);
-      restoreSessionMemory(data.meta.id);
       setExitSessionId(data.meta.id);
     }
   }, []);
@@ -910,112 +817,16 @@ export function App({
     useUIStore.getState().openModal("gitCommit");
   }, []);
 
-  // Global keybindings
-  useKeyboard((evt) => {
-    if (shutdownPhase >= 0) return;
-    if (selectIsAnyModalOpen(useUIStore.getState())) {
-      if (evt.ctrl && evt.name === "c") {
-        handleExit();
-      }
-      evt.stopPropagation();
-      return;
-    }
-
-    if (evt.ctrl && evt.name === "e") {
-      toggleEditor();
-      return;
-    }
-    if (focusMode === "editor") {
-      // Editor is focused — only handle Ctrl+C (exit) here; all other keys go to Neovim.
-      if (evt.ctrl && evt.name === "c") {
-        handleExit();
-        return;
-      }
-      // Prevent OpenTUI scrollbox from handling keys meant for Neovim (up/down/j/k etc.)
-      evt.preventDefault();
-      evt.stopPropagation();
-      return;
-    }
-    if (evt.ctrl && evt.name === "o") {
-      useUIStore.getState().toggleCodeExpanded();
-      return;
-    }
-
-    // Copy must be checked BEFORE snap-scroll (scroll can invalidate selection)
-    if ((evt.ctrl || evt.super) && evt.name === "c") {
-      const sel = renderer.getSelection();
-      if (sel) {
-        const text = sel.getSelectedText();
-        if (text) {
-          copyToClipboard(text);
-          return;
-        }
-      }
-      // When chat is focused, let InputBox handle Ctrl+C (clears input if non-empty)
-      if (evt.ctrl && focusMode === "chat") return;
-      if (evt.ctrl) handleExit();
-      return;
-    }
-
-    if (evt.ctrl && evt.name === "x") {
-      activeChatRef.current?.abort();
-      return;
-    }
-    if (evt.ctrl && evt.name === "l") {
-      useUIStore.getState().toggleModal("llmSelector");
-      return;
-    }
-    if (evt.ctrl && evt.name === "s") {
-      useUIStore.getState().toggleModal("skillSearch");
-      return;
-    }
-    if (evt.ctrl && evt.name === "t") {
-      useUIStore.getState().toggleReasoningExpanded();
-      return;
-    }
-    if (evt.ctrl && evt.name === "d") {
-      cycleMode();
-      return;
-    }
-    if (evt.ctrl && evt.name === "g") {
-      useUIStore.getState().toggleModal("gitMenu");
-      return;
-    }
-    if (evt.ctrl && evt.name === "h") {
-      useUIStore.getState().toggleModal("helpPopup");
-      return;
-    }
-    if (evt.ctrl && evt.name === "p") {
-      useUIStore.getState().toggleModal("sessionPicker");
-      return;
-    }
-    if (evt.meta && evt.name === "r") {
-      useUIStore.getState().toggleModal("errorLog");
-      return;
-    }
-    if (evt.meta && evt.name === "t") {
-      tabMgr.createTab();
-      return;
-    }
-    if (evt.meta && evt.name === "w") {
-      if (tabMgr.tabCount > 1) {
-        tabMgr.closeTab(tabMgr.activeTabId);
-      }
-      return;
-    }
-    if ((evt.meta || evt.ctrl) && evt.name >= "1" && evt.name <= "9") {
-      tabMgr.switchToIndex(Number(evt.name) - 1);
-      return;
-    }
-    if (evt.meta && evt.name === "[") {
-      tabMgr.prevTab();
-      return;
-    }
-    if (evt.meta && evt.name === "]") {
-      tabMgr.nextTab();
-      return;
-    }
-    // PageUp/PageDown are now handled by TabInstance's own scrollRef
+  useGlobalKeyboard({
+    shutdownPhase,
+    handleExit,
+    toggleEditor,
+    focusMode,
+    renderer,
+    copyToClipboard,
+    activeChatRef,
+    cycleMode,
+    tabMgr,
   });
 
   if (suspended) {
@@ -1219,7 +1030,6 @@ export function App({
           if (data) {
             tabMgr.restoreFromMeta(data.meta.tabs, data.meta.activeTabId, data.tabMessages);
             setForgeMode(data.meta.forgeMode);
-            restoreSessionMemory(data.meta.id);
             setExitSessionId(data.meta.id);
           }
         }}
@@ -1243,8 +1053,6 @@ export function App({
         disabledServers={effectiveConfig.disabledLspServers ?? []}
       />
 
-      <HelpPopup visible={modalHelpPopup} onClose={getCloser("helpPopup")} />
-
       <EditorSettings
         visible={modalEditorSettings}
         settings={effectiveConfig.editorIntegration}
@@ -1262,13 +1070,6 @@ export function App({
         onUpdate={(patch, toScope, fromScope) => saveToScope(patch, toScope, fromScope)}
         onClose={getCloser("providerSettings")}
       />
-
-      <WebSearchSettings
-        visible={modalWebSearchSettings}
-        onClose={getCloser("webSearchSettings")}
-      />
-
-      <ApiKeySettings visible={modalApiKeySettings} onClose={getCloser("apiKeySettings")} />
 
       <RouterSettings
         visible={modalRouterSettings && !routerSlotPicking}
@@ -1293,18 +1094,6 @@ export function App({
         onClose={getCloser("routerSettings")}
       />
 
-      <SetupGuide
-        visible={modalSetup}
-        onClose={getCloser("setup")}
-        onSystemMessage={addSystemMessage}
-      />
-
-      <ErrorLog
-        visible={modalErrorLog}
-        messages={activeChatRef.current?.messages ?? []}
-        onClose={getCloser("errorLog")}
-      />
-
       <CommandPicker
         visible={modalCommandPicker}
         config={commandPickerConfig}
@@ -1313,11 +1102,10 @@ export function App({
 
       <InfoPopup visible={modalInfoPopup} config={infoPopupConfig} onClose={closeInfoPopup} />
 
-      <RepoMapStatusPopup visible={modalRepoMapStatus} onClose={getCloser("repoMapStatus")} />
-
-      <LspStatusPopup visible={modalLspStatus} onClose={getCloser("lspStatus")} />
-
-      <CompactionLog visible={modalCompactionLog} onClose={getCloser("compactionLog")} />
+      <SimpleModalLayer
+        messages={activeChatRef.current?.messages ?? []}
+        onSystemMessage={addSystemMessage}
+      />
     </box>
   );
 }

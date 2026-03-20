@@ -117,6 +117,12 @@ export interface FileReadRecord {
 const EDIT_LOCK_TIMEOUT_MS = 180_000;
 const CIRCUIT_BREAKER_THRESHOLD = 2;
 const CIRCUIT_BREAKER_WINDOW_MS = 10_000;
+const FILE_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+const TOOL_RESULT_CACHE_MAX_SIZE = 200;
+const TOOL_RESULT_TTL_MS = 120_000;
+const FINDING_MAX_CONTENT_BYTES = 2048;
+const FINDING_MAX_TOTAL_BYTES = 128 * 1024;
+const AGENT_WAIT_TIMEOUT_MS = 300_000;
 
 export class AgentBus {
   private findings: BusFinding[] = [];
@@ -132,11 +138,11 @@ export class AgentBus {
   private _fileReadRecords: FileReadRecord[] = [];
   private _filesEdited = new Map<string, Set<string>>();
   private fileCacheBytes = 0;
-  private readonly fileCacheMaxBytes = 50 * 1024 * 1024; // 50MB
+  private readonly fileCacheMaxBytes = FILE_CACHE_MAX_BYTES;
   private toolResultCache = new Map<string, { result: string; ts: number; agentId: string }>();
   private toolResultWaiters = new Map<string, Array<(result: string | null) => void>>();
-  private readonly toolResultCacheMaxSize = 200;
-  private readonly toolResultTTL = 120_000;
+  private readonly toolResultCacheMaxSize = TOOL_RESULT_CACHE_MAX_SIZE;
+  private readonly toolResultTTL = TOOL_RESULT_TTL_MS;
   private _lastSeenFindingIdx = new Map<string, number>();
   private _editLockQueues = new Map<string, Array<() => void>>();
   private _editLockHeld = new Set<string>();
@@ -621,8 +627,8 @@ export class AgentBus {
   }
 
   private findingBytes = 0;
-  private readonly findingMaxContentBytes = 2048;
-  private readonly findingMaxTotalBytes = 128 * 1024; // 128KB
+  private readonly findingMaxContentBytes = FINDING_MAX_CONTENT_BYTES;
+  private readonly findingMaxTotalBytes = FINDING_MAX_TOTAL_BYTES;
 
   postFinding(finding: BusFinding): void {
     if (this.findings.length >= 30 && !this.findingKeys.has(`${finding.agentId}:${finding.label}`))
@@ -677,7 +683,7 @@ export class AgentBus {
     return [...this.results.values()];
   }
 
-  waitForAgent(agentId: string, timeoutMs = 300_000): Promise<AgentResult> {
+  waitForAgent(agentId: string, timeoutMs = AGENT_WAIT_TIMEOUT_MS): Promise<AgentResult> {
     const existing = this.results.get(agentId);
     if (existing) {
       if (!existing.success) {

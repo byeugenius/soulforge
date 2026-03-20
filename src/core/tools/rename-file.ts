@@ -1,0 +1,144 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
+import type { ToolResult } from "../../types/index.js";
+import { getIntelligenceRouter } from "../intelligence/index.js";
+import { isForbidden } from "../security/forbidden.js";
+import { pushEdit } from "./edit-stack.js";
+import { emitFileEdited } from "./file-events.js";
+
+interface RenameFileArgs {
+  from: string;
+  to: string;
+}
+
+export const renameFileTool = {
+  name: "rename_file",
+  description:
+    "Rename or move a file. LSP automatically updates all imports/references across the project. Use for refactoring file structure.",
+  execute: async (args: RenameFileArgs): Promise<ToolResult> => {
+    const from = resolve(args.from);
+    const to = resolve(args.to);
+    const cwd = process.cwd();
+
+    if (!existsSync(from)) {
+      return {
+        success: false,
+        output: `File not found: ${relative(cwd, from)}`,
+        error: "not found",
+      };
+    }
+
+    const forbiddenFrom = isForbidden(from);
+    if (forbiddenFrom) {
+      return {
+        success: false,
+        output: `Cannot move forbidden file: ${from} (${forbiddenFrom})`,
+        error: "forbidden",
+      };
+    }
+    const forbiddenTo = isForbidden(to);
+    if (forbiddenTo) {
+      return {
+        success: false,
+        output: `Cannot move to forbidden path: ${to} (${forbiddenTo})`,
+        error: "forbidden",
+      };
+    }
+
+    if (from === to) {
+      return { success: false, output: "Source and destination are the same", error: "same path" };
+    }
+
+    if (existsSync(to)) {
+      return {
+        success: false,
+        output: `Destination already exists: ${relative(cwd, to)}`,
+        error: "exists",
+      };
+    }
+
+    const router = getIntelligenceRouter(cwd);
+    const language = router.detectLanguage(from);
+    const output: string[] = [];
+
+    // 1. Ask LSP for import edits BEFORE moving the file
+    let lspEdits: Array<{ file: string; oldContent: string; newContent: string }> = [];
+    const renameResult = await router.executeWithFallback(
+      language,
+      "getFileRenameEdits",
+      (b) => b.getFileRenameEdits?.([{ oldPath: from, newPath: to }]) ?? Promise.resolve(null),
+    );
+
+    if (renameResult) {
+      lspEdits = renameResult.edits;
+    }
+
+    // 2. Apply LSP import edits to all affected files
+    const appliedFiles: string[] = [];
+    for (const edit of lspEdits) {
+      try {
+        const forbidden = isForbidden(edit.file);
+        if (forbidden) continue;
+        pushEdit(edit.file, edit.oldContent);
+        writeFileSync(edit.file, edit.newContent, "utf-8");
+        emitFileEdited(edit.file, edit.newContent);
+        router.fileCache.invalidate(edit.file);
+        appliedFiles.push(edit.file);
+      } catch {
+        // Best-effort — continue with other files
+      }
+    }
+
+    // 3. Move the file
+    const toDir = dirname(to);
+    if (!existsSync(toDir)) mkdirSync(toDir, { recursive: true });
+
+    const originalContent = readFileSync(from, "utf-8");
+    pushEdit(from, originalContent);
+
+    try {
+      renameSync(from, to);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, output: `Failed to move file: ${msg}`, error: "move failed" };
+    }
+
+    // Invalidate old path cache, emit events for new path
+    router.fileCache.invalidate(from);
+    emitFileEdited(to, originalContent);
+
+    // 4. Notify LSP servers that the rename completed
+    router.executeWithFallback(language, "notifyFilesRenamed", (b) => {
+      b.notifyFilesRenamed?.([{ oldPath: from, newPath: to }]);
+      return Promise.resolve(null);
+    });
+
+    // 5. Report
+    output.push(`Moved ${relative(cwd, from)} → ${relative(cwd, to)}`);
+
+    if (appliedFiles.length > 0) {
+      output.push(
+        `LSP updated imports in ${String(appliedFiles.length)} file(s):`,
+        ...appliedFiles.map((f) => `  ${relative(cwd, f)}`),
+      );
+    } else if (lspEdits.length === 0) {
+      output.push("No import updates needed.");
+    }
+
+    // 6. Auto-fix all affected files (organize imports, fix unused vars)
+    try {
+      const { autoFixFiles } = await import("./post-edit-fix.js");
+      const fixes = await autoFixFiles([to, ...appliedFiles]);
+      if (fixes.size > 0) {
+        const fixed = [...fixes.entries()]
+          .map(([f, actions]) => `  ${relative(cwd, f)}: ${actions.join(", ")}`)
+          .join("\n");
+        output.push(`Auto-fixed:\n${fixed}`);
+      }
+    } catch {
+      // Auto-fix unavailable
+    }
+
+    return { success: true, output: output.join("\n") };
+  },
+};

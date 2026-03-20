@@ -2,12 +2,12 @@ import { type createCliRenderer as CreateCliRenderer, TextAttributes } from "@op
 import type { createRoot as CreateRoot } from "@opentui/react";
 import { startTransition, useCallback, useEffect, useState } from "react";
 import type { App as AppComponent } from "./components/App.js";
-import { BRAND_PURPLE, BRAND_RED, garble } from "./components/splash.js";
 import type { ContextManager } from "./core/context/manager.js";
 import { icon } from "./core/icons.js";
 import { disposeIntelligenceRouter } from "./core/intelligence/index.js";
 import { deactivateCurrentProvider, type ProviderStatus } from "./core/llm/provider.js";
 import type { PrerequisiteStatus } from "./core/setup/prerequisites.js";
+import { BRAND_PURPLE, BRAND_RED, garble } from "./core/utils/splash.js";
 import { resetStatusBarStore } from "./stores/statusbar.js";
 import { resetUIStore } from "./stores/ui.js";
 import type { AppConfig } from "./types/index.js";

@@ -290,8 +290,6 @@ export type ForgeMode = "default" | "architect" | "socratic" | "challenge" | "pl
 
 export type ChatStyle = "accent" | "bubble";
 
-export type EditorMode = "chat" | "editor" | "split";
-
 export interface EditorIntegration {
   diagnostics: boolean;
   symbols: boolean;

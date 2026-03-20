@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../../utils/errors.js";
 import { ensureProxy } from "../proxy/lifecycle.js";
 import { getAllProviders, getProvider } from "./providers/index.js";
 import type { ProviderModelInfo } from "./providers/types.js";
@@ -201,14 +202,20 @@ export function getShortModelLabel(modelId: string): string {
 const MODEL_CACHE_TTL = 30 * 60_000;
 const modelCache = new Map<string, { models: ProviderModelInfo[]; ts: number }>();
 
-export function getCachedModels(providerId: string): ProviderModelInfo[] | null {
-  const entry = modelCache.get(providerId);
+function getCached<T>(cache: Map<string, { result: T; ts: number }>, key: string): T | null;
+function getCached<T>(cache: Map<string, { models: T; ts: number }>, key: string): T | null;
+function getCached(cache: Map<string, { result?: unknown; models?: unknown; ts: number }>, key: string): unknown | null {
+  const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.ts > MODEL_CACHE_TTL) {
-    modelCache.delete(providerId);
+    cache.delete(key);
     return null;
   }
-  return entry.models;
+  return entry.result ?? entry.models ?? null;
+}
+
+export function getCachedModels(providerId: string): ProviderModelInfo[] | null {
+  return getCached(modelCache, providerId);
 }
 
 // ─── Public API ───
@@ -229,7 +236,7 @@ export async function fetchProviderModels(providerId: string): Promise<FetchMode
     }
     return { models: provider.fallbackModels };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    const msg = toErrorMessage(err);
     return { models: provider.fallbackModels, error: `API error: ${msg}` };
   }
 }
@@ -278,13 +285,7 @@ async function fetchAnthropicContextWindows(): Promise<Map<string, number>> {
 const groupedCache = new Map<string, { result: GroupedModelsResult; ts: number }>();
 
 export function getCachedGroupedModels(providerId: string): GroupedModelsResult | null {
-  const entry = groupedCache.get(providerId);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > MODEL_CACHE_TTL) {
-    groupedCache.delete(providerId);
-    return null;
-  }
-  return entry.result;
+  return getCached(groupedCache, providerId);
 }
 
 function titleCase(s: string): string {
@@ -322,6 +323,21 @@ const GROUP_DISPLAY_NAMES: Record<string, string> = {
   deepseek: "DeepSeek",
   other: "Other",
 };
+
+function groupFallbackModels(providerId: string): GroupedModelsResult {
+  const provider = getProvider(providerId);
+  if (!provider) return { subProviders: [], modelsByProvider: {} };
+  const grouped: Record<string, ProviderModelInfo[]> = {};
+  for (const m of provider.fallbackModels) {
+    const group = inferModelGroup(m.id);
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(m);
+  }
+  const subProviders: SubProvider[] = Object.keys(grouped)
+    .sort()
+    .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
+  return { subProviders, modelsByProvider: grouped };
+}
 
 export async function fetchGroupedModels(providerId: string): Promise<GroupedModelsResult> {
   const entry = groupedCache.get(providerId);
@@ -383,7 +399,7 @@ async function fetchVercelGatewayGrouped(): Promise<GroupedModelsResult> {
     groupedCache.set("vercel_gateway", { result, ts: Date.now() });
     return result;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    const msg = toErrorMessage(err);
     return {
       subProviders: [],
       modelsByProvider: {},
@@ -445,29 +461,10 @@ async function fetchLLMGatewayGrouped(): Promise<GroupedModelsResult> {
     groupedCache.set("llmgateway", { result, ts: Date.now() });
     return result;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    // Fall back to grouped fallback models
-    const provider = getProvider("llmgateway");
-    if (!provider) return { subProviders: [], modelsByProvider: {}, error: `LLM Gateway: ${msg}` };
-
-    const fallbackGrouped: Record<string, ProviderModelInfo[]> = {};
-    for (const m of provider.fallbackModels) {
-      const group = inferModelGroup(m.id);
-      if (!fallbackGrouped[group]) fallbackGrouped[group] = [];
-      fallbackGrouped[group].push(m);
+    const msg = toErrorMessage(err);
+    return { ...groupFallbackModels("llmgateway"), error: `LLM Gateway: ${msg}` };
     }
-
-    const subProviders: SubProvider[] = Object.keys(fallbackGrouped)
-      .sort()
-      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-
-    return {
-      subProviders,
-      modelsByProvider: fallbackGrouped,
-      error: `LLM Gateway: ${msg}`,
-    };
   }
-}
 
 async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
   const baseURL = process.env.PROXY_API_URL || "http://127.0.0.1:8317/v1";
@@ -476,23 +473,8 @@ async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
   // Auto-install and spawn proxy if needed
   const proxyStatus = await ensureProxy();
   if (!proxyStatus.ok) {
-    // Return fallback models with error
-    const provider = getProvider("proxy");
-    if (!provider) return { subProviders: [], modelsByProvider: {}, error: proxyStatus.error };
-
-    const grouped: Record<string, ProviderModelInfo[]> = {};
-    for (const m of provider.fallbackModels) {
-      const group = inferModelGroup(m.id);
-      if (!grouped[group]) grouped[group] = [];
-      grouped[group].push(m);
+    return { ...groupFallbackModels("proxy"), error: proxyStatus.error };
     }
-
-    const subProviders: SubProvider[] = Object.keys(grouped)
-      .sort()
-      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-
-    return { subProviders, modelsByProvider: grouped, error: proxyStatus.error };
-  }
 
   try {
     const res = await fetch(`${baseURL}/models`, {
@@ -528,25 +510,6 @@ async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
     groupedCache.set("proxy", { result, ts: Date.now() });
     return result;
   } catch {
-    // Proxy not running — group fallback models by prefix
-    const provider = getProvider("proxy");
-    if (!provider) return { subProviders: [], modelsByProvider: {} };
-
-    const grouped: Record<string, ProviderModelInfo[]> = {};
-    for (const m of provider.fallbackModels) {
-      const group = inferModelGroup(m.id);
-      if (!grouped[group]) grouped[group] = [];
-      grouped[group].push(m);
+    return { ...groupFallbackModels("proxy"), error: "Proxy not running — showing defaults" };
     }
-
-    const subProviders: SubProvider[] = Object.keys(grouped)
-      .sort()
-      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-
-    return {
-      subProviders,
-      modelsByProvider: grouped,
-      error: "Proxy not running — showing defaults",
-    };
   }
-}

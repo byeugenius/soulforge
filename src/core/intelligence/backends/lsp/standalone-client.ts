@@ -13,6 +13,7 @@ import {
   type LspCodeAction,
   type LspDiagnostic,
   type LspDocumentSymbol,
+  type LspFileRename,
   type LspHover,
   type LspLocation,
   type LspLocationLink,
@@ -40,6 +41,7 @@ export class StandaloneLspClient {
   private diagnosticWaiters = new Map<string, Array<() => void>>();
   private initialized = false;
   private rootUri: string;
+  private serverSupportsWillRename = false;
 
   constructor(
     private config: LspServerConfig,
@@ -70,7 +72,7 @@ export class StandaloneLspClient {
     });
 
     // Initialize handshake
-    await this.request("initialize", {
+    const initResult = (await this.request("initialize", {
       processId: process.pid,
       capabilities: {
         textDocument: {
@@ -90,11 +92,20 @@ export class StandaloneLspClient {
         },
         workspace: {
           symbol: { dynamicRegistration: false },
+          fileOperations: {
+            dynamicRegistration: false,
+            willRename: true,
+            didRename: true,
+          },
         },
       },
       rootUri: this.rootUri,
       workspaceFolders: [{ uri: this.rootUri, name: "workspace" }],
-    });
+    })) as { capabilities?: { workspace?: { fileOperations?: { willRename?: unknown } } } } | null;
+
+    // Check if server advertises willRename support
+    this.serverSupportsWillRename =
+      !!initResult?.capabilities?.workspace?.fileOperations?.willRename;
 
     this.notify("initialized", {});
     this.initialized = true;
@@ -442,6 +453,38 @@ export class StandaloneLspClient {
       item,
     })) as LspTypeHierarchyItem[] | null;
     return result ?? [];
+  }
+
+  /** Request import edits for file renames (workspace/willRenameFiles) */
+  async willRenameFiles(files: LspFileRename[]): Promise<LspWorkspaceEdit | null> {
+    if (!this.serverSupportsWillRename) return null;
+    try {
+      const result = (await this.request("workspace/willRenameFiles", {
+        files,
+      })) as LspWorkspaceEdit | null;
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Notify the server that files were renamed (workspace/didRenameFiles) */
+  didRenameFiles(files: LspFileRename[]): void {
+    this.notify("workspace/didRenameFiles", { files });
+  }
+
+  /** Close a document in the server (for rename: close old URI before opening new) */
+  closeDocument(filePath: string): void {
+    const uri = filePathToUri(filePath);
+    const doc = this.openDocuments.get(uri);
+    if (!doc) return;
+    this.notify("textDocument/didClose", { textDocument: { uri } });
+    this.openDocuments.delete(uri);
+  }
+
+  /** Whether the server supports workspace/willRenameFiles */
+  get supportsFileRename(): boolean {
+    return this.serverSupportsWillRename;
   }
 
   /** Check if the client has been initialized */

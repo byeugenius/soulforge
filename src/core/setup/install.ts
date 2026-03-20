@@ -76,89 +76,81 @@ interface PlatformAsset {
   binPath: string;
 }
 
-function getNvimAsset(): PlatformAsset {
-  const { platform, arch } = process;
-  let asset: string;
+type PlatformKey = "darwin-arm64" | "darwin-x64" | "linux-x64" | "linux-arm64";
 
-  if (platform === "darwin" && arch === "arm64") {
-    asset = "nvim-macos-arm64.tar.gz";
-  } else if (platform === "darwin" && arch === "x64") {
-    asset = "nvim-macos-x86_64.tar.gz";
-  } else if (platform === "linux" && arch === "x64") {
-    asset = "nvim-linux-x86_64.tar.gz";
-  } else if (platform === "linux" && arch === "arm64") {
-    asset = "nvim-linux-arm64.tar.gz";
-  } else {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+function getPlatformKey(): PlatformKey {
+  const key = `${process.platform}-${process.arch}` as PlatformKey;
+  if (key !== "darwin-arm64" && key !== "darwin-x64" && key !== "linux-x64" && key !== "linux-arm64") {
+    throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`);
   }
-
-  const dirName = asset.replace(".tar.gz", "");
-
-  return {
-    url: `https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/${asset}`,
-    binPath: join(INSTALLS_DIR, `nvim-${NVIM_VERSION}`, dirName, "bin", "nvim"),
-  };
+  return key;
 }
 
-function getRgAsset(): PlatformAsset {
-  const { platform, arch } = process;
-  let triplet: string;
-
-  if (platform === "darwin" && arch === "arm64") {
-    triplet = "aarch64-apple-darwin";
-  } else if (platform === "darwin" && arch === "x64") {
-    triplet = "x86_64-apple-darwin";
-  } else if (platform === "linux" && arch === "x64") {
-    triplet = "x86_64-unknown-linux-musl";
-  } else if (platform === "linux" && arch === "arm64") {
-    triplet = "aarch64-unknown-linux-gnu";
-  } else {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
-  }
-
-  const dirName = `ripgrep-${RG_VERSION}-${triplet}`;
-
-  return {
-    url: `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/${dirName}.tar.gz`,
-    binPath: join(INSTALLS_DIR, `ripgrep-${RG_VERSION}`, dirName, "rg"),
-  };
+interface BinaryConfig {
+  name: string;
+  binName: string;
+  version: string;
+  getAsset: (key: PlatformKey) => PlatformAsset;
 }
 
-function getProxyAsset(): PlatformAsset {
-  const { platform, arch } = process;
-  let suffix: string;
+async function installBinary(config: BinaryConfig): Promise<string> {
+  ensureDirs();
+  const key = getPlatformKey();
+  const asset = config.getAsset(key);
+  const extractDir = join(INSTALLS_DIR, `${config.name}-${config.version}`);
 
-  if (platform === "darwin" && arch === "arm64") {
-    suffix = "darwin_arm64";
-  } else if (platform === "darwin" && arch === "x64") {
-    suffix = "darwin_amd64";
-  } else if (platform === "linux" && arch === "x64") {
-    suffix = "linux_amd64";
-  } else if (platform === "linux" && arch === "arm64") {
-    suffix = "linux_arm64";
-  } else {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+  if (!existsSync(asset.binPath)) {
+    await downloadAndExtract(asset.url, extractDir);
+  }
+  if (!existsSync(asset.binPath)) {
+    throw new Error(`${config.name} binary not found after extraction at ${asset.binPath}`);
   }
 
-  const asset = `CLIProxyAPI_${PROXY_VERSION}_${suffix}.tar.gz`;
-
-  return {
-    url: `https://github.com/router-for-me/CLIProxyAPI/releases/download/v${PROXY_VERSION}/${asset}`,
-    binPath: join(INSTALLS_DIR, `cliproxyapi-${PROXY_VERSION}`, "cli-proxy-api"),
-  };
+  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
+  createSymlink(asset.binPath, join(BIN_DIR, config.binName));
+  return join(BIN_DIR, config.binName);
 }
 
-/**
- * Returns the vendored binary path if it exists, or null.
- */
+const NVIM_ASSETS: Record<PlatformKey, string> = {
+  "darwin-arm64": "nvim-macos-arm64.tar.gz",
+  "darwin-x64": "nvim-macos-x86_64.tar.gz",
+  "linux-x64": "nvim-linux-x86_64.tar.gz",
+  "linux-arm64": "nvim-linux-arm64.tar.gz",
+};
+
+const RUST_TRIPLETS: Record<PlatformKey, string> = {
+  "darwin-arm64": "aarch64-apple-darwin",
+  "darwin-x64": "x86_64-apple-darwin",
+  "linux-x64": "x86_64-unknown-linux-musl",
+  "linux-arm64": "aarch64-unknown-linux-gnu",
+};
+
+const FD_TRIPLETS: Record<PlatformKey, string> = {
+  "darwin-arm64": "aarch64-apple-darwin",
+  "darwin-x64": "x86_64-apple-darwin",
+  "linux-x64": "x86_64-unknown-linux-gnu",
+  "linux-arm64": "aarch64-unknown-linux-gnu",
+};
+
+const PROXY_SUFFIXES: Record<PlatformKey, string> = {
+  "darwin-arm64": "darwin_arm64",
+  "darwin-x64": "darwin_amd64",
+  "linux-x64": "linux_amd64",
+  "linux-arm64": "linux_arm64",
+};
+
+const LAZYGIT_SUFFIXES: Record<PlatformKey, string> = {
+  "darwin-arm64": "Darwin_arm64",
+  "darwin-x64": "Darwin_x86_64",
+  "linux-x64": "Linux_x86_64",
+  "linux-arm64": "Linux_arm64",
+};
+
 export function getVendoredPath(
   binary: "nvim" | "rg" | "fd" | "lazygit" | "cli-proxy-api",
 ): string | null {
   const binLink = join(BIN_DIR, binary);
-  if (existsSync(binLink)) {
-    return binLink;
-  }
-  return null;
+  return existsSync(binLink) ? binLink : null;
 }
 
 function ensureDirs(): void {
@@ -189,165 +181,83 @@ function createSymlink(target: string, link: string): void {
   symlinkSync(target, link);
 }
 
-/**
- * Download and install Neovim to ~/.soulforge/. Returns path to nvim binary.
- */
 export async function installNeovim(): Promise<string> {
-  ensureDirs();
-
-  const asset = getNvimAsset();
-  const extractDir = join(INSTALLS_DIR, `nvim-${NVIM_VERSION}`);
-
-  if (!existsSync(asset.binPath)) {
-    await downloadAndExtract(asset.url, extractDir);
-  }
-
-  if (!existsSync(asset.binPath)) {
-    throw new Error(`Neovim binary not found after extraction at ${asset.binPath}`);
-  }
-
-  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
-  createSymlink(asset.binPath, join(BIN_DIR, "nvim"));
-
-  return join(BIN_DIR, "nvim");
+  return installBinary({
+    name: "nvim",
+    binName: "nvim",
+    version: NVIM_VERSION,
+    getAsset: (key) => {
+      const asset = NVIM_ASSETS[key];
+      const dirName = asset.replace(".tar.gz", "");
+      return {
+        url: `https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/${asset}`,
+        binPath: join(INSTALLS_DIR, `nvim-${NVIM_VERSION}`, dirName, "bin", "nvim"),
+      };
+    },
+  });
 }
 
-/**
- * Download and install ripgrep to ~/.soulforge/. Returns path to rg binary.
- */
 export async function installRipgrep(): Promise<string> {
-  ensureDirs();
-
-  const asset = getRgAsset();
-  const extractDir = join(INSTALLS_DIR, `ripgrep-${RG_VERSION}`);
-
-  if (!existsSync(asset.binPath)) {
-    await downloadAndExtract(asset.url, extractDir);
-  }
-
-  if (!existsSync(asset.binPath)) {
-    throw new Error(`ripgrep binary not found after extraction at ${asset.binPath}`);
-  }
-
-  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
-  createSymlink(asset.binPath, join(BIN_DIR, "rg"));
-
-  return join(BIN_DIR, "rg");
+  return installBinary({
+    name: "ripgrep",
+    binName: "rg",
+    version: RG_VERSION,
+    getAsset: (key) => {
+      const triplet = RUST_TRIPLETS[key];
+      const dirName = `ripgrep-${RG_VERSION}-${triplet}`;
+      return {
+        url: `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/${dirName}.tar.gz`,
+        binPath: join(INSTALLS_DIR, `ripgrep-${RG_VERSION}`, dirName, "rg"),
+      };
+    },
+  });
 }
 
-function getFdAsset(): PlatformAsset {
-  const { platform, arch } = process;
-  let triplet: string;
-
-  if (platform === "darwin" && arch === "arm64") {
-    triplet = "aarch64-apple-darwin";
-  } else if (platform === "darwin" && arch === "x64") {
-    triplet = "x86_64-apple-darwin";
-  } else if (platform === "linux" && arch === "x64") {
-    triplet = "x86_64-unknown-linux-gnu";
-  } else if (platform === "linux" && arch === "arm64") {
-    triplet = "aarch64-unknown-linux-gnu";
-  } else {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
-  }
-
-  const dirName = `fd-v${FD_VERSION}-${triplet}`;
-
-  return {
-    url: `https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/${dirName}.tar.gz`,
-    binPath: join(INSTALLS_DIR, `fd-${FD_VERSION}`, dirName, "fd"),
-  };
-}
-
-function getLazygitAsset(): PlatformAsset {
-  const { platform, arch } = process;
-  let suffix: string;
-
-  if (platform === "darwin" && arch === "arm64") {
-    suffix = "Darwin_arm64";
-  } else if (platform === "darwin" && arch === "x64") {
-    suffix = "Darwin_x86_64";
-  } else if (platform === "linux" && arch === "x64") {
-    suffix = "Linux_x86_64";
-  } else if (platform === "linux" && arch === "arm64") {
-    suffix = "Linux_arm64";
-  } else {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
-  }
-
-  return {
-    url: `https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_${suffix}.tar.gz`,
-    binPath: join(INSTALLS_DIR, `lazygit-${LAZYGIT_VERSION}`, "lazygit"),
-  };
-}
-
-/**
- * Download and install fd to ~/.soulforge/. Returns path to fd binary.
- */
 export async function installFd(): Promise<string> {
-  ensureDirs();
-
-  const asset = getFdAsset();
-  const extractDir = join(INSTALLS_DIR, `fd-${FD_VERSION}`);
-
-  if (!existsSync(asset.binPath)) {
-    await downloadAndExtract(asset.url, extractDir);
-  }
-
-  if (!existsSync(asset.binPath)) {
-    throw new Error(`fd binary not found after extraction at ${asset.binPath}`);
-  }
-
-  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
-  createSymlink(asset.binPath, join(BIN_DIR, "fd"));
-
-  return join(BIN_DIR, "fd");
+  return installBinary({
+    name: "fd",
+    binName: "fd",
+    version: FD_VERSION,
+    getAsset: (key) => {
+      const triplet = FD_TRIPLETS[key];
+      const dirName = `fd-v${FD_VERSION}-${triplet}`;
+      return {
+        url: `https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/${dirName}.tar.gz`,
+        binPath: join(INSTALLS_DIR, `fd-${FD_VERSION}`, dirName, "fd"),
+      };
+    },
+  });
 }
 
-/**
- * Download and install lazygit to ~/.soulforge/. Returns path to lazygit binary.
- */
 export async function installLazygit(): Promise<string> {
-  ensureDirs();
-
-  const asset = getLazygitAsset();
-  const extractDir = join(INSTALLS_DIR, `lazygit-${LAZYGIT_VERSION}`);
-
-  if (!existsSync(asset.binPath)) {
-    await downloadAndExtract(asset.url, extractDir);
-  }
-
-  if (!existsSync(asset.binPath)) {
-    throw new Error(`lazygit binary not found after extraction at ${asset.binPath}`);
-  }
-
-  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
-  createSymlink(asset.binPath, join(BIN_DIR, "lazygit"));
-
-  return join(BIN_DIR, "lazygit");
+  return installBinary({
+    name: "lazygit",
+    binName: "lazygit",
+    version: LAZYGIT_VERSION,
+    getAsset: (key) => {
+      const suffix = LAZYGIT_SUFFIXES[key];
+      return {
+        url: `https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_${suffix}.tar.gz`,
+        binPath: join(INSTALLS_DIR, `lazygit-${LAZYGIT_VERSION}`, "lazygit"),
+      };
+    },
+  });
 }
 
-/**
- * Download and install CLIProxyAPI to ~/.soulforge/. Returns path to binary.
- */
 export async function installProxy(): Promise<string> {
-  ensureDirs();
-
-  const asset = getProxyAsset();
-  const extractDir = join(INSTALLS_DIR, `cliproxyapi-${PROXY_VERSION}`);
-
-  if (!existsSync(asset.binPath)) {
-    await downloadAndExtract(asset.url, extractDir);
-  }
-
-  if (!existsSync(asset.binPath)) {
-    throw new Error(`CLIProxyAPI binary not found after extraction at ${asset.binPath}`);
-  }
-
-  execSync(`chmod +x "${asset.binPath}"`, { stdio: "ignore" });
-  createSymlink(asset.binPath, join(BIN_DIR, "cli-proxy-api"));
-
-  return join(BIN_DIR, "cli-proxy-api");
+  return installBinary({
+    name: "cliproxyapi",
+    binName: "cli-proxy-api",
+    version: PROXY_VERSION,
+    getAsset: (key) => {
+      const suffix = PROXY_SUFFIXES[key];
+      const asset = `CLIProxyAPI_${PROXY_VERSION}_${suffix}.tar.gz`;
+      return {
+        url: `https://github.com/router-for-me/CLIProxyAPI/releases/download/v${PROXY_VERSION}/${asset}`,
+        binPath: join(INSTALLS_DIR, `cliproxyapi-${PROXY_VERSION}`, "cli-proxy-api"),
+      };
+    },
+  });
 }
 
 // ─── Font install ───

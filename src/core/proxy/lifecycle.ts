@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logBackgroundError } from "../../stores/errors.js";
+import { toErrorMessage } from "../../utils/errors.js";
 import { getVendoredPath, installProxy } from "../setup/install.js";
 
 let proxyProcess: ChildProcess | null = null;
@@ -103,7 +104,7 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
     try {
       binary = await installProxy();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = toErrorMessage(err);
       setState("error", `Failed to install CLIProxyAPI: ${msg}`);
       return { ok: false, error: `Failed to install CLIProxyAPI: ${msg}` };
     }
@@ -136,7 +137,7 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
       proxyProcess = null;
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = toErrorMessage(err);
     setState("error", `Failed to spawn CLIProxyAPI: ${msg}`);
     return { ok: false, error: `Failed to spawn CLIProxyAPI: ${msg}` };
   }
@@ -172,7 +173,7 @@ export function stopProxy(): void {
       if (pid != null) {
         logBackgroundError(
           "CLIProxyAPI",
-          `Failed to kill process ${String(pid)}: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to kill process ${String(pid)}: ${toErrorMessage(err)}`,
         );
       }
     }
@@ -278,7 +279,7 @@ export async function fetchProxyStatus(): Promise<ProxyStatus> {
       status.models = (data.data ?? []).map((m) => m.id);
     }
   } catch (err) {
-    status.error = err instanceof Error ? err.message : String(err);
+    status.error = toErrorMessage(err);
   }
 
   return status;

@@ -31,7 +31,6 @@ export { getAllProviders, getProvider } from "./llm/providers/index.js";
 export type { ProviderDefinition, ProviderModelInfo } from "./llm/providers/types.js";
 // Tools
 export {
-  buildCodeTools,
   buildReadOnlyTools,
   buildTools,
 } from "./tools/index.js";

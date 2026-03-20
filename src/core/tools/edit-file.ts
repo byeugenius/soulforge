@@ -230,6 +230,17 @@ export const editFileTool = {
         }
       }
 
+      // Auto-fix: organize imports + fix unused vars (like IDE "on save")
+      try {
+        const { autoFixFile } = await import("./post-edit-fix.js");
+        const fixes = await autoFixFile(filePath);
+        if (fixes.length > 0) {
+          output += ` [auto: ${fixes.join(", ")}]`;
+        }
+      } catch {
+        // Auto-fix unavailable
+      }
+
       return { success: true, output };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { tool } from "ai";
 import { z } from "zod";
 import type { EditorIntegration } from "../../types/index.js";
-import { type AgentBus, normalizePath } from "../agents/agent-bus.js";
 import type { RepoMap } from "../intelligence/repo-map.js";
 import { MemoryManager } from "../memory/manager.js";
 import {
@@ -14,6 +12,7 @@ import {
 } from "../security/approval-gates.js";
 import { needsOutsideConfirm } from "../security/outside-cwd.js";
 import { analyzeTool } from "./analyze.js";
+import { truncateBytes, truncateLines } from "./constants.js";
 import { discoverPatternTool } from "./discover-pattern.js";
 import { editFileTool } from "./edit-file";
 import { undoEditTool } from "./edit-stack.js";
@@ -30,6 +29,7 @@ import { navigateTool } from "./navigate.js";
 import { projectTool } from "./project.js";
 import { readFileTool } from "./read-file";
 import { refactorTool } from "./refactor.js";
+import { renameFileTool } from "./rename-file.js";
 import { renameSymbolTool } from "./rename-symbol.js";
 import {
   tryInterceptDiscoverPattern,
@@ -46,6 +46,14 @@ import { taskListTool } from "./task-list.js";
 import { testScaffoldTool } from "./test-scaffold.js";
 import { buildWebSearchTool } from "./web-search";
 
+export { wrapWithBusCache } from "./bus-cache.js";
+export {
+  PLAN_EXECUTION_TOOL_NAMES,
+  planFileName,
+  RESTRICTED_TOOL_NAMES,
+  truncateBytes,
+  truncateLines,
+} from "./constants.js";
 export { buildInteractiveTools } from "./interactive.js";
 
 /**
@@ -572,6 +580,19 @@ export function buildTools(
       }),
     }),
 
+    rename_file: tool({
+      description: renameFileTool.description,
+      inputSchema: z.object({
+        from: z.string().describe("Current file path"),
+        to: z.string().describe("New file path"),
+      }),
+      execute: deferExecute(async (args) => {
+        const gate = await gateOutsideCwd("rename_file", resolve(args.to));
+        if (gate.blocked) return gate.result;
+        return renameFileTool.execute(args);
+      }),
+    }),
+
     refactor: tool({
       description: refactorTool.description,
       inputSchema: z.object({
@@ -731,36 +752,6 @@ export function buildTools(
   };
 }
 
-/** Tool names allowed in restricted modes (architect, socratic, challenge).
- *  Read/analysis + memory + editor read — NO edit/shell/git/refactor.
- *  Used with activeTools to restrict without rebuilding the tool set. */
-export const RESTRICTED_TOOL_NAMES: string[] = [
-  "read_file",
-  "grep",
-  "glob",
-  "soul_grep",
-  "soul_find",
-  "soul_analyze",
-  "soul_impact",
-  "list_dir",
-  "web_search",
-  "editor",
-  "navigate",
-  "analyze",
-  "discover_pattern",
-  "memory",
-  "fetch_page",
-  "test_scaffold",
-  "dispatch",
-  "ask_user",
-  "plan",
-  "update_plan_step",
-];
-
-/** Read-only tools for restricted modes (architect, socratic, challenge).
- *  Includes all read/analysis + memory + editor read, but NO edit/shell/git/refactor.
- *  The LLM physically cannot bypass the mode — these tools don't exist on the agent. */
-
 /** Read-only tools for explore subagent */
 export function buildReadOnlyTools(
   editorSettings?: EditorIntegration,
@@ -788,68 +779,6 @@ export function buildReadOnlyTools(
     ...(all.soul_analyze ? { soul_analyze: all.soul_analyze } : {}),
     ...(all.soul_impact ? { soul_impact: all.soul_impact } : {}),
   };
-}
-
-/** Tools available during plan execution.
- *  Executor gets edit/shell/project + read_file (fallback if edit fails) + update_plan_step.
- *  No dispatch, explore, discover_pattern, web_search, test_scaffold — the plan already contains everything. */
-export const PLAN_EXECUTION_TOOL_NAMES: string[] = [
-  "read_file",
-  "edit_file",
-  "undo_edit",
-  "multi_edit",
-  "task_list",
-  "list_dir",
-  "shell",
-  "project",
-  "grep",
-  "glob",
-  "navigate",
-  "analyze",
-  "git",
-  "editor",
-  "rename_symbol",
-  "move_symbol",
-  "update_plan_step",
-  "editor_panel",
-  "memory",
-  "soul_grep",
-  "soul_find",
-  "soul_analyze",
-  "soul_impact",
-];
-
-export function planFileName(sessionId?: string): string {
-  return sessionId ? `plan-${sessionId}.md` : "plan.md";
-}
-
-/** Full code tools for code subagent */
-export function buildCodeTools(
-  cwd?: string,
-  editorSettings?: EditorIntegration,
-  onApproveWebSearch?: (query: string) => Promise<boolean>,
-  opts?: {
-    codeExecution?: boolean;
-    memoryManager?: MemoryManager;
-    webSearchModel?: import("ai").LanguageModel;
-    onApproveFetchPage?: (url: string) => Promise<boolean>;
-  },
-) {
-  return buildTools(cwd, editorSettings, onApproveWebSearch, opts);
-}
-
-const SUBAGENT_MAX_LINES = 750;
-const SUBAGENT_MAX_OUTPUT_BYTES = 8192;
-
-function truncateLines(output: string): string {
-  const lines = output.split("\n");
-  if (lines.length <= SUBAGENT_MAX_LINES) return output;
-  return `${lines.slice(0, SUBAGENT_MAX_LINES).join("\n")}\n\n... [truncated: ${String(lines.length)} lines total. Use startLine/endLine for specific sections.]`;
-}
-
-function truncateBytes(output: string): string {
-  if (output.length <= SUBAGENT_MAX_OUTPUT_BYTES) return output;
-  return `${output.slice(0, SUBAGENT_MAX_OUTPUT_BYTES)}\n\n... [truncated: output exceeded limit. Narrow with glob or path params.]`;
 }
 
 /** Lean read-only tools for explore subagents — no editor, memory, git.
@@ -1202,6 +1131,15 @@ export function buildSubagentCodeTools(opts?: {
       execute: deferExecute((args) => moveSymbolTool.execute(args)),
     }),
 
+    rename_file: tool({
+      description: renameFileTool.description,
+      inputSchema: z.object({
+        from: z.string().describe("Current file path"),
+        to: z.string().describe("New file path"),
+      }),
+      execute: deferExecute((args) => renameFileTool.execute(args)),
+    }),
+
     shell: tool({
       description: shellTool.description,
       inputSchema: z.object({
@@ -1220,413 +1158,4 @@ export function buildSubagentCodeTools(opts?: {
       },
     }),
   };
-}
-
-/** Get tool names for display */
-
-interface WrappableTool {
-  description?: string;
-  inputSchema?: unknown;
-  execute?: (args: never, opts: never) => unknown;
-}
-
-export function wrapWithBusCache(
-  tools: Record<string, WrappableTool>,
-  bus: AgentBus,
-  agentId: string,
-  repoMap?: RepoMap,
-): Record<string, WrappableTool> {
-  const wrapped = { ...tools };
-
-  const CACHE_HIT_LINES_THRESHOLD = 80;
-
-  function tagCacheHit(result: unknown, path: string): unknown {
-    const text =
-      typeof result === "string"
-        ? result
-        : String((result as Record<string, unknown>)?.output ?? "");
-    const lineCount = text.split("\n").length;
-    if (lineCount < CACHE_HIT_LINES_THRESHOLD) return result;
-
-    let symbols: Array<{ name: string; kind: string; line: number }> = [];
-    if (repoMap) {
-      try {
-        symbols = repoMap.getFileSymbolRanges(path);
-      } catch {}
-    }
-
-    if (symbols.length === 0) {
-      const tag = "[Cached]";
-      if (typeof result === "string") return `${tag}\n${result}`;
-      if (result && typeof result === "object" && "output" in result) {
-        return { ...(result as Record<string, unknown>), output: `${tag}\n${text}` };
-      }
-      return result;
-    }
-
-    const top = symbols.slice(0, 12);
-    const symbolHint = `Exported symbols: ${top.map((s) => `${s.name} (${s.kind}, line ${String(s.line)})`).join(", ")}${symbols.length > 12 ? `, +${String(symbols.length - 12)} more` : ""}`;
-
-    const stub = [
-      `[Cached — ${String(lineCount)} lines, already read by another agent]`,
-      symbolHint,
-      `Use read_code(target, name, "${path}") for specific symbols, or read_file with startLine/endLine for a range.`,
-      `Use check_findings to see what peer agents found in this file.`,
-    ].join("\n");
-
-    if (result && typeof result === "object") {
-      return { ...(result as Record<string, unknown>), output: stub };
-    }
-    return { success: true, output: stub };
-  }
-
-  function makeCachedExecute(
-    origExecute: (args: Record<string, unknown>, opts?: unknown) => Promise<unknown>,
-    keyFn: (args: Record<string, unknown>) => string | null,
-    onExecute?: (args: Record<string, unknown>, cached: boolean) => void,
-  ): WrappableTool["execute"] {
-    return (async (args: Record<string, unknown>, opts: unknown) => {
-      const key = keyFn(args);
-      if (key) {
-        const acquired = bus.acquireToolResult(agentId, key);
-        if (acquired.hit === true) {
-          onExecute?.(args, true);
-          return acquired.result;
-        }
-        if (acquired.hit === "waiting") {
-          const waited = await acquired.result;
-          if (waited != null) {
-            onExecute?.(args, true);
-            return waited;
-          }
-        }
-      }
-      const result = await origExecute(args, opts);
-      if (key) {
-        const content =
-          typeof result === "string"
-            ? result
-            : typeof (result as Record<string, unknown>)?.output === "string"
-              ? String((result as Record<string, unknown>).output)
-              : JSON.stringify(result);
-        bus.cacheToolResult(agentId, key, content);
-      }
-      onExecute?.(args, false);
-      return result;
-    }) as WrappableTool["execute"];
-  }
-
-  const readFile = tools.read_file;
-  if (readFile?.execute) {
-    const origExecute = readFile.execute as (
-      args: { path: string; startLine?: number; endLine?: number },
-      opts?: unknown,
-    ) => Promise<unknown>;
-
-    wrapped.read_file = {
-      ...readFile,
-      execute: (async (
-        args: { path: string; startLine?: number; endLine?: number },
-        opts: unknown,
-      ) => {
-        const normalized = normalizePath(args.path);
-
-        if (args.startLine != null || args.endLine != null) {
-          const result = await origExecute(args, opts);
-          bus.recordFileRead(agentId, normalized, {
-            tool: "read_file",
-            startLine: args.startLine,
-            endLine: args.endLine,
-            cached: false,
-          });
-          return result;
-        }
-
-        const acquired = bus.acquireFileRead(agentId, normalized);
-
-        if (acquired.cached === true) {
-          const cached = acquired.content ?? (await origExecute(args, opts));
-          bus.recordFileRead(agentId, normalized, { tool: "read_file", cached: true });
-          return tagCacheHit(cached, normalized);
-        }
-
-        if (acquired.cached === "waiting") {
-          const content = await acquired.content;
-          if (content != null) {
-            bus.recordFileRead(agentId, normalized, { tool: "read_file", cached: true });
-            return tagCacheHit(content, normalized);
-          }
-          const reAcquired = bus.acquireFileRead(agentId, normalized);
-          if (reAcquired.cached === true && reAcquired.content != null) {
-            bus.recordFileRead(agentId, normalized, { tool: "read_file", cached: true });
-            return tagCacheHit(reAcquired.content, normalized);
-          }
-          const fallbackGen = reAcquired.cached === false ? reAcquired.gen : -1;
-          const result = await origExecute(args, opts);
-          const isOutline =
-            result &&
-            typeof result === "object" &&
-            (result as Record<string, unknown>).outlineOnly === true;
-          if (!isOutline && fallbackGen >= 0) {
-            const rawText =
-              typeof result === "string"
-                ? result
-                : typeof (result as Record<string, unknown>)?.output === "string"
-                  ? String((result as Record<string, unknown>).output)
-                  : JSON.stringify(result);
-            bus.releaseFileRead(normalized, rawText, fallbackGen);
-          } else if (isOutline && fallbackGen >= 0) {
-            bus.failFileRead(normalized, fallbackGen);
-          }
-          if (!isOutline) {
-            bus.recordFileRead(agentId, normalized, { tool: "read_file", cached: false });
-          }
-          return result;
-        }
-
-        const { gen } = acquired;
-        try {
-          const result = await origExecute(args, opts);
-          const isOutline =
-            result &&
-            typeof result === "object" &&
-            (result as Record<string, unknown>).outlineOnly === true;
-          if (isOutline) {
-            bus.failFileRead(normalized, gen);
-            return result;
-          }
-          const rawText =
-            typeof result === "string"
-              ? result
-              : typeof (result as Record<string, unknown>)?.output === "string"
-                ? String((result as Record<string, unknown>).output)
-                : JSON.stringify(result);
-          bus.releaseFileRead(normalized, rawText, gen);
-          bus.recordFileRead(agentId, normalized, { tool: "read_file", cached: false });
-          return result;
-        } catch (error) {
-          bus.failFileRead(normalized, gen);
-          throw error;
-        }
-      }) as WrappableTool["execute"],
-    };
-  }
-
-  const editFile = tools.edit_file;
-  if (editFile?.execute) {
-    const origEdit = editFile.execute as (
-      args: { path: string; oldString: string; newString: string },
-      opts?: unknown,
-    ) => Promise<unknown>;
-
-    wrapped.edit_file = {
-      ...editFile,
-      execute: (async (
-        args: { path: string; oldString: string; newString: string },
-        opts: unknown,
-      ) => {
-        const normalized = normalizePath(args.path);
-        const { release, owner } = await bus.acquireEditLock(agentId, normalized);
-        try {
-          const result = await origEdit(args, opts);
-          const isOk =
-            result &&
-            typeof result === "object" &&
-            (result as Record<string, unknown>).success === true;
-          if (isOk) {
-            try {
-              const fresh = readFileSync(resolve(normalized), "utf-8");
-              bus.updateFile(normalized, fresh, agentId);
-            } catch {
-              bus.invalidateFile(normalized);
-            }
-          } else {
-            bus.invalidateFile(normalized);
-          }
-          bus.recordFileEdit(agentId, normalized);
-
-          if (owner && owner !== agentId && isOk) {
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            return `⚠ Note: ${owner} also edited ${normalized}. Your edit succeeded (different region). Verify with read_file if needed.\n\n${text}`;
-          }
-          if (owner && owner !== agentId && !isOk) {
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            return `⚠ Edit failed — ${owner} modified ${normalized} before you. Re-read the file to see current content and adapt your edit.\n\n${text}`;
-          }
-          return result;
-        } finally {
-          release();
-        }
-      }) as WrappableTool["execute"],
-    };
-  }
-
-  // Wrap multi_edit with the same bus coordination as edit_file
-  const multiEdit = tools.multi_edit;
-  if (multiEdit?.execute) {
-    const origMultiEdit = multiEdit.execute as (
-      args: {
-        path: string;
-        edits: Array<{ oldString: string; newString: string; lineStart?: number }>;
-      },
-      opts?: unknown,
-    ) => Promise<unknown>;
-
-    wrapped.multi_edit = {
-      ...multiEdit,
-      execute: (async (
-        args: {
-          path: string;
-          edits: Array<{ oldString: string; newString: string; lineStart?: number }>;
-        },
-        opts: unknown,
-      ) => {
-        const normalized = normalizePath(args.path);
-        const { release, owner } = await bus.acquireEditLock(agentId, normalized);
-        try {
-          const result = await origMultiEdit(args, opts);
-          const isOk =
-            result &&
-            typeof result === "object" &&
-            (result as Record<string, unknown>).success === true;
-          if (isOk) {
-            try {
-              const fresh = readFileSync(resolve(normalized), "utf-8");
-              bus.updateFile(normalized, fresh, agentId);
-            } catch {
-              bus.invalidateFile(normalized);
-            }
-          } else {
-            bus.invalidateFile(normalized);
-          }
-          bus.recordFileEdit(agentId, normalized);
-
-          if (owner && owner !== agentId && isOk) {
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            return `⚠ Note: ${owner} also edited ${normalized}. Your multi_edit succeeded (different region). Verify with read_file if needed.\n\n${text}`;
-          }
-          if (owner && owner !== agentId && !isOk) {
-            const text = typeof result === "string" ? result : JSON.stringify(result);
-            return `⚠ Multi-edit failed — ${owner} modified ${normalized} before you. Re-read the file to see current content and adapt your edits.\n\n${text}`;
-          }
-          return result;
-        } finally {
-          release();
-        }
-      }) as WrappableTool["execute"],
-    };
-  }
-
-  const NAVIGATE_CACHEABLE = new Set([
-    "definition",
-    "references",
-    "symbols",
-    "imports",
-    "exports",
-    "workspace_symbols",
-    "call_hierarchy",
-    "implementation",
-    "type_hierarchy",
-    "search_symbols",
-  ]);
-  const ANALYZE_CACHEABLE = new Set(["diagnostics", "outline", "type_info"]);
-
-  const cacheSpecs: Array<{
-    name: string;
-    keyFn: (args: Record<string, unknown>) => string | null;
-    onExecute?: (args: Record<string, unknown>, cached: boolean) => void;
-  }> = [
-    {
-      name: "grep",
-      keyFn: (a) =>
-        JSON.stringify([
-          "grep",
-          String(a.pattern ?? ""),
-          normalizePath(String(a.path ?? ".")),
-          String(a.glob ?? ""),
-        ]),
-    },
-    {
-      name: "glob",
-      keyFn: (a) =>
-        JSON.stringify(["glob", String(a.pattern ?? ""), normalizePath(String(a.path ?? "."))]),
-    },
-    {
-      name: "navigate",
-      keyFn: (a) => {
-        if (!NAVIGATE_CACHEABLE.has(String(a.action ?? ""))) return null;
-        return JSON.stringify([
-          "navigate",
-          String(a.action),
-          normalizePath(String(a.file ?? "")),
-          String(a.symbol ?? ""),
-        ]);
-      },
-    },
-    {
-      name: "analyze",
-      keyFn: (a) => {
-        const action = String(a.action ?? "");
-        if (!ANALYZE_CACHEABLE.has(action) || !a.file) return null;
-        return JSON.stringify(["analyze", action, normalizePath(String(a.file))]);
-      },
-    },
-    {
-      name: "web_search",
-      keyFn: (a) => JSON.stringify(["web_search", String(a.query ?? "")]),
-    },
-    {
-      name: "list_dir",
-      keyFn: (a) => JSON.stringify(["list_dir", normalizePath(String(a.path ?? "."))]),
-    },
-    {
-      name: "soul_grep",
-      keyFn: (a) =>
-        JSON.stringify([
-          "soul_grep",
-          String(a.pattern ?? ""),
-          String(a.path ?? "."),
-          String(a.count ?? ""),
-          String(a.wordBoundary ?? ""),
-        ]),
-    },
-    {
-      name: "soul_find",
-      keyFn: (a) => JSON.stringify(["soul_find", String(a.query ?? ""), String(a.type ?? "")]),
-    },
-    {
-      name: "soul_analyze",
-      keyFn: (a) =>
-        JSON.stringify([
-          "soul_analyze",
-          String(a.action ?? ""),
-          normalizePath(String(a.file ?? "")),
-        ]),
-    },
-    {
-      name: "soul_impact",
-      keyFn: (a) =>
-        JSON.stringify([
-          "soul_impact",
-          String(a.action ?? ""),
-          normalizePath(String(a.file ?? "")),
-        ]),
-    },
-  ];
-
-  for (const spec of cacheSpecs) {
-    const t = tools[spec.name];
-    if (t?.execute) {
-      wrapped[spec.name] = {
-        ...t,
-        execute: makeCachedExecute(
-          t.execute as (args: Record<string, unknown>, opts?: unknown) => Promise<unknown>,
-          spec.keyFn,
-          spec.onExecute,
-        ),
-      };
-    }
-  }
-
-  return wrapped;
 }
