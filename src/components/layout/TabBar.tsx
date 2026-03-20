@@ -1,5 +1,5 @@
 import { TextAttributes } from "@opentui/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { icon } from "../../core/icons.js";
 import type { Tab, TabActivity } from "../../hooks/useTabs.js";
 
@@ -19,16 +19,8 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 export function TabBar({ tabs, activeTabId, onSwitch: _onSwitch, getActivity }: TabBarProps) {
   const [spinFrame, setSpinFrame] = useState(0);
 
-  // Cache all activities once per render — avoids double getActivity calls
-  const activities = useMemo(
-    () => new Map(tabs.map((t) => [t.id, getActivity(t.id)])),
-    [tabs, getActivity],
-  );
-
-  const hasLoading = useMemo(
-    () => tabs.some((t) => t.id !== activeTabId && activities.get(t.id)?.isLoading),
-    [tabs, activeTabId, activities],
-  );
+  const activities = new Map(tabs.map((t) => [t.id, getActivity(t.id)]));
+  const hasLoading = tabs.some((t) => activities.get(t.id)?.isLoading);
 
   useEffect(() => {
     if (!hasLoading) return;
@@ -37,36 +29,36 @@ export function TabBar({ tabs, activeTabId, onSwitch: _onSwitch, getActivity }: 
   }, [hasLoading]);
 
   return (
-    <box flexShrink={0} paddingX={1} height={1} flexDirection="row" gap={1}>
-      <text fg="#333">{icon("tabs")}</text>
+    <box flexShrink={0} paddingX={1} height={1} flexDirection="row">
+      <text fg="#333">{icon("tabs")} </text>
       {tabs.map((tab, i) => {
         const isActive = tab.id === activeTabId;
-        const label = truncateLabel(tab.label, 20);
         const num = String(i + 1);
         const activity = activities.get(tab.id);
+        const isDefault = /^Tab \d+$/.test(tab.label);
+        const displayLabel = isDefault ? num : `${num} ${truncateLabel(tab.label, 18)}`;
 
         let indicator = "";
         let indicatorColor = "";
         if (activity?.isLoading) {
-          indicator = `${SPINNER_FRAMES[spinFrame] ?? "⠋"} `;
-          indicatorColor = "#8B5CF6";
+          indicator = SPINNER_FRAMES[spinFrame] ?? "⠋";
+          indicatorColor = isActive ? "#FF0040" : "#8B5CF6";
         } else if (activity?.hasUnread) {
-          indicator = "● ";
+          indicator = "●";
           indicatorColor = "#b87333";
         } else if (activity?.hasError) {
-          indicator = "● ";
+          indicator = "●";
           indicatorColor = "#a55";
         }
 
+        const labelColor = isActive ? "#FF0040" : "#555";
+
         return (
           <box key={tab.id} flexDirection="row">
-            {i > 0 && <text fg="#222">·</text>}
-            {indicator !== "" && <text fg={indicatorColor}>{indicator}</text>}
-            <text
-              fg={isActive ? "#ccc" : "#555"}
-              attributes={isActive ? TextAttributes.BOLD : undefined}
-            >
-              <span fg={isActive ? "#666" : "#333"}>{num}</span> {label}
+            {i > 0 && <text fg="#222"> │ </text>}
+            {indicator !== "" && <text fg={indicatorColor}>{indicator} </text>}
+            <text fg={labelColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
+              {displayLabel}
             </text>
           </box>
         );

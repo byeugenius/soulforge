@@ -53,7 +53,6 @@ export function useTabs(): UseTabsReturn {
   const initialId = useRef(crypto.randomUUID()).current;
   const [tabs, setTabs] = useState<Tab[]>([{ id: initialId, label: "Tab 1" }]);
   const [activeTabId, setActiveTabId] = useState<string>(initialId);
-  const tabCounter = useRef(1);
   const autoLabeled = useRef(new Set<string>());
   const chatRegistry = useRef(new Map<string, ChatInstance>());
   const activityMap = useRef(new Map<string, TabActivity>());
@@ -87,10 +86,11 @@ export function useTabs(): UseTabsReturn {
 
   const createTab = useCallback(() => {
     if (tabsRef.current.length >= MAX_TABS) return;
-    tabCounter.current += 1;
     const newId = crypto.randomUUID();
-    const newLabel = `Tab ${String(tabCounter.current)}`;
-    setTabs((prev) => [...prev, { id: newId, label: newLabel }]);
+    setTabs((prev) => {
+      const newLabel = `Tab ${String(prev.length + 1)}`;
+      return [...prev, { id: newId, label: newLabel }];
+    });
     setActiveTabId(newId);
   }, []);
 
@@ -101,14 +101,19 @@ export function useTabs(): UseTabsReturn {
     if (idx === -1) return false;
 
     const chat = chatRegistry.current.get(targetId);
-    if (chat?.isLoading) chat.abort();
+    if (chat) chat.abort();
 
     chatRegistry.current.delete(targetId);
     autoLabeled.current.delete(targetId);
     activityMap.current.delete(targetId);
     initialStates.current.delete(targetId);
 
-    const newTabs = currentTabs.filter((t) => t.id !== targetId);
+    const newTabs = currentTabs
+      .filter((t) => t.id !== targetId)
+      .map((t, i) => {
+        if (/^Tab \d+$/.test(t.label)) return { ...t, label: `Tab ${String(i + 1)}` };
+        return t;
+      });
     setTabs(newTabs);
 
     if (targetId === activeTabIdRef.current) {
@@ -224,7 +229,6 @@ export function useTabs(): UseTabsReturn {
         label: tm.label,
       }));
       setTabs(restoredTabs);
-      tabCounter.current = restoredTabs.length;
 
       for (const tm of tabMetas) {
         autoLabeled.current.add(tm.id);

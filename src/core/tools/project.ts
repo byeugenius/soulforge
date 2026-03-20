@@ -7,6 +7,14 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+function readSafe(path: string): string {
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
 type ProjectAction = "test" | "build" | "lint" | "typecheck" | "run" | "list";
 
 interface ProjectArgs {
@@ -52,7 +60,7 @@ export function detectProfile(cwd: string): ProjectProfile {
   if (has("bun.lock") || has("bun.lockb")) {
     profile.test = scripts.test ?? "bun test";
     profile.build = scripts.build ? `bun run build` : null;
-    profile.lint = scripts.lint ? "bun run lint" : detectJsLinter(cwd);
+    profile.lint = scripts.lint ? "bun run lint" : detectJsLinter(cwd, "bunx");
     profile.typecheck = has("tsconfig.json")
       ? scripts.typecheck
         ? "bun run typecheck"
@@ -78,7 +86,7 @@ export function detectProfile(cwd: string): ProjectProfile {
     const run = pm === "npm" ? "npm run" : pm;
     profile.test = scripts.test ? `${run} test` : null;
     profile.build = scripts.build ? `${run} build` : null;
-    profile.lint = scripts.lint ? `${run} lint` : detectJsLinter(cwd);
+    profile.lint = scripts.lint ? `${run} lint` : detectJsLinter(cwd, "npx");
     profile.typecheck = has("tsconfig.json")
       ? scripts.typecheck
         ? `${run} typecheck`
@@ -134,7 +142,7 @@ export function detectProfile(cwd: string): ProjectProfile {
   if (has("global.json") || hasExt(".csproj") || hasExt(".sln")) {
     profile.test = "dotnet test";
     profile.build = "dotnet build";
-    profile.lint = null;
+    profile.lint = "dotnet format --verify-no-changes";
     profile.typecheck = "dotnet build";
     profile.run = "dotnet run";
     return profile;
@@ -144,13 +152,17 @@ export function detectProfile(cwd: string): ProjectProfile {
   if (has("composer.json")) {
     profile.test = "vendor/bin/phpunit";
     profile.build = null;
-    profile.lint =
+    profile.lint = has("pint.json")
+      ? "vendor/bin/pint --test"
+      : has(".php-cs-fixer.php") || has(".php-cs-fixer.dist.php")
+        ? "vendor/bin/php-cs-fixer fix --dry-run"
+        : null;
+    profile.typecheck =
       has("phpstan.neon") || has("phpstan.neon.dist")
         ? "vendor/bin/phpstan analyse"
         : has("psalm.xml") || has("psalm.xml.dist")
           ? "vendor/bin/psalm"
           : null;
-    profile.typecheck = profile.lint;
     profile.run = has("artisan") ? "php artisan serve" : null;
     return profile;
   }
@@ -211,8 +223,14 @@ export function detectProfile(cwd: string): ProjectProfile {
     const gw = has("gradlew") ? "./gradlew" : "gradle";
     profile.test = `${gw} test`;
     profile.build = `${gw} build`;
-    profile.lint = `${gw} check`;
-    profile.typecheck = `${gw} compileJava`;
+    // Prefer spotless/ktlint if available, fallback to generic check
+    const buildFile = has("build.gradle.kts")
+      ? readSafe(join(cwd, "build.gradle.kts"))
+      : readSafe(join(cwd, "build.gradle"));
+    if (buildFile.includes("spotless")) profile.lint = `${gw} spotlessCheck`;
+    else if (buildFile.includes("ktlint")) profile.lint = `${gw} ktlintCheck`;
+    else profile.lint = `${gw} check`;
+    profile.typecheck = has("build.gradle.kts") ? `${gw} compileKotlin` : `${gw} compileJava`;
     profile.run = `${gw} run`;
     return profile;
   }
@@ -252,7 +270,7 @@ export function detectProfile(cwd: string): ProjectProfile {
   if (has("build.zig") || has("build.zig.zon")) {
     profile.test = "zig build test";
     profile.build = "zig build";
-    profile.lint = null;
+    profile.lint = "zig fmt --check src/";
     profile.typecheck = "zig build";
     profile.run = "zig build run";
     return profile;
@@ -272,7 +290,7 @@ export function detectProfile(cwd: string): ProjectProfile {
   if (has("build.sbt")) {
     profile.test = "sbt test";
     profile.build = "sbt compile";
-    profile.lint = null;
+    profile.lint = has(".scalafmt.conf") ? "scalafmt --check" : null;
     profile.typecheck = "sbt compile";
     profile.run = "sbt run";
     return profile;
@@ -301,10 +319,11 @@ function readPackageScripts(cwd: string): Record<string, string> {
   }
 }
 
-function detectJsLinter(cwd: string): string | null {
+function detectJsLinter(cwd: string, runner = ""): string | null {
   const has = (f: string) => existsSync(join(cwd, f));
-  if (has("biome.json") || has("biome.jsonc")) return "biome check .";
-  if (has("oxlintrc.json") || has(".oxlintrc.json")) return "oxlint .";
+  const run = runner ? `${runner} ` : "";
+  if (has("biome.json") || has("biome.jsonc")) return `${run}biome check .`;
+  if (has("oxlintrc.json") || has(".oxlintrc.json")) return `${run}oxlint .`;
   if (
     has("eslint.config.js") ||
     has("eslint.config.mjs") ||
@@ -314,7 +333,7 @@ function detectJsLinter(cwd: string): string | null {
     has(".eslintrc.json") ||
     has(".eslintrc.yml")
   )
-    return "eslint .";
+    return `${run}eslint .`;
   return null;
 }
 
@@ -336,8 +355,9 @@ export function detectNativeChecks(cwd: string): string | null {
   const has = (f: string) => existsSync(join(cwd, f));
   const cmds: string[] = [];
 
-  // JS/TS
-  const jsLint = detectJsLinter(cwd);
+  // JS/TS — detect runner for local tool resolution
+  const runner = has("bun.lock") || has("bun.lockb") ? "bunx" : has("package.json") ? "npx" : "";
+  const jsLint = detectJsLinter(cwd, runner);
   if (jsLint) cmds.push(jsLint);
   const jsTc = detectJsTypecheck(cwd);
   if (jsTc) cmds.push(jsTc);
@@ -518,6 +538,77 @@ function formatPackageList(packages: PackageInfo[]): string {
   return `${String(packages.length)} packages:\n${lines.join("\n")}\n\nUse project(action: "lint", cwd: "<path>") to target a specific package.`;
 }
 
+// ─── Fix-flag rules for all supported linters/formatters ───
+// Each entry: substring to match in command → transform to apply fix mode
+const FIX_RULES: Array<{ match: string; apply: (cmd: string) => string }> = [
+  // JS/TS
+  { match: "biome", apply: (c) => c.replace(" .", " --write .") },
+  { match: "eslint", apply: (c) => `${c} --fix` },
+  { match: "oxlint", apply: (c) => `${c} --fix` },
+  { match: "prettier", apply: (c) => c.replace("--check", "--write") },
+  { match: "dprint check", apply: (c) => c.replace("dprint check", "dprint fmt") },
+  { match: "rome", apply: (c) => c.replace(" .", " --apply .") },
+  // Rust
+  { match: "clippy", apply: (c) => `${c} --fix --allow-dirty` },
+  { match: "cargo fmt", apply: (c) => c.replace("--check", "") },
+  // Go
+  { match: "golangci-lint", apply: (c) => `${c} --fix` },
+  { match: "gofmt", apply: (c) => c.replace("gofmt", "gofmt -w") },
+  { match: "goimports", apply: (c) => c.replace("goimports", "goimports -w") },
+  // Python
+  { match: "ruff check", apply: (c) => c.replace("ruff check", "ruff check --fix") },
+  { match: "ruff format --check", apply: (c) => c.replace("--check", "") },
+  { match: "black --check", apply: (c) => c.replace(" --check", "") },
+  { match: "isort --check", apply: (c) => c.replace("--check", "").replace("--check-only", "") },
+  { match: "autopep8", apply: (c) => `${c} --in-place --recursive` },
+  // Ruby
+  { match: "rubocop", apply: (c) => `${c} -a` },
+  { match: "standardrb", apply: (c) => `${c} --fix` },
+  // PHP
+  { match: "php-cs-fixer", apply: (c) => c.replace("--dry-run", "").replace("fix --", "fix") },
+  { match: "pint --test", apply: (c) => c.replace(" --test", "") },
+  // JVM
+  { match: "ktlint", apply: (c) => `${c} --format` },
+  { match: "spotlessCheck", apply: (c) => c.replace("spotlessCheck", "spotlessApply") },
+  // Swift
+  { match: "swiftlint", apply: (c) => `${c} --fix` },
+  { match: "swiftformat --lint", apply: (c) => c.replace(" --lint", "") },
+  // Dart
+  { match: "dart analyze", apply: (c) => c.replace("dart analyze", "dart fix --apply") },
+  {
+    match: "dart format --set-exit",
+    apply: (c) => c.replace(/--set-exit\S*\s*/g, "").replace("--output=none", ""),
+  },
+  // C/C++
+  { match: "clang-tidy", apply: (c) => c.replace("clang-tidy", "clang-tidy --fix") },
+  { match: "clang-format --dry-run", apply: (c) => c.replace("--dry-run", "-i") },
+  // Elixir
+  { match: "mix format --check", apply: (c) => c.replace(" --check-formatted", "") },
+  // Scala
+  { match: "scalafmt --check", apply: (c) => c.replace(" --check", "") },
+  { match: "scalafmtCheck", apply: (c) => c.replace("scalafmtCheck", "scalafmt") },
+  { match: "scalafix --check", apply: (c) => c.replace(" --check", "") },
+  // Zig
+  { match: "zig fmt --check", apply: (c) => c.replace(" --check", "") },
+  // Haskell
+  { match: "hlint", apply: (c) => `${c} --refactor --refactor-options="--inplace"` },
+  { match: "ormolu --mode check", apply: (c) => c.replace("--mode check", "--mode inplace") },
+  { match: "fourmolu --mode check", apply: (c) => c.replace("--mode check", "--mode inplace") },
+  // .NET
+  { match: "dotnet format --verify", apply: (c) => c.replace(" --verify-no-changes", "") },
+  // Lua
+  { match: "stylua --check", apply: (c) => c.replace(" --check", "") },
+  // Shell
+  { match: "shfmt -d", apply: (c) => c.replace("shfmt -d", "shfmt -w") },
+];
+
+function applyFixFlag(command: string): string {
+  for (const rule of FIX_RULES) {
+    if (command.includes(rule.match)) return rule.apply(command);
+  }
+  return command;
+}
+
 export const projectTool = {
   name: "project",
   description:
@@ -548,18 +639,7 @@ export const projectTool = {
       case "lint": {
         command = profile.lint;
         if (command && args.fix && !args.raw) {
-          if (command.includes("biome")) command += " --write";
-          else if (command.includes("eslint")) command += " --fix";
-          else if (command.includes("oxlint")) command += " --fix";
-          else if (command.includes("ruff")) command = command.replace("check", "check --fix");
-          else if (command.includes("clippy")) command += " --fix --allow-dirty";
-          else if (command.includes("rubocop")) command += " -a";
-          else if (command.includes("gofmt") || command.includes("goimports"))
-            command = command.replace(/gofmt/, "gofmt -w").replace(/goimports/, "goimports -w");
-          else if (command.includes("dart")) command = command.replace("analyze", "fix --apply");
-          else if (command.includes("swiftlint")) command += " --fix";
-          else if (command.includes("hlint"))
-            command += ' --refactor --refactor-options="--inplace"';
+          command = applyFixFlag(command);
         }
         if (command && args.file) {
           command = `${command} ${shellQuote(args.file)}`;
@@ -588,9 +668,12 @@ export const projectTool = {
 
     // Legacy fallback: if fix command fails with unknown-flag error, retry with older syntax
     const LEGACY_FIX: Record<string, string> = {
-      "--write": "--apply",
-      "--fix --allow-dirty": "--fix --allow-dirty --allow-staged",
-      " --fix": " autocorrect",
+      "--write": "--apply", // biome pre-1.8
+      "--apply": "--apply-unsafe", // biome/rome aggressive
+      "--fix --allow-dirty": "--fix --allow-dirty --allow-staged", // cargo clippy
+      " --fix": " autocorrect", // rubocop legacy
+      "-a": "--auto-correct", // rubocop pre-1.30
+      "--format": "-F", // ktlint pre-1.0
     };
 
     const runCommand = async (cmd: string) => {

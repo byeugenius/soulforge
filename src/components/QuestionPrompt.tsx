@@ -7,11 +7,12 @@ import type { PendingQuestion } from "../types/index.js";
 interface Props {
   question: PendingQuestion;
   isActive: boolean;
+  onAnswer?: (answer: string) => void;
 }
 
 const OTHER_IDX = -1;
 
-export function QuestionPrompt({ question, isActive }: Props) {
+export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [typing, setTyping] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -56,6 +57,7 @@ export function QuestionPrompt({ question, isActive }: Props) {
       }
       const selected = question.options[selectedIdx];
       if (selected) {
+        onAnswer?.(selected.label);
         question.resolve(selected.value);
       }
       return;
@@ -69,6 +71,7 @@ export function QuestionPrompt({ question, isActive }: Props) {
   const handleInputSubmit = () => {
     const trimmed = inputValue.trim();
     if (trimmed) {
+      onAnswer?.(trimmed);
       question.resolve(trimmed);
     }
   };

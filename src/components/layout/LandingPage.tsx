@@ -178,6 +178,7 @@ export function LandingPage({ bootProviders, bootPrereqs }: LandingPageProps) {
           <Cmd name="editor" />
           <Cmd name="skills" />
           <Cmd name="setup" />
+          <Cmd name="models" />
         </box>
 
         <box height={compact ? 0 : 1} />

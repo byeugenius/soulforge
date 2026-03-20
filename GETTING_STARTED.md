@@ -197,7 +197,7 @@ Or switch directly: `/mode architect`
 
 `/plan refactor the auth system` enters plan mode. Forge researches the codebase, writes a structured plan, then asks you to approve, revise, or cancel before executing anything.
 
-The plan sidebar (`Ctrl+T` to toggle) shows step-by-step progress during execution.
+The plan sidebar shows step-by-step progress during execution.
 
 ## Skills
 

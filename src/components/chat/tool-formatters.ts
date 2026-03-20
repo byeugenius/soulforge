@@ -139,7 +139,16 @@ export function formatArgs(toolName: string, args?: string): string {
         return cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
       }
     }
-  } catch {}
+  } catch {
+    // Partial JSON during streaming — extract path/pattern/query eagerly
+    const pathMatch = args.match(/"(?:path|file|from)"\s*:\s*"([^"]+)"/);
+    if (pathMatch?.[1]) return pathMatch[1];
+    const patternMatch = args.match(/"(?:pattern|query|command)"\s*:\s*"([^"]+)"/);
+    if (patternMatch?.[1]) {
+      const v = patternMatch[1];
+      return v.length > 50 ? `${v.slice(0, 47)}...` : v;
+    }
+  }
   return "";
 }
 

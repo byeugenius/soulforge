@@ -82,6 +82,7 @@ interface UIState {
   setShowReasoning: (v: boolean) => void;
   toggleShowReasoning: () => void;
   toggleReasoningExpanded: () => void;
+  toggleAllExpanded: () => void;
   setSuspended: (v: boolean) => void;
   cycleEditorSplit: () => void;
 }
@@ -146,6 +147,12 @@ export const useUIStore = create<UIState>()(
     setShowReasoning: (v) => set({ showReasoning: v }),
     toggleShowReasoning: () => set((s) => ({ showReasoning: !s.showReasoning })),
     toggleReasoningExpanded: () => set((s) => ({ reasoningExpanded: !s.reasoningExpanded })),
+    toggleAllExpanded: () =>
+      set((s) => {
+        // If anything is expanded, collapse all. Otherwise expand all.
+        const anyExpanded = s.codeExpanded || s.reasoningExpanded;
+        return { codeExpanded: !anyExpanded, reasoningExpanded: !anyExpanded };
+      }),
     setSuspended: (v) => set({ suspended: v }),
     cycleEditorSplit: () =>
       set((s) => {

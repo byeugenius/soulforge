@@ -41,6 +41,7 @@ const TOOL_GUIDANCE_BASE = [
   "Move this to another file? → move_symbol — extracts + updates all importers. FORBIDDEN: manual copy + import fixup.",
   "Rename/move a file? → rename_file — LSP auto-updates all imports. FORBIDDEN: shell mv + manual import fixup.",
   "Run tests/build/lint? → project — auto-detects toolchain. FORBIDDEN: shell for standard project commands.",
+  "Format/fix code? → project(action: lint, fix: true) — uses the project's real formatter (biome/prettier/ruff/etc.). FORBIDDEN: refactor(format) for formatting (LSP formatter may differ from CI).",
   "Need the full file (config/json/markdown)? → read_file once. FORBIDDEN: chunking into sequential reads.",
   "Editing a file? Read it ONCE in full, plan all changes, apply with multi_edit (one call). FORBIDDEN: re-reading between edits, partial reads before editing, sequential edit_file calls to the same file.",
   "Need string literal or non-code pattern? → grep. This is grep's job, not navigate's.",

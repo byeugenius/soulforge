@@ -2130,10 +2130,15 @@ export function useChat({
   const pendingQuestionRef = useRef(pendingQuestion);
   pendingQuestionRef.current = pendingQuestion;
 
+  const pendingPlanReviewRef = useRef(pendingPlanReview);
+  pendingPlanReviewRef.current = pendingPlanReview;
+
   const abort = useCallback(() => {
     if (compactAbortRef.current) {
       compactAbortRef.current.abort();
       compactAbortRef.current = null;
+      isCompactingRef.current = false;
+      setIsCompacting(false);
       setMessages((prev) => [
         ...prev,
         {
@@ -2143,13 +2148,18 @@ export function useChat({
           timestamp: Date.now(),
         },
       ]);
-      return;
+      // Don't return — also kill any concurrent generation below
     }
     if (abortRef.current) {
       const pq = pendingQuestionRef.current;
       if (pq) {
         pq.resolve("__skipped__");
         setPendingQuestion(null);
+      }
+      const pr = pendingPlanReviewRef.current;
+      if (pr) {
+        pr.resolve("cancel");
+        setPendingPlanReview(null);
       }
       setActivePlan(null);
       steeringAbortedRef.current = true;
@@ -2199,6 +2209,24 @@ export function useChat({
 
   const setPlanRequest = useCallback((req: string | null) => {
     planRequestRef.current = req;
+  }, []);
+
+  // Abort everything on unmount (tab close) — kill streaming, compaction, agents
+  useEffect(() => {
+    return () => {
+      if (compactAbortRef.current) {
+        compactAbortRef.current.abort();
+        compactAbortRef.current = null;
+      }
+      if (abortRef.current) {
+        const pq = pendingQuestionRef.current;
+        if (pq) pq.resolve("__skipped__");
+        const pr = pendingPlanReviewRef.current;
+        if (pr) pr.resolve("cancel");
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+    };
   }, []);
 
   return {

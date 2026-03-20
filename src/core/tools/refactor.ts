@@ -265,6 +265,17 @@ export const refactorTool = {
             };
           }
 
+          // Prefer project formatter (biome/prettier/etc.) — matches CI, falls through to LSP on failure
+          const { projectTool } = await import("./project.js");
+          const projResult = await projectTool.execute({ action: "lint", fix: true, file });
+          if (projResult.success) {
+            return {
+              success: true,
+              output: `Formatted ${file} via project formatter`,
+              backend: "project",
+            };
+          }
+
           const tracked = await router.executeWithFallbackTracked(
             language,
             "formatDocument",

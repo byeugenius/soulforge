@@ -1,5 +1,5 @@
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
-import { type LanguageModel, NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
+import { type LanguageModel, NoObjectGeneratedError, NoOutputGeneratedError, RetryError } from "ai";
 import { logBackgroundError } from "../../stores/errors.js";
 import { taskListTool } from "../tools/task-list.js";
 import {
@@ -50,6 +50,8 @@ const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnFormat, 
 
 function isRetryable(error: unknown): boolean {
   if (error instanceof DependencyFailedError) return false;
+  // AI SDK wraps retried failures in RetryError — always retry at our level too
+  if (RetryError.isInstance(error)) return true;
   const msg = error instanceof Error ? error.message : String(error);
   const lower = msg.toLowerCase();
   return (
@@ -59,7 +61,17 @@ function isRetryable(error: unknown): boolean {
     lower.includes("529") ||
     lower.includes("503") ||
     lower.includes("too many requests") ||
-    lower.includes("capacity")
+    lower.includes("capacity") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("etimedout") ||
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("fetch failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("cannot connect") ||
+    lower.includes("network") ||
+    lower.includes("socket hang up")
   );
 }
 
@@ -257,6 +269,7 @@ export async function runAgentTask(
   }
 
   let lastError: unknown;
+  let attemptsMade = 0;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (abortSignal?.aborted) break;
 
@@ -267,6 +280,7 @@ export async function runAgentTask(
     }
 
     try {
+      attemptsMade = attempt + 1;
       const { agent } = createAgent(task, models, bus, parentToolCallId);
       const callbacks = buildStepCallbacks(parentToolCallId, task.agentId);
 
@@ -276,6 +290,7 @@ export async function runAgentTask(
         result = await agent.generate({
           prompt: enrichedPrompt,
           abortSignal,
+          timeout: { stepMs: 180_000 },
           ...callbacks,
         });
       } catch (genErr: unknown) {
@@ -360,11 +375,16 @@ export async function runAgentTask(
             connections?: string[];
           }
         | undefined;
-      if (outputData?.summary && outputData.keyFindings && outputData.keyFindings.length > 0) {
+      if (outputData && typeof outputData.summary === "string") {
+        const hasFindings = outputData.keyFindings && outputData.keyFindings.length > 0;
+        const hasFiles = outputData.filesExamined && outputData.filesExamined.length > 0;
+        // Only synthesize if the output schema is missing findings or files
+        const synthesized =
+          !hasFindings || !hasFiles ? synthesizeDoneFromResults(result, agentFindings, task) : null;
         doneResult = {
           summary: outputData.summary,
-          filesExamined: outputData.filesExamined,
-          keyFindings: outputData.keyFindings,
+          filesExamined: hasFiles ? outputData.filesExamined : synthesized?.filesExamined,
+          keyFindings: hasFindings ? outputData.keyFindings : synthesized?.keyFindings,
           gaps: outputData.gaps,
           connections: outputData.connections,
         };
@@ -384,6 +404,10 @@ export async function runAgentTask(
           if (busReads.length > 0 && doneResult.filesExamined?.length === 0) {
             doneResult.filesExamined = busReads.map((r) => r.path);
           }
+        }
+        // Synthesis with real findings from bus or steps counts as done
+        if (agentFindings.length > 0 || result.steps.length > 0) {
+          calledDone = true;
         }
       }
 
@@ -433,7 +457,7 @@ export async function runAgentTask(
   }
 
   const errMsg =
-    `Failed after ${String(MAX_RETRIES)} attempts. ` +
+    `Failed after ${String(attemptsMade)} attempt${attemptsMade === 1 ? "" : "s"}. ` +
     `Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
   logBackgroundError(task.agentId, errMsg);
 

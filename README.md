@@ -269,7 +269,7 @@ soulforge --version                          # Version info
 | `Ctrl+G` | Git menu |
 | `Ctrl+S` | Skills browser |
 | `Ctrl+K` | Command picker |
-| `Ctrl+N` | New tab |
+| `Ctrl+T` | New tab |
 | `Ctrl+W` | Close tab |
 | `Ctrl+X` | Abort current generation |
 | `Tab` | Switch tabs |

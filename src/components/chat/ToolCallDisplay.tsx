@@ -775,6 +775,33 @@ const ToolRow = memo(
 
 const QUIET_TOOLS = new Set(["update_plan_step", "ask_user", "task_list"]);
 
+const EDIT_TOOL_NAMES = new Set(["edit_file", "multi_edit"]);
+
+function isEditTool(name: string): boolean {
+  return EDIT_TOOL_NAMES.has(name);
+}
+
+function isFailedEdit(tc: LiveToolCall): boolean {
+  if (!isEditTool(tc.toolName) || tc.state !== "done") return false;
+  try {
+    const parsed = JSON.parse(tc.result ?? "");
+    return parsed.success === false;
+  } catch {
+    return false;
+  }
+}
+
+function extractPath(args?: string): string | null {
+  if (!args) return null;
+  try {
+    const parsed = JSON.parse(args);
+    return typeof parsed.path === "string" ? parsed.path : null;
+  } catch {
+    const m = args.match(/"path"\s*:\s*"([^"]+)"/);
+    return m?.[1] ?? null;
+  }
+}
+
 interface Props {
   calls: LiveToolCall[];
   verbose?: boolean;
@@ -790,9 +817,20 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
 
   if (calls.length === 0) return null;
 
-  const visible = calls.filter(
-    (tc) => !QUIET_TOOLS.has(tc.toolName) || (verbose && tc.toolName === "ask_user"),
-  );
+  const visible = calls.filter((tc, idx) => {
+    if (QUIET_TOOLS.has(tc.toolName) && !(verbose && tc.toolName === "ask_user")) return false;
+    // Hide failed edits that were retried successfully on the same file
+    if (isFailedEdit(tc)) {
+      const path = extractPath(tc.args);
+      if (path) {
+        for (let j = idx + 1; j < calls.length; j++) {
+          const later = calls[j];
+          if (later && isEditTool(later.toolName) && extractPath(later.args) === path) return false;
+        }
+      }
+    }
+    return true;
+  });
 
   return (
     <box flexDirection="column">

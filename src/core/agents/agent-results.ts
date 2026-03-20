@@ -38,6 +38,39 @@ const SUMMARY_MAX_LEN = 500;
 const BUDGET_OVERHEAD = 50;
 const MIN_CONTENT_LEN = 20;
 
+const READ_TOOLS = new Set(["read_file", "read_code", "navigate", "soul_analyze"]);
+const EDIT_TOOLS = new Set(["edit_file", "write_file", "create_file"]);
+const SEARCH_TOOLS = new Set(["grep", "glob", "soul_grep", "soul_find", "soul_impact"]);
+
+const STUB_PATTERNS = ["[Already in your context", "[stale", "[summary]", "[pruned]", "[cached]"];
+
+function extractPathFromArgs(args: Record<string, unknown> | undefined): string | undefined {
+  if (!args) return undefined;
+  const p = args.path ?? args.file ?? args.filePath;
+  return typeof p === "string" ? p : undefined;
+}
+
+function extractText(raw: unknown): string {
+  if (!raw) return "";
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.output === "string") return parsed.output;
+    } catch {}
+    return raw;
+  }
+  if (typeof raw === "object" && raw !== null) {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.output === "string") return obj.output;
+    if (typeof obj.value === "string") return obj.value;
+  }
+  return String(raw);
+}
+
+function isStub(text: string): boolean {
+  return STUB_PATTERNS.some((p) => text.startsWith(p) || text.includes(p));
+}
+
 export function extractDoneResult(result: AgentResult): DoneToolResult | null {
   for (let i = result.steps.length - 1; i >= 0; i--) {
     const step = result.steps[i];
@@ -57,35 +90,23 @@ export function buildFallbackResult(
 
   for (const step of result.steps) {
     for (const tc of step.toolCalls ?? []) {
-      const path = tc.args?.path as string | undefined;
+      const path = extractPathFromArgs(tc.args as Record<string, unknown> | undefined);
       if (path) {
-        if (tc.toolName === "read_file" || tc.toolName === "read_code") filesRead.add(path);
-        if (tc.toolName === "edit_file") filesEdited.add(path);
+        if (READ_TOOLS.has(tc.toolName) || SEARCH_TOOLS.has(tc.toolName)) filesRead.add(path);
+        if (EDIT_TOOLS.has(tc.toolName)) filesEdited.add(path);
       }
     }
-    // Extract content from tool results (the actual code the agent read)
     for (const tr of step.toolResults ?? []) {
-      if (tr.toolName === "read_file" || tr.toolName === "read_code") {
-        const input = tr.input as Record<string, unknown> | undefined;
-        const file = (input?.path ?? input?.file) as string | undefined;
-        const raw = tr.output;
-        if (!file || !raw) continue;
-        const content = typeof raw === "string" ? raw : JSON.stringify(raw);
-        // Extract the actual output content from JSON wrapper if present
-        let text = content;
-        try {
-          const parsed = JSON.parse(content) as { output?: string; success?: boolean };
-          if (parsed.output && parsed.success !== false) text = parsed.output;
-        } catch {}
-        if (text && text.length > MIN_CONTENT_LEN && !text.includes("[Already in your context")) {
-          // Cap per-file content to keep total reasonable
-          const capped =
-            text.length > PER_FILE_CONTENT_CAP
-              ? `${text.slice(0, PER_FILE_CONTENT_CAP)}\n[... ${String(text.length - PER_FILE_CONTENT_CAP)} chars truncated]`
-              : text;
-          readContents.push({ file, content: capped });
-        }
-      }
+      if (!READ_TOOLS.has(tr.toolName) && !SEARCH_TOOLS.has(tr.toolName)) continue;
+      const input = tr.input as Record<string, unknown> | undefined;
+      const file = extractPathFromArgs(input) ?? tr.toolName;
+      const text = extractText(tr.output);
+      if (text.length < MIN_CONTENT_LEN || isStub(text)) continue;
+      const capped =
+        text.length > PER_FILE_CONTENT_CAP
+          ? `${text.slice(0, PER_FILE_CONTENT_CAP)}\n[... ${String(text.length - PER_FILE_CONTENT_CAP)} chars truncated]`
+          : text;
+      readContents.push({ file, content: capped });
     }
   }
 
@@ -146,7 +167,7 @@ export function synthesizeDoneFromResults(
   const keyFindings: Array<{ file: string; detail: string }> = [];
   let budget = SYNTHESIS_BUDGET;
 
-  // Extract from bus findings first (agent used report_finding)
+  // 1. Bus findings first — highest quality (agent curated via report_finding)
   for (const f of agentFindings) {
     if (budget <= 0) break;
     const detail = f.content.slice(0, budget);
@@ -154,51 +175,49 @@ export function synthesizeDoneFromResults(
     budget -= detail.length + BUDGET_OVERHEAD;
   }
 
-  // Extract from tool results (actual code the agent read)
+  // 2. Collect files from ALL tool calls (not just read_file)
   for (const step of result.steps) {
     for (const tc of step.toolCalls ?? []) {
-      const path = (tc.args as Record<string, unknown> | undefined)?.path as string | undefined;
-      const file = (tc.args as Record<string, unknown> | undefined)?.file as string | undefined;
-      const resolvedPath = path ?? file;
-      if (resolvedPath) {
-        if (tc.toolName === "read_file" || tc.toolName === "read_code") filesRead.add(resolvedPath);
-        if (tc.toolName === "edit_file") filesEdited.add(resolvedPath);
+      const args = tc.args as Record<string, unknown> | undefined;
+      const path = extractPathFromArgs(args);
+      if (path) {
+        if (READ_TOOLS.has(tc.toolName) || SEARCH_TOOLS.has(tc.toolName)) filesRead.add(path);
+        if (EDIT_TOOLS.has(tc.toolName)) filesEdited.add(path);
       }
     }
+  }
 
-    if (budget <= 0) continue;
-
+  // 3. Extract content from tool results (reads, greps, analysis)
+  const seenFiles = new Set(keyFindings.map((kf) => kf.file));
+  for (const step of result.steps) {
+    if (budget <= 0) break;
     for (const tr of step.toolResults ?? []) {
       if (budget <= 0) break;
-      if (tr.toolName !== "read_file" && tr.toolName !== "read_code") continue;
+      if (!READ_TOOLS.has(tr.toolName) && !SEARCH_TOOLS.has(tr.toolName)) continue;
+
       const input = tr.input as Record<string, unknown> | undefined;
-      const filePath = (input?.path ?? input?.file) as string | undefined;
-      if (!filePath) continue;
+      const filePath = extractPathFromArgs(input) ?? tr.toolName;
+      if (seenFiles.has(filePath)) continue;
 
-      // Skip if we already have a finding for this file from bus
-      if (keyFindings.some((kf) => kf.file === filePath)) continue;
+      const text = extractText(tr.output);
+      if (text.length < MIN_CONTENT_LEN || isStub(text)) continue;
 
-      const raw = tr.output;
-      if (!raw) continue;
-      let text = typeof raw === "string" ? raw : JSON.stringify(raw);
-      try {
-        const parsed = JSON.parse(text) as { output?: string; success?: boolean };
-        if (parsed.output && parsed.success !== false) text = parsed.output;
-      } catch {}
-
-      if (text.length < MIN_CONTENT_LEN || text.includes("[Already in your context")) continue;
-
+      seenFiles.add(filePath);
       const capped = text.slice(0, Math.min(PER_FILE_CONTENT_CAP, budget));
       keyFindings.push({ file: filePath, detail: capped });
       budget -= capped.length + BUDGET_OVERHEAD;
     }
   }
 
-  // Ensure at least one finding (schema requires min 1)
+  // 4. Fallback — list files touched if nothing else
   if (keyFindings.length === 0) {
+    const allFiles = [...filesRead, ...filesEdited];
     keyFindings.push({
-      file: task.agentId,
-      detail: `Agent read ${String(filesRead.size)} files: ${[...filesRead].join(", ")}`,
+      file: allFiles[0] ?? task.task.slice(0, 80),
+      detail:
+        allFiles.length > 0
+          ? `Examined ${String(allFiles.length)} files: ${allFiles.join(", ")}`
+          : `No tool results captured for: ${task.task.slice(0, 200)}`,
     });
   }
 
@@ -206,7 +225,7 @@ export function synthesizeDoneFromResults(
   const summary =
     text.length > 10
       ? text.slice(0, SUMMARY_MAX_LEN)
-      : `Auto-synthesized: examined ${String(filesRead.size)} files for task "${task.task.slice(0, 100)}"`;
+      : `Examined ${String(filesRead.size)} files for: ${task.task.slice(0, 100)}`;
 
   return {
     summary,

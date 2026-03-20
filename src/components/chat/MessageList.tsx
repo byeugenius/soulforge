@@ -198,6 +198,16 @@ function SystemMessage({ msg, animate = true }: { msg: ChatMessage; animate?: bo
 }
 
 const META_TOOLS = new Set(["plan", "update_plan_step", "ask_user", "editor_panel"]);
+const EDIT_NAMES = new Set(["edit_file", "multi_edit"]);
+
+function isFailedEditCall(tc: ToolCall): boolean {
+  return EDIT_NAMES.has(tc.name) && !!tc.result && !tc.result.success;
+}
+
+function extractPathFromArgs(args?: Record<string, unknown>): string | null {
+  if (!args || typeof args.path !== "string") return null;
+  return args.path;
+}
 
 function parseBackend(result?: { output: string }): string | null {
   if (!result) return null;
@@ -420,7 +430,7 @@ const UserMessageAccent = memo(function UserMessageAccent({ msg }: { msg: ChatMe
             <span fg={USER_COLOR}>{TOOL_ICONS.plan} </span>
             <span fg="#ccc">Execute plan: {title}</span>
             <span fg="#555"> ({String(lineCount)} lines)</span>
-            <span fg="#333"> ^T</span>
+            <span fg="#333"> ^O</span>
           </text>
         </box>
       </box>
@@ -565,9 +575,23 @@ function renderSegments(
         </box>
       );
     }
-    const calls = seg.toolCallIds
+    const allCalls = seg.toolCallIds
       .map((id: string) => toolCallMap.get(id))
       .filter(Boolean) as ToolCall[];
+    if (allCalls.length === 0) return null;
+
+    // Hide failed edits that were retried on the same file
+    const calls = allCalls.filter((tc, idx) => {
+      if (!isFailedEditCall(tc)) return true;
+      const path = extractPathFromArgs(tc.args);
+      if (!path) return true;
+      for (let j = idx + 1; j < allCalls.length; j++) {
+        const later = allCalls[j];
+        if (later && EDIT_NAMES.has(later.name) && extractPathFromArgs(later.args) === path)
+          return false;
+      }
+      return true;
+    });
     if (calls.length === 0) return null;
 
     const groups: { type: "normal"; tc: ToolCall }[] | { type: "meta"; calls: ToolCall[] }[] = [];

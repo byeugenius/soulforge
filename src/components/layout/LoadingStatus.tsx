@@ -28,21 +28,21 @@ function formatElapsed(sec: number): string {
   return `${String(s)}s`;
 }
 
-function buildBusyContent(
-  ghostVisible: boolean,
-  isCompacting: boolean,
-  forgeStatus: string,
-  elapsedSec: number,
-  isLoading: boolean,
-  queueCount: number | undefined,
-): StyledText {
+function buildGhostContent(ghostVisible: boolean, isCompacting: boolean): StyledText {
   const currentGhost = ghostVisible ? ghostIcon() : " ";
-  const busyStatus = isCompacting ? "Compacting context…" : forgeStatus;
   const ghostColor = isCompacting ? "#5af" : "#8B5CF6";
-  const statusColor = isCompacting ? "#3388cc" : "#6A0DAD";
+  return new StyledText([fgStyle(ghostColor)(` ${currentGhost} `)]);
+}
 
-  const chunks = [fgStyle(ghostColor)(` ${currentGhost} `), fgStyle(statusColor)(busyStatus)];
-  if ((isLoading || isCompacting) && elapsedSec > 0) {
+function buildStatusContent(isCompacting: boolean, forgeStatus: string): StyledText {
+  const busyStatus = isCompacting ? "Compacting context…" : forgeStatus;
+  const statusColor = isCompacting ? "#3388cc" : "#6A0DAD";
+  return new StyledText([fgStyle(statusColor)(busyStatus)]);
+}
+
+function buildElapsedContent(elapsedSec: number, queueCount: number | undefined): StyledText {
+  const chunks: ReturnType<ReturnType<typeof fgStyle>>[] = [];
+  if (elapsedSec > 0) {
     chunks.push(fgStyle("#555")(` ${formatElapsed(elapsedSec)}`));
   }
   if (queueCount != null && queueCount > 0) {
@@ -62,7 +62,10 @@ interface LoadingStatusProps {
 }
 
 export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingStatusProps) {
-  const textRef = useRef<TextRenderable>(null);
+  const ghostRef = useRef<TextRenderable>(null);
+  const statusRef = useRef<TextRenderable>(null);
+  const elapsedRef = useRef<TextRenderable>(null);
+  const completedRef = useRef<TextRenderable>(null);
   const ghostTickRef = useRef(0);
   const forgeStatusRef = useRef("");
   const wasLoadingRef = useRef(false);
@@ -91,56 +94,71 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
     }
   }, [isLoading]);
 
+  // Ghost animation — fast interval, only touches ghostRef
   useEffect(() => {
-    if (!showBusy) {
-      if (completedTimeRef.current && textRef.current) {
-        try {
-          textRef.current.content = buildCompletedContent(completedTimeRef.current);
-        } catch {}
-      }
-      return;
-    }
-    let prevGhostVisible = true;
-    let prevElapsed = -1;
-    let prevQc: number | undefined;
+    if (!showBusy) return;
     const timer = setInterval(() => {
       ghostTickRef.current++;
-      const { isLoading: ld, isCompacting: cp, queueCount: qc } = propsRef.current;
-      const elapsed = cp
-        ? useStatusBarStore.getState().compactElapsed
-        : ld
-          ? Math.floor((Date.now() - loadingStartRef.current) / 1000)
-          : 0;
+      const { isCompacting: cp } = propsRef.current;
       const ghostVisible = ghostTickRef.current % 4 !== 3;
-      if (ghostVisible === prevGhostVisible && elapsed === prevElapsed && qc === prevQc) return;
-      prevGhostVisible = ghostVisible;
-      prevElapsed = elapsed;
-      prevQc = qc;
       try {
-        if (textRef.current) {
-          textRef.current.content = buildBusyContent(
-            ghostVisible,
-            cp,
-            forgeStatusRef.current,
-            elapsed,
-            ld,
-            qc,
-          );
+        if (ghostRef.current) {
+          ghostRef.current.content = buildGhostContent(ghostVisible, cp);
         }
       } catch {}
     }, GHOST_SPEED);
     return () => clearInterval(timer);
   }, [showBusy]);
 
-  const initial = showBusy
-    ? buildBusyContent(true, isCompacting, forgeStatusRef.current, 0, isLoading, queueCount)
-    : completedTimeRef.current
-      ? buildCompletedContent(completedTimeRef.current)
-      : new StyledText([]);
+  // Elapsed timer — 1s interval, only touches elapsedRef
+  useEffect(() => {
+    if (!showBusy) {
+      if (completedTimeRef.current && completedRef.current) {
+        try {
+          completedRef.current.content = buildCompletedContent(completedTimeRef.current);
+        } catch {}
+      }
+      return;
+    }
+    let prevElapsed = -1;
+    let prevQc: number | undefined;
+    const timer = setInterval(() => {
+      const { isLoading: ld, isCompacting: cp, queueCount: qc } = propsRef.current;
+      const elapsed = cp
+        ? useStatusBarStore.getState().compactElapsed
+        : ld
+          ? Math.floor((Date.now() - loadingStartRef.current) / 1000)
+          : 0;
+      if (elapsed === prevElapsed && qc === prevQc) return;
+      prevElapsed = elapsed;
+      prevQc = qc;
+      try {
+        if (elapsedRef.current) {
+          elapsedRef.current.content = buildElapsedContent(elapsed, qc);
+        }
+      } catch {}
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [showBusy]);
 
   return (
     <box paddingX={0} height={1} flexDirection="row" flexShrink={0}>
-      <text ref={textRef} truncate content={initial} />
+      {showBusy ? (
+        <>
+          <text ref={ghostRef} content={buildGhostContent(true, isCompacting)} />
+          <text
+            ref={statusRef}
+            content={buildStatusContent(isCompacting, forgeStatusRef.current)}
+          />
+          <text ref={elapsedRef} truncate content={buildElapsedContent(0, queueCount)} />
+        </>
+      ) : completedTimeRef.current ? (
+        <text
+          ref={completedRef}
+          truncate
+          content={buildCompletedContent(completedTimeRef.current)}
+        />
+      ) : null}
     </box>
   );
 }

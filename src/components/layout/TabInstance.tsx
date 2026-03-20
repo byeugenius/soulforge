@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ContextManager, type SharedContextResources } from "../../core/context/manager.js";
 import { icon } from "../../core/icons.js";
 import type { ProviderStatus } from "../../core/llm/provider.js";
+import { clearTabSessionPatterns } from "../../core/security/forbidden.js";
 import type { SessionManager } from "../../core/sessions/manager.js";
 import type { PrerequisiteStatus } from "../../core/setup/prerequisites.js";
 import { planFileName } from "../../core/tools/index.js";
@@ -206,8 +207,16 @@ export const TabInstance = memo(function TabInstance({
 
   // Cleanup / dispose on unmount
   useEffect(() => {
-    return () => contextManager.dispose();
-  }, [contextManager]);
+    return () => {
+      contextManager.dispose();
+      clearTabSessionPatterns(tabId);
+      // Clean up any pending plan file on disk
+      try {
+        const p = join(cwd, ".soulforge", "plans", planFileName(chat.sessionId));
+        if (existsSync(p)) unlinkSync(p);
+      } catch {}
+    };
+  }, [contextManager, tabId, cwd, chat.sessionId]);
 
   // Derived state
   const isStreaming = chat.streamSegments.length > 0 || chat.liveToolCalls.length > 0;
@@ -332,6 +341,11 @@ export const TabInstance = memo(function TabInstance({
       }
       chat.handleSubmit(input);
       clearEditorSelection();
+      // Re-engage sticky scroll so new messages are visible
+      const sb = scrollRef.current;
+      if (sb) {
+        sb.scrollTo(sb.scrollHeight);
+      }
     },
     [chat, onCommand, clearEditorSelection],
   );
@@ -432,7 +446,22 @@ export const TabInstance = memo(function TabInstance({
       ) : chat.pendingQuestion ? (
         <>
           <box flexShrink={0} paddingX={1}>
-            <QuestionPrompt question={chat.pendingQuestion} isActive={isFocused} />
+            <QuestionPrompt
+              question={chat.pendingQuestion}
+              isActive={isFocused}
+              onAnswer={(answer) => {
+                chat.setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    role: "user",
+                    content: answer,
+                    timestamp: Date.now(),
+                    isSteering: true,
+                  },
+                ]);
+              }}
+            />
           </box>
           {showPlanProgress && chat.activePlan && (
             <box flexShrink={0} paddingX={1}>
