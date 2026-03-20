@@ -1,9 +1,9 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { ChatMessage } from "../src/types/index.js";
 import { SessionManager } from "../src/core/sessions/manager.js";
 import type { SessionMeta, TabMeta } from "../src/core/sessions/types.js";
+import type { ChatMessage } from "../src/types/index.js";
 
 const TEST_DIR = join(import.meta.dir, ".tmp-session-test");
 
@@ -176,7 +176,7 @@ describe("SessionManager", () => {
 		expect(manager.loadSession("sess-del")).toBeNull();
 	});
 
-	it("lists sessions sorted by updatedAt descending", async () => {
+	it("lists sessions sorted by updatedAt descending", () => {
 		const m1 = makeMeta("sess-old");
 		m1.updatedAt = 1000;
 		const m2 = makeMeta("sess-new");
@@ -184,7 +184,7 @@ describe("SessionManager", () => {
 		manager.saveSession(m1, new Map([["tab-1", []]]));
 		manager.saveSession(m2, new Map([["tab-1", []]]));
 
-		const list = await manager.listSessions();
+		const list = manager.listSessions();
 		expect(list).toHaveLength(2);
 		expect(list[0]!.id).toBe("sess-new");
 		expect(list[1]!.id).toBe("sess-old");

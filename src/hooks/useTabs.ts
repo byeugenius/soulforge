@@ -25,6 +25,7 @@ export interface UseTabsReturn {
   activeTabIndex: number;
   createTab: () => void;
   closeTab: (id: string) => boolean;
+  isTabLoading: (id: string) => boolean;
   switchTab: (id: string) => void;
   switchToIndex: (index: number) => void;
   nextTab: () => void;
@@ -55,9 +56,10 @@ export function useTabs(): UseTabsReturn {
   const [activeTabId, setActiveTabId] = useState<string>(initialId);
   const autoLabeled = useRef(new Set<string>());
   const chatRegistry = useRef(new Map<string, ChatInstance>());
-  const activityMap = useRef(new Map<string, TabActivity>());
+  const [activityMap, setActivityMap] = useState<Map<string, TabActivity>>(() => new Map());
+  const activityMapRef = useRef(activityMap);
+  activityMapRef.current = activityMap;
   const initialStates = useRef(new Map<string, TabState>());
-  const [, forceRender] = useState(0);
 
   // Stable refs so callbacks don't depend on tabs/activeTabId arrays
   const tabsRef = useRef(tabs);
@@ -77,9 +79,13 @@ export function useTabs(): UseTabsReturn {
   const switchTab = useCallback((targetId: string) => {
     if (targetId === activeTabIdRef.current) return;
     if (!tabsRef.current.some((t) => t.id === targetId)) return;
-    const activity = activityMap.current.get(targetId);
+    const activity = activityMapRef.current.get(targetId);
     if (activity && (activity.hasUnread || activity.hasError)) {
-      activityMap.current.set(targetId, { ...activity, hasUnread: false, hasError: false });
+      setActivityMap((prev) => {
+        const next = new Map(prev);
+        next.set(targetId, { ...activity, hasUnread: false, hasError: false });
+        return next;
+      });
     }
     setActiveTabId(targetId);
   }, []);
@@ -105,15 +111,14 @@ export function useTabs(): UseTabsReturn {
 
     chatRegistry.current.delete(targetId);
     autoLabeled.current.delete(targetId);
-    activityMap.current.delete(targetId);
+    setActivityMap((prev) => {
+      const next = new Map(prev);
+      next.delete(targetId);
+      return next;
+    });
     initialStates.current.delete(targetId);
 
-    const newTabs = currentTabs
-      .filter((t) => t.id !== targetId)
-      .map((t, i) => {
-        if (/^Tab \d+$/.test(t.label)) return { ...t, label: `Tab ${String(i + 1)}` };
-        return t;
-      });
+    const newTabs = currentTabs.filter((t) => t.id !== targetId);
     setTabs(newTabs);
 
     if (targetId === activeTabIdRef.current) {
@@ -179,18 +184,31 @@ export function useTabs(): UseTabsReturn {
   }, []);
 
   const setTabActivity = useCallback((id: string, activity: Partial<TabActivity>) => {
-    const current = activityMap.current.get(id) ?? { ...DEFAULT_ACTIVITY };
-    const updated = { ...current, ...activity };
-    if (activity.hasUnread && id === activeTabIdRef.current) {
-      updated.hasUnread = false;
-    }
-    activityMap.current.set(id, updated);
-    forceRender((n) => n + 1);
+    setActivityMap((prev) => {
+      const current = prev.get(id) ?? { ...DEFAULT_ACTIVITY };
+      const updated = { ...current, ...activity };
+      if (activity.hasUnread && id === activeTabIdRef.current) {
+        updated.hasUnread = false;
+      }
+      const next = new Map(prev);
+      next.set(id, updated);
+      return next;
+    });
   }, []);
 
-  const getTabActivity = useCallback((id: string): TabActivity => {
-    return activityMap.current.get(id) ?? { ...DEFAULT_ACTIVITY };
-  }, []);
+  const getTabActivity = useCallback(
+    (id: string): TabActivity => {
+      return activityMap.get(id) ?? { ...DEFAULT_ACTIVITY };
+    },
+    [activityMap],
+  );
+
+  const isTabLoading = useCallback(
+    (id: string): boolean => {
+      return activityMap.get(id)?.isLoading === true;
+    },
+    [activityMap],
+  );
 
   const registerChat = useCallback((id: string, chat: ChatInstance) => {
     chatRegistry.current.set(id, chat);
@@ -224,12 +242,21 @@ export function useTabs(): UseTabsReturn {
     (tabMetas: TabMeta[], activeId: string, tabMessages: Map<string, ChatMessage[]>) => {
       if (tabMetas.length === 0) return;
 
+      // Abort any in-flight chats before replacing tabs
+      for (const chat of chatRegistry.current.values()) {
+        chat.abort();
+      }
+      chatRegistry.current.clear();
+
       const restoredTabs: Tab[] = tabMetas.map((tm) => ({
         id: tm.id,
         label: tm.label,
       }));
       setTabs(restoredTabs);
 
+      // Reset activity + auto-label tracking for clean state
+      setActivityMap(new Map());
+      autoLabeled.current.clear();
       for (const tm of tabMetas) {
         autoLabeled.current.add(tm.id);
       }
@@ -271,6 +298,7 @@ export function useTabs(): UseTabsReturn {
     activeTabIndex,
     createTab,
     closeTab,
+    isTabLoading,
     switchTab,
     switchToIndex,
     nextTab,

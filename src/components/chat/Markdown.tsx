@@ -1,8 +1,11 @@
-import { createContext, memo } from "react";
+import { createContext, memo, useContext } from "react";
 import { getSyntaxStyle, getTSClient } from "../../core/utils/syntax.js";
 
 const CodeExpandedContext = createContext(false);
 export const CodeExpandedProvider = CodeExpandedContext.Provider;
+export function useCodeExpanded(): boolean {
+  return useContext(CodeExpandedContext);
+}
 
 interface Props {
   text: string;

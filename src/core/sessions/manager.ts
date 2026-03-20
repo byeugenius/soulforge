@@ -8,7 +8,6 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { logBackgroundError } from "../../stores/errors.js";
 import type { ChatMessage } from "../../types/index.js";
@@ -37,13 +36,14 @@ export class SessionManager {
     }
   }
 
-  private async dirSize(dirPath: string): Promise<number> {
+  private sessionDirSize(sessionDir: string): number {
     let total = 0;
-    const entries = await readdir(dirPath);
-    for (const f of entries) {
-      const fp = join(dirPath, f);
-      const s = await stat(fp);
-      total += s.isDirectory() ? await this.dirSize(fp) : s.size;
+    for (const file of ["meta.json", "messages.jsonl"]) {
+      try {
+        total += statSync(join(sessionDir, file)).size;
+      } catch {
+        // file may not exist
+      }
     }
     return total;
   }
@@ -147,7 +147,7 @@ export class SessionManager {
     return null;
   }
 
-  async listSessions(): Promise<SessionListEntry[]> {
+  listSessions(): SessionListEntry[] {
     if (!existsSync(this.dir)) return [];
     try {
       const entries = readdirSync(this.dir);
@@ -174,7 +174,7 @@ export class SessionManager {
             messageCount: totalMessages,
             startedAt: meta.startedAt,
             updatedAt: meta.updatedAt,
-            sizeBytes: await this.dirSize(fullPath),
+            sizeBytes: this.sessionDirSize(fullPath),
           });
         } catch {
           // Skip corrupted entries
@@ -210,9 +210,9 @@ export class SessionManager {
     return count;
   }
 
-  async totalSizeBytes(): Promise<number> {
+  totalSizeBytes(): number {
     if (!existsSync(this.dir)) return 0;
-    return this.dirSize(this.dir);
+    return this.listSessions().reduce((sum, s) => sum + s.sizeBytes, 0);
   }
 
   sessionCount(): number {

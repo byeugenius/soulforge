@@ -450,15 +450,9 @@ export const TabInstance = memo(function TabInstance({
               question={chat.pendingQuestion}
               isActive={isFocused}
               onAnswer={(answer) => {
-                chat.setMessages((prev) => [
+                chat.setMessageQueue((prev) => [
                   ...prev,
-                  {
-                    id: crypto.randomUUID(),
-                    role: "user",
-                    content: answer,
-                    timestamp: Date.now(),
-                    isSteering: true,
-                  },
+                  { content: answer, queuedAt: Date.now() },
                 ]);
               }}
             />

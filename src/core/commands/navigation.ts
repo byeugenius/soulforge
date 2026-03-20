@@ -85,6 +85,21 @@ function handleNewTab(_input: string, ctx: CommandContext): void {
 function handleCloseTab(_input: string, ctx: CommandContext): void {
   if (ctx.tabMgr.tabCount <= 1) {
     sysMsg(ctx, "Can't close the last tab.");
+    return;
+  }
+  if (ctx.tabMgr.isTabLoading(ctx.tabMgr.activeTabId)) {
+    const closingId = ctx.tabMgr.activeTabId;
+    ctx.openCommandPicker({
+      title: "Tab is busy — close anyway?",
+      icon: "⚠",
+      options: [
+        { value: "yes", label: "Yes, close it", icon: "✓" },
+        { value: "no", label: "Cancel", icon: "✕" },
+      ],
+      onSelect: (val) => {
+        if (val === "yes") ctx.tabMgr.closeTab(closingId);
+      },
+    });
   } else {
     ctx.tabMgr.closeTab(ctx.tabMgr.activeTabId);
   }

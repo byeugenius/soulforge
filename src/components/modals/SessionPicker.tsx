@@ -42,7 +42,7 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
   const manager = useMemo(() => new SessionManager(cwd), [cwd]);
 
   const refresh = useCallback(() => {
-    manager.listSessions().then(setSessions);
+    setSessions(manager.listSessions());
   }, [manager]);
 
   useEffect(() => {

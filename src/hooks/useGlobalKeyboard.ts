@@ -88,7 +88,23 @@ export function useGlobalKeyboard({
       return consume(() => useUIStore.getState().toggleModal("errorLog"));
     if (evt.ctrl && evt.name === "w")
       return consume(() => {
-        if (tabMgr.tabCount > 1) tabMgr.closeTab(tabMgr.activeTabId);
+        if (tabMgr.tabCount <= 1) return;
+        if (tabMgr.isTabLoading(tabMgr.activeTabId)) {
+          const closingId = tabMgr.activeTabId;
+          useUIStore.getState().openCommandPicker({
+            title: "Tab is busy — close anyway?",
+            icon: "⚠",
+            options: [
+              { value: "yes", label: "Yes, close it", icon: "✓" },
+              { value: "no", label: "Cancel", icon: "✕" },
+            ],
+            onSelect: (val) => {
+              if (val === "yes") tabMgr.closeTab(closingId);
+            },
+          });
+        } else {
+          tabMgr.closeTab(tabMgr.activeTabId);
+        }
       });
     if ((evt.meta || evt.ctrl) && evt.name >= "1" && evt.name <= "9") {
       return consume(() => tabMgr.switchToIndex(Number(evt.name) - 1));

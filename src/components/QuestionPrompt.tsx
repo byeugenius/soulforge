@@ -30,7 +30,7 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
       return;
     }
 
-    if (evt.name === "up") {
+    if (evt.name === "up" || evt.name === "left") {
       setSelectedIdx((prev) => {
         const cur = prev === OTHER_IDX ? totalOptions - 1 : prev;
         const next = cur > 0 ? cur - 1 : totalOptions - 1;
@@ -39,7 +39,7 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
       evt.stopPropagation();
       return;
     }
-    if (evt.name === "down") {
+    if (evt.name === "down" || evt.name === "right") {
       setSelectedIdx((prev) => {
         const cur = prev === OTHER_IDX ? totalOptions - 1 : prev;
         const next = (cur + 1) % totalOptions;
@@ -93,21 +93,6 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
       <box>
         <text fg="#eee">{question.question}</text>
       </box>
-      {question.options.map((opt, i) => {
-        const isSelected = !typing && i === selectedIdx;
-        return (
-          <box key={opt.value} gap={1} flexDirection="row">
-            <text fg={isSelected ? "#FF8C00" : "#555"}>{isSelected ? " ›" : "  "}</text>
-            <text
-              fg={isSelected ? "#FF8C00" : "#ccc"}
-              attributes={isSelected ? TextAttributes.BOLD : undefined}
-            >
-              {opt.label}
-            </text>
-            {opt.description && <text fg={isSelected ? "#999" : "#555"}>{opt.description}</text>}
-          </box>
-        );
-      })}
       {typing ? (
         <box flexDirection="row" gap={1}>
           <text fg="#FF8C00">{" ›"}</text>
@@ -121,25 +106,34 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
           />
         </box>
       ) : (
-        <box gap={1} flexDirection="row">
-          <text fg={selectedIdx === OTHER_IDX ? "#FF8C00" : "#555"}>
-            {selectedIdx === OTHER_IDX ? " ›" : "  "}
+        <box flexDirection="row" gap={1} height={1}>
+          {question.options.map((opt, i) => {
+            const isSelected = i === selectedIdx;
+            return (
+              <text key={opt.value}>
+                <span
+                  fg={isSelected ? "#111" : "#888"}
+                  bg={isSelected ? "#FF8C00" : "#222"}
+                  attributes={isSelected ? TextAttributes.BOLD : undefined}
+                >
+                  {` ${opt.label} `}
+                </span>
+              </text>
+            );
+          })}
+          <text>
+            <span
+              fg={selectedIdx === OTHER_IDX ? "#111" : "#888"}
+              bg={selectedIdx === OTHER_IDX ? "#FF8C00" : "#222"}
+            >
+              {" Other "}
+            </span>
           </text>
-          <text
-            fg={selectedIdx === OTHER_IDX ? "#FF8C00" : "#888"}
-            attributes={selectedIdx === OTHER_IDX ? TextAttributes.BOLD : undefined}
-          >
-            Other (type answer)
+          <text fg="#333">
+            {"  "}←→ select · ⏎ confirm{question.allowSkip ? " · esc skip" : ""}
           </text>
         </box>
       )}
-      <box>
-        <text fg="#555">
-          {typing
-            ? "⏎ submit  esc back"
-            : `↑↓ select  ⏎ confirm${question.allowSkip ? "  esc skip" : ""}`}
-        </text>
-      </box>
     </box>
   );
 }

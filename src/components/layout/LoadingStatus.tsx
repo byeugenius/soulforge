@@ -71,6 +71,7 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
   const wasLoadingRef = useRef(false);
   const loadingStartRef = useRef(0);
   const completedTimeRef = useRef<string | null>(null);
+  const elapsedSecRef = useRef(0);
   const propsRef = useRef({ isLoading, isCompacting, queueCount });
   propsRef.current = { isLoading, isCompacting, queueCount };
 
@@ -81,6 +82,7 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
       Math.floor(Math.random() * FORGE_STATUSES.length)
     ] as string;
     loadingStartRef.current = Date.now();
+    elapsedSecRef.current = 0;
     completedTimeRef.current = null;
   }
 
@@ -132,6 +134,7 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
       if (elapsed === prevElapsed && qc === prevQc) return;
       prevElapsed = elapsed;
       prevQc = qc;
+      elapsedSecRef.current = elapsed;
       try {
         if (elapsedRef.current) {
           elapsedRef.current.content = buildElapsedContent(elapsed, qc);
@@ -145,12 +148,19 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
     <box paddingX={0} height={1} flexDirection="row" flexShrink={0}>
       {showBusy ? (
         <>
-          <text ref={ghostRef} content={buildGhostContent(true, isCompacting)} />
+          <text
+            ref={ghostRef}
+            content={buildGhostContent(ghostTickRef.current % 4 !== 3, isCompacting)}
+          />
           <text
             ref={statusRef}
             content={buildStatusContent(isCompacting, forgeStatusRef.current)}
           />
-          <text ref={elapsedRef} truncate content={buildElapsedContent(0, queueCount)} />
+          <text
+            ref={elapsedRef}
+            truncate
+            content={buildElapsedContent(elapsedSecRef.current, queueCount)}
+          />
         </>
       ) : completedTimeRef.current ? (
         <text

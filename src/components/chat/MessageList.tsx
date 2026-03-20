@@ -20,7 +20,7 @@ import type {
 } from "../../types/index.js";
 import { StructuredPlanView } from "../plan/StructuredPlanView.js";
 import { DiffView } from "./DiffView.js";
-import { Markdown } from "./Markdown.js";
+import { Markdown, useCodeExpanded } from "./Markdown.js";
 import { ReasoningBlock } from "./ReasoningBlock.js";
 
 const REVEAL_INTERVAL = 30;
@@ -316,12 +316,16 @@ function EditToolCall({
   tc: ToolCall;
   diffStyle?: "default" | "sidebyside" | "compact";
 }) {
+  const expanded = useCodeExpanded();
   const hasDiff =
     typeof tc.args.path === "string" &&
     typeof tc.args.oldString === "string" &&
     typeof tc.args.newString === "string";
 
   if (!hasDiff) return <ToolCallRow tc={tc} />;
+
+  // Collapsed by default — Ctrl+O toggles expanded
+  const mode = expanded ? diffStyle : "compact";
 
   return (
     <DiffView
@@ -330,7 +334,7 @@ function EditToolCall({
       newString={tc.args.newString as string}
       success={tc.result?.success ?? false}
       errorMessage={tc.result?.error}
-      mode={diffStyle}
+      mode={mode}
     />
   );
 }
@@ -677,8 +681,8 @@ const AssistantMessage = memo(function AssistantMessage({
       paddingY={1}
     >
       <box flexDirection="row">
-        <text fg={ASSISTANT_COLOR}>{icon("ai")} Forge</text>
-        <text fg="#333"> · {time}</text>
+        <text fg={ASSISTANT_COLOR}>{icon("ai")}</text>
+        <text fg="#333"> {time}</text>
       </box>
 
       {isEmpty ? (

@@ -771,7 +771,7 @@ export class ContextManager {
 
     if (!isMinimal) {
       parts.push(
-        "Planning: plan when 3+ steps, multi-file, or architectural. Skip for simple edits, lookups, 'just do it'. Flow: research, then plan (self-contained), user confirms, execute with update_plan_step. Plan must be SELF-CONTAINED — zero exploration during execution." +
+        "Planning: prefer direct action over plans. Just edit files. Only use plan for sweeping changes (10+ files, major architectural redesigns) or when the user explicitly requests a plan via plan mode. Flow: research, then plan (self-contained), user confirms, execute with update_plan_step. Plan must be SELF-CONTAINED — zero exploration during execution." +
           ` files[] with exact paths${hasRepoMap ? " from the Soul Map" : ""}, symbols[] with signatures, steps[].details with full instructions. If you can't fill in symbols and details, you haven't researched enough.`,
       );
     }

@@ -21,7 +21,7 @@ export function buildSessionMeta({
   const tabs: TabMeta[] = [];
 
   for (const tabState of snapshot.tabStates) {
-    const isActiveTab = tabState.id === snapshot.activeTabId || tabState.sessionId === sessionId;
+    const isActiveTab = tabState.id === snapshot.activeTabId;
     const msgs = isActiveTab
       ? currentTabMessages
       : tabState.messages.filter((m) => m.role !== "system" || m.showInChat);

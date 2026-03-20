@@ -16,7 +16,6 @@ interface Props {
 
 const ACCENT = "#00BFFF";
 const STEP_COLOR = "#8B5CF6";
-const DIM = "#555";
 const CANCEL_COLOR = "#FF0040";
 
 interface Option {
@@ -24,38 +23,13 @@ interface Option {
   label: string;
   icon: string;
   color: string;
-  description?: string;
 }
 
 const ALL_OPTIONS: Option[] = [
-  {
-    id: "implement",
-    label: "Implement",
-    icon: "\u23CE",
-    color: ACCENT,
-    description: "execute the plan as-is",
-  },
-  {
-    id: "clear_implement",
-    label: "Clear & Implement",
-    icon: "\u21BB",
-    color: "#FF8C00",
-    description: "clear context, then execute",
-  },
-  {
-    id: "revise",
-    label: "Revise",
-    icon: "\uF040",
-    color: STEP_COLOR,
-    description: "provide feedback to improve the plan",
-  },
-  {
-    id: "cancel",
-    label: "Cancel",
-    icon: "\uF00D",
-    color: CANCEL_COLOR,
-    description: "discard the plan",
-  },
+  { id: "implement", label: "Implement", icon: "\u23CE", color: ACCENT },
+  { id: "clear_implement", label: "Clear & Implement", icon: "\u21BB", color: "#FF8C00" },
+  { id: "revise", label: "Revise", icon: "\uF040", color: STEP_COLOR },
+  { id: "cancel", label: "Cancel", icon: "\uF00D", color: CANCEL_COLOR },
 ];
 
 export function PlanReviewPrompt({
@@ -95,12 +69,12 @@ export function PlanReviewPrompt({
       return;
     }
 
-    if (evt.name === "up") {
+    if (evt.name === "up" || evt.name === "left") {
       setSelectedIdx((prev) => (prev > 0 ? prev - 1 : options.length - 1));
       evt.stopPropagation();
       return;
     }
-    if (evt.name === "down" || evt.name === "tab") {
+    if (evt.name === "down" || evt.name === "right" || evt.name === "tab") {
       setSelectedIdx((prev) => (prev + 1) % options.length);
       evt.stopPropagation();
       return;
@@ -147,16 +121,44 @@ export function PlanReviewPrompt({
         <text fg="#444">{planFile}</text>
       </box>
 
-      {plan.steps.map((step) => (
-        <box key={step.id} height={1} flexShrink={0}>
-          <text truncate>
-            <span fg="#555">{"  "}○ </span>
-            <span fg="#999">{step.label}</span>
-          </text>
+      {plan.steps.length <= 5 ? (
+        <box flexDirection="column">
+          {plan.steps.map((step) => (
+            <box key={step.id} height={1} flexShrink={0}>
+              <text truncate>
+                <span fg="#555"> ○ </span>
+                <span fg="#999">{step.label}</span>
+              </text>
+            </box>
+          ))}
         </box>
-      ))}
+      ) : (
+        <box flexDirection="row" width="100%">
+          <box flexDirection="column" flexGrow={1} flexBasis={0}>
+            {plan.steps.slice(0, Math.ceil(plan.steps.length / 2)).map((step) => (
+              <box key={step.id} height={1} flexShrink={0}>
+                <text truncate>
+                  <span fg="#555"> ○ </span>
+                  <span fg="#999">{step.label}</span>
+                </text>
+              </box>
+            ))}
+          </box>
+          <text fg="#222"> │ </text>
+          <box flexDirection="column" flexGrow={1} flexBasis={0}>
+            {plan.steps.slice(Math.ceil(plan.steps.length / 2)).map((step) => (
+              <box key={step.id} height={1} flexShrink={0}>
+                <text truncate>
+                  <span fg="#555"> ○ </span>
+                  <span fg="#999">{step.label}</span>
+                </text>
+              </box>
+            ))}
+          </box>
+        </box>
+      )}
 
-      <box height={1} />
+      <box height={1} flexShrink={0} />
 
       {typing ? (
         <box flexDirection="row" gap={1}>
@@ -174,33 +176,27 @@ export function PlanReviewPrompt({
             flexGrow={1}
             placeholder="what should change..."
           />
+          <text fg="#555">⏎ submit · esc back</text>
         </box>
       ) : (
-        options.map((opt, i) => {
-          const selected = i === selectedIdx;
-          return (
-            <box key={opt.id} gap={1} flexDirection="row">
-              <text fg={selected ? opt.color : "#333"}>{selected ? " \u203A" : "  "}</text>
-              <text fg={selected ? opt.color : DIM}>{opt.icon}</text>
-              <text
-                fg={selected ? "#eee" : "#888"}
-                attributes={selected ? TextAttributes.BOLD : undefined}
-              >
-                {opt.label}
+        <box flexDirection="row" gap={1} height={1}>
+          {options.map((opt, i) => {
+            const selected = i === selectedIdx;
+            return (
+              <text key={opt.id}>
+                <span
+                  fg={selected ? "#111" : "#888"}
+                  bg={selected ? opt.color : "#222"}
+                  attributes={selected ? TextAttributes.BOLD : undefined}
+                >
+                  {` ${opt.icon} ${opt.label} `}
+                </span>
               </text>
-              {opt.description && <text fg={selected ? "#777" : "#444"}>{opt.description}</text>}
-            </box>
-          );
-        })
+            );
+          })}
+          <text fg="#333">{"  "}←→ · ⏎ confirm · esc cancel</text>
+        </box>
       )}
-
-      <box>
-        <text fg="#555">
-          {typing
-            ? "  \u23CE submit  esc back"
-            : "  \u2191\u2193 select  \u23CE confirm  esc cancel"}
-        </text>
-      </box>
     </box>
   );
 }

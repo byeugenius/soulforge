@@ -30,36 +30,50 @@ export function TabBar({ tabs, activeTabId, onSwitch: _onSwitch, getActivity }: 
 
   return (
     <box flexShrink={0} paddingX={1} height={1} flexDirection="row">
-      <text fg="#333">{icon("tabs")} </text>
+      <text fg="#444">{icon("tabs")} </text>
+      <text fg="#555" attributes={TextAttributes.BOLD}>
+        TABS{" "}
+      </text>
+      <text fg="#333">→ </text>
       {tabs.map((tab, i) => {
         const isActive = tab.id === activeTabId;
         const num = String(i + 1);
         const activity = activities.get(tab.id);
         const isDefault = /^Tab \d+$/.test(tab.label);
-        const displayLabel = isDefault ? num : `${num} ${truncateLabel(tab.label, 18)}`;
+        const label = isDefault ? "" : ` ${truncateLabel(tab.label, 20)}`;
 
-        let indicator = "";
-        let indicatorColor = "";
-        if (activity?.isLoading) {
-          indicator = SPINNER_FRAMES[spinFrame] ?? "⠋";
-          indicatorColor = isActive ? "#FF0040" : "#8B5CF6";
-        } else if (activity?.hasUnread) {
-          indicator = "●";
-          indicatorColor = "#b87333";
-        } else if (activity?.hasError) {
-          indicator = "●";
-          indicatorColor = "#a55";
-        }
+        const isLoading = activity?.isLoading ?? false;
+        const hasError = activity?.hasError ?? false;
+        const hasUnread = activity?.hasUnread ?? false;
 
-        const labelColor = isActive ? "#FF0040" : "#555";
+        // bracket color: loading=purple pulse, error=red, active=red, default=dim
+        const bracketColor = isLoading
+          ? "#8B5CF6"
+          : hasError
+            ? "#a55"
+            : isActive
+              ? "#FF0040"
+              : "#444";
+
+        const numColor = isActive ? "#FF0040" : isLoading ? "#8B5CF6" : "#666";
+        const labelColor = isActive ? "#ccc" : hasUnread ? "#b87333" : "#555";
 
         return (
           <box key={tab.id} flexDirection="row">
-            {i > 0 && <text fg="#222"> │ </text>}
-            {indicator !== "" && <text fg={indicatorColor}>{indicator} </text>}
-            <text fg={labelColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
-              {displayLabel}
+            {i > 0 && <text fg="#2a2a2a"> │ </text>}
+            {isLoading && <text fg="#8B5CF6">{SPINNER_FRAMES[spinFrame] ?? "⠋"} </text>}
+            <text fg={bracketColor}>[</text>
+            <text fg={numColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
+              {num}
             </text>
+            <text fg={bracketColor}>]</text>
+            {label && (
+              <text fg={labelColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
+                {label}
+              </text>
+            )}
+            {hasUnread && !isLoading && <text fg="#b87333"> ●</text>}
+            {hasError && !isLoading && <text fg="#a55"> ✗</text>}
           </box>
         );
       })}

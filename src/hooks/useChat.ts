@@ -271,15 +271,19 @@ export function useChat({
   const flushMicrotaskQueued = useRef(false);
   const flushMicrotaskTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFlushTime = useRef(0);
+  /** Minimum ms between microtask-triggered flushes — coalesces rapid word deliveries. */
+  const MIN_FLUSH_INTERVAL_MS = 30;
   const queueMicrotaskFlush = useCallback(() => {
     if (flushMicrotaskQueued.current) return;
     flushMicrotaskQueued.current = true;
+    const elapsed = Date.now() - lastFlushTime.current;
+    const delay = elapsed >= MIN_FLUSH_INTERVAL_MS ? 0 : MIN_FLUSH_INTERVAL_MS - elapsed;
     flushMicrotaskTimer.current = setTimeout(() => {
       flushMicrotaskQueued.current = false;
       flushMicrotaskTimer.current = null;
       lastFlushTime.current = Date.now();
       flushStreamState();
-    }, 0);
+    }, delay);
   }, [flushStreamState]);
 
   // Clean up pending microtask flush and stream flush timer on unmount
@@ -918,7 +922,6 @@ export function useChat({
     autoApproveRef: React.MutableRefObject<boolean>,
     mutexRef: React.MutableRefObject<Promise<void>>,
     questionFn: (...args: string[]) => string,
-    alwaysDescription: string,
   ) {
     return (...args: string[]): Promise<boolean> => {
       if (autoApproveRef.current) return Promise.resolve(true);
@@ -929,9 +932,9 @@ export function useChat({
             id: crypto.randomUUID(),
             question: questionFn(...args),
             options: [
-              { label: "Allow", value: "allow", description: "Allow this request" },
-              { label: "Always Allow", value: "always", description: alwaysDescription },
-              { label: "Deny", value: "deny", description: "Block this request" },
+              { label: "Allow", value: "allow" },
+              { label: "Allow all (session)", value: "always" },
+              { label: "Deny", value: "deny" },
             ],
             allowSkip: false,
             resolve: (answer: string) => {
@@ -954,7 +957,6 @@ export function useChat({
       autoApproveWebAccessRef,
       webAccessMutexRef,
       (label) => `Forge wants to access the web:\n\n${label}`,
-      "Auto-approve all web access this session",
     ),
     [],
   );
@@ -965,7 +967,6 @@ export function useChat({
       autoApproveOutsideCwdRef,
       outsideCwdMutexRef,
       (toolName, path) => `Forge wants to ${toolName} outside project directory:\n\n${path}`,
-      "Auto-approve all outside-cwd actions this session",
     ),
     [],
   );
@@ -976,8 +977,8 @@ export function useChat({
         id: crypto.randomUUID(),
         question: `⚠ Potentially destructive action:\n\n${description}`,
         options: [
-          { label: "Allow", value: "allow", description: "Allow this action" },
-          { label: "Deny", value: "deny", description: "Block this action" },
+          { label: "Allow", value: "allow" },
+          { label: "Deny", value: "deny" },
         ],
         allowSkip: false,
         resolve: (answer: string) => {
@@ -1121,7 +1122,6 @@ export function useChat({
       const estimatedTokens = tokenUsageRef.current.total;
       contextManager.updateConversationContext(input, estimatedTokens);
 
-      setIsLoading(true);
       setPendingPlanReview(null);
       streamSegmentsBuffer.current = [];
       liveToolCallsBuffer.current = [];
@@ -1206,6 +1206,7 @@ export function useChat({
       // no longer accumulated and appended at the end.
 
       try {
+        setIsLoading(true);
         const taskType = detectTaskType(input);
         const modelId = resolveTaskModel(
           taskType,
