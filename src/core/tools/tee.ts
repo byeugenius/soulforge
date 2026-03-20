@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const TEE_DIR = join(homedir(), ".local", "share", "soulforge", "tee");
 const MAX_TEE_FILES = 20;
+const MAX_TEE_BYTES = 512_000; // 512KB per file — anything bigger is truncated to head+tail
 
 let dirReady = false;
 
@@ -35,7 +36,14 @@ export function saveTee(label: string, content: string): string {
   const safeName = label.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
   const filename = `${ts}_${safeName}.txt`;
   const filepath = join(TEE_DIR, filename);
-  writeFileSync(filepath, content, "utf-8");
+  // Cap individual file size — keep head + tail of oversized content
+  let toWrite = content;
+  if (content.length > MAX_TEE_BYTES) {
+    const half = Math.floor(MAX_TEE_BYTES / 2);
+    const omitted = content.length - MAX_TEE_BYTES;
+    toWrite = `${content.slice(0, half)}\n\n... [${String(omitted)} bytes omitted] ...\n\n${content.slice(-half)}`;
+  }
+  writeFileSync(filepath, toWrite, "utf-8");
   pruneOldFiles();
   return filepath;
 }
