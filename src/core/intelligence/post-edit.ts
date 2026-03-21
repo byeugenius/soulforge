@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import type { CodeIntelligenceRouter } from "./router.js";
 import type { CodeAction, Diagnostic, Language } from "./types.js";
@@ -83,27 +83,34 @@ export async function postEditDiagnostics(
     }
   }
 
-  // Cross-file: find importers and check for new errors
-  const importers = findImporters(filePath);
-  for (const importer of importers.slice(0, 5)) {
-    const importerLang = router.detectLanguage(importer);
-    const importerDiags = await router.executeWithFallback(importerLang, "getDiagnostics", (b) =>
-      b.getDiagnostics ? b.getDiagnostics(importer) : Promise.resolve(null),
-    );
-    if (!importerDiags) continue;
-    const importerErrors = importerDiags.filter((d) => d.severity === "error");
-    for (const err of importerErrors) {
-      const fixes = await getFixesForDiagnostic(router, importer, importerLang, err);
-      result.crossFileErrors.push({
-        file: importer,
-        line: err.line,
-        column: err.column,
-        severity: err.severity,
-        message: err.message,
-        code: err.code,
-        fixes,
-      });
-    }
+  // Cross-file: find importers and check for new errors (parallel)
+  const importers = await findImporters(filePath);
+  const crossFileResults = await Promise.all(
+    importers.slice(0, 5).map(async (importer) => {
+      const importerLang = router.detectLanguage(importer);
+      const importerDiags = await router.executeWithFallback(importerLang, "getDiagnostics", (b) =>
+        b.getDiagnostics ? b.getDiagnostics(importer) : Promise.resolve(null),
+      );
+      if (!importerDiags) return [];
+      const importerErrors = importerDiags.filter((d) => d.severity === "error");
+      return Promise.all(
+        importerErrors.map(async (err) => {
+          const fixes = await getFixesForDiagnostic(router, importer, importerLang, err);
+          return {
+            file: importer,
+            line: err.line,
+            column: err.column,
+            severity: err.severity,
+            message: err.message,
+            code: err.code,
+            fixes,
+          } as NewDiagnostic;
+        }),
+      );
+    }),
+  );
+  for (const entries of crossFileResults) {
+    result.crossFileErrors.push(...entries);
   }
 
   return result;
@@ -127,13 +134,11 @@ async function getFixesForDiagnostic(
     .slice(0, 3);
 }
 
-function findImporters(filePath: string): string[] {
+async function findImporters(filePath: string): Promise<string[]> {
   const absPath = resolve(filePath);
   const dir = dirname(absPath);
   const base = basename(absPath).replace(/\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/, "");
 
-  // Look for files in the same project that import this file
-  // Use a fast grep-like scan on common import patterns
   const importPatterns = [
     `from "./${base}"`,
     `from './${base}'`,
@@ -143,48 +148,65 @@ function findImporters(filePath: string): string[] {
     `require('./${base}')`,
   ];
 
-  const importers: string[] = [];
   try {
-    scanForImporters(dirname(absPath), absPath, importPatterns, importers, 0);
+    return await scanForImporters(dirname(absPath), absPath, importPatterns, 0);
   } catch {
-    // Best effort
+    return [];
   }
-  return importers;
 }
 
-function scanForImporters(
+async function scanForImporters(
   searchDir: string,
   targetFile: string,
   patterns: string[],
-  results: string[],
   depth: number,
-): void {
-  if (depth > 3 || results.length >= 5) return;
-  const { readdirSync } = require("node:fs") as typeof import("node:fs");
+): Promise<string[]> {
+  if (depth > 3) return [];
+  const results: string[] = [];
 
+  let entries: import("node:fs").Dirent[];
   try {
-    for (const entry of readdirSync(searchDir, { withFileTypes: true })) {
-      if (results.length >= 5) return;
-      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-
-      const fullPath = resolve(searchDir, entry.name);
-      if (entry.isDirectory() && depth < 2) {
-        scanForImporters(fullPath, targetFile, patterns, results, depth + 1);
-      } else if (entry.isFile() && /\.(ts|tsx|js|jsx)$/.test(entry.name)) {
-        if (fullPath === targetFile) continue;
-        try {
-          const content = readFileSync(fullPath, "utf-8");
-          if (patterns.some((p) => content.includes(p))) {
-            results.push(fullPath);
-          }
-        } catch {
-          // Skip unreadable
-        }
-      }
-    }
+    entries = await readdir(searchDir, { withFileTypes: true });
   } catch {
-    // Skip unreadable dirs
+    return [];
   }
+
+  const fileChecks: Promise<string | null>[] = [];
+  const dirRecurse: Promise<string[]>[] = [];
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    const fullPath = resolve(searchDir, entry.name);
+
+    if (entry.isDirectory() && depth < 2) {
+      dirRecurse.push(scanForImporters(fullPath, targetFile, patterns, depth + 1));
+    } else if (entry.isFile() && /\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+      if (fullPath === targetFile) continue;
+      fileChecks.push(
+        readFile(fullPath, "utf-8")
+          .then((content) => (patterns.some((p) => content.includes(p)) ? fullPath : null))
+          .catch(() => null),
+      );
+    }
+  }
+
+  // Run file reads in parallel, collect matches
+  const checked = await Promise.all(fileChecks);
+  for (const match of checked) {
+    if (match) results.push(match);
+    if (results.length >= 5) return results;
+  }
+
+  // Recurse into subdirectories
+  const subResults = await Promise.all(dirRecurse);
+  for (const sub of subResults) {
+    for (const match of sub) {
+      results.push(match);
+      if (results.length >= 5) return results;
+    }
+  }
+
+  return results;
 }
 
 export function formatPostEditResult(result: PostEditResult): string | null {

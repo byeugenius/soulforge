@@ -1,6 +1,6 @@
+import type { ScrollBoxRenderable } from "@opentui/core";
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { ScrollBoxRenderable } from "@opentui/core";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ContextManager, type SharedContextResources } from "../../core/context/manager.js";
@@ -224,6 +224,12 @@ export const TabInstance = memo(function TabInstance({
     }
     prevLoading.current = chat.isLoading;
   }, [chat.isLoading, tabId, setTabActivity, visible]);
+
+  // Signal attention when tab is waiting for user input (plan review or question)
+  useEffect(() => {
+    const needs = !!(chat.pendingPlanReview || chat.pendingQuestion);
+    setTabActivity(tabId, { needsAttention: needs });
+  }, [chat.pendingPlanReview, chat.pendingQuestion, tabId, setTabActivity]);
 
   // Sync claim count to tab activity for tab bar indicator
   useEffect(() => {
@@ -508,7 +514,7 @@ export const TabInstance = memo(function TabInstance({
           )}
           {!showPlanProgress && tasks.length > 0 && (
             <box flexShrink={0} paddingX={1}>
-              <TaskProgress />
+              <TaskProgress tabId={tabId} />
             </box>
           )}
           {hasChangedFiles && (
@@ -526,7 +532,7 @@ export const TabInstance = memo(function TabInstance({
           )}
           {!showPlanProgress && tasks.length > 0 && (
             <box flexShrink={0} paddingX={1}>
-              <TaskProgress />
+              <TaskProgress tabId={tabId} />
             </box>
           )}
           {(hasChangedFiles || chat.messageQueue.length > 0) && (

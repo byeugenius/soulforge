@@ -86,6 +86,8 @@ export interface PendingQuestion {
   options: QuestionOption[];
   allowSkip: boolean;
   resolve: (answer: string) => void;
+  /** Permission prompts (web access, outside-cwd, destructive) — answer shown in UI but not sent as steering. */
+  isPermission?: boolean;
 }
 
 export type PlanReviewAction = "execute" | "clear_execute" | "cancel" | string;

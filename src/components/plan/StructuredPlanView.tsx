@@ -32,9 +32,10 @@ interface Props {
   plan: PlanOutput;
   result?: string;
   planFile?: string;
+  collapsed?: boolean;
 }
 
-export function StructuredPlanView({ plan, result, planFile }: Props) {
+export function StructuredPlanView({ plan, result, planFile, collapsed }: Props) {
   const files = plan.files ?? [];
   const steps = plan.steps ?? [];
   const verification = plan.verification ?? [];
@@ -58,6 +59,32 @@ export function StructuredPlanView({ plan, result, planFile }: Props) {
 
   const borderColor = isRejected ? "#222" : BORDER;
   const titleColor = isRejected ? "#555" : TITLE_COLOR;
+
+  if (collapsed) {
+    const files = plan.files ?? [];
+    const steps = plan.steps ?? [];
+    return (
+      <box height={1} flexShrink={0}>
+        <text truncate>
+          <span fg={CHECK_COLOR}>{"✓ "}</span>
+          <span fg={TITLE_COLOR} attributes={TextAttributes.BOLD}>
+            {plan.title}
+          </span>
+          <span fg="#555">
+            {" "}
+            ({String(files.length)} file{files.length !== 1 ? "s" : ""}, {String(steps.length)} step
+            {steps.length !== 1 ? "s" : ""})
+          </span>
+          {resolvedFile ? (
+            <>
+              <span fg="#333"> ─ </span>
+              <span fg="#555">{resolvedFile}</span>
+            </>
+          ) : null}
+        </text>
+      </box>
+    );
+  }
 
   if (isRejected) {
     return (

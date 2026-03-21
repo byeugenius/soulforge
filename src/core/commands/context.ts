@@ -463,6 +463,51 @@ function handleContext(_input: string, ctx: CommandContext): void {
     });
   }
 
+  // Per-tab usage breakdown (only when multiple tabs exist)
+  const allTabs = ctx.tabMgr.tabs;
+  if (allTabs.length > 1) {
+    let grandInput = 0;
+    let grandOutput = 0;
+    let grandTotal = 0;
+    const tabEntries: { label: string; usage: TokenUsage }[] = [];
+    for (const tab of allTabs) {
+      const chat = ctx.tabMgr.getChat(tab.id);
+      const usage = chat
+        ? chat.tokenUsage
+        : { prompt: 0, completion: 0, total: 0, cacheRead: 0, subagentInput: 0, subagentOutput: 0 };
+      tabEntries.push({ label: tab.label, usage });
+      grandInput += usage.prompt;
+      grandOutput += usage.completion;
+      grandTotal += usage.total;
+    }
+
+    popupLines.push(
+      { type: "separator" },
+      { type: "header", label: `All Tabs (${String(allTabs.length)})` },
+    );
+    for (const entry of tabEntries) {
+      const isActive = entry.usage === tu;
+      const label = isActive ? `▸ ${entry.label}` : `  ${entry.label}`;
+      popupLines.push({
+        type: "entry",
+        label,
+        desc:
+          entry.usage.total > 0
+            ? `${fmtT(entry.usage.prompt)}↑ ${fmtT(entry.usage.completion)}↓ = ${fmtT(entry.usage.total)}`
+            : "—",
+        color: isActive ? "#2d9bf0" : "#888",
+        descColor: isActive ? "#ccc" : "#666",
+      });
+    }
+    popupLines.push({
+      type: "entry",
+      label: "  All tabs total",
+      desc: `${fmtT(grandInput)}↑ ${fmtT(grandOutput)}↓ = ${fmtT(grandTotal)}`,
+      color: "#ccc",
+      descColor: "#ccc",
+    });
+  }
+
   if (tu.cacheRead > 0) {
     const cachePct = tu.prompt > 0 ? Math.round((tu.cacheRead / tu.prompt) * 100) : 0;
     const newTokens = tu.prompt - tu.cacheRead;

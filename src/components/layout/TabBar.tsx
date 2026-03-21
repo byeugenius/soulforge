@@ -45,23 +45,35 @@ export function TabBar({ tabs, activeTabId, onSwitch: _onSwitch, getActivity }: 
         const isLoading = activity?.isLoading ?? false;
         const hasError = activity?.hasError ?? false;
         const hasUnread = activity?.hasUnread ?? false;
+        const needsAttention = activity?.needsAttention ?? false;
 
-        // bracket color: loading=purple pulse, error=red, active=red, default=dim
-        const bracketColor = isLoading
-          ? "#8B5CF6"
-          : hasError
-            ? "#a55"
-            : isActive
-              ? "#FF0040"
-              : "#444";
+        // bracket color: attention=orange, loading=purple pulse, error=red, active=red, default=dim
+        const bracketColor = needsAttention
+          ? "#F59E0B"
+          : isLoading
+            ? "#8B5CF6"
+            : hasError
+              ? "#a55"
+              : isActive
+                ? "#FF0040"
+                : "#444";
 
-        const numColor = isActive ? "#FF0040" : isLoading ? "#8B5CF6" : "#666";
+        const numColor = isActive
+          ? "#FF0040"
+          : needsAttention
+            ? "#F59E0B"
+            : isLoading
+              ? "#8B5CF6"
+              : "#666";
         const labelColor = isActive ? "#ccc" : hasUnread ? "#b87333" : "#555";
 
         return (
           <box key={tab.id} flexDirection="row">
             {i > 0 && <text fg="#2a2a2a"> │ </text>}
-            {isLoading && <text fg="#8B5CF6">{SPINNER_FRAMES[spinFrame] ?? "⠋"} </text>}
+            {needsAttention && !isActive && <text fg="#F59E0B">? </text>}
+            {isLoading && !needsAttention && (
+              <text fg="#8B5CF6">{SPINNER_FRAMES[spinFrame] ?? "⠋"} </text>
+            )}
             <text fg={bracketColor}>[</text>
             <text fg={numColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
               {num}
@@ -75,8 +87,8 @@ export function TabBar({ tabs, activeTabId, onSwitch: _onSwitch, getActivity }: 
             {(activity?.editedFileCount ?? 0) > 0 && (
               <text fg="#4a7"> 🔒{String(activity?.editedFileCount ?? 0)}</text>
             )}
-            {hasUnread && !isLoading && <text fg="#b87333"> ●</text>}
-            {hasError && !isLoading && <text fg="#a55"> ✗</text>}
+            {hasUnread && !isLoading && !needsAttention && <text fg="#b87333"> ●</text>}
+            {hasError && !isLoading && !needsAttention && <text fg="#a55"> ✗</text>}
           </box>
         );
       })}

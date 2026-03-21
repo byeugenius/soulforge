@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { ToolResult } from "../../types";
 import { analyzeFile } from "../analysis/complexity";
@@ -114,7 +115,7 @@ export const editFileTool = {
         const dir = dirname(filePath);
         const dirCreated = !existsSync(dir);
         mkdirSync(dir, { recursive: true });
-        writeFileSync(filePath, newStr, "utf-8");
+        await writeFile(filePath, newStr, "utf-8");
         emitFileEdited(filePath, newStr);
         let openedInEditor = false;
         const nvim = getNvimInstance();
@@ -187,7 +188,7 @@ export const editFileTool = {
       }
 
       pushEdit(filePath, content);
-      writeFileSync(filePath, updated, "utf-8");
+      await writeFile(filePath, updated, "utf-8");
       emitFileEdited(filePath, updated);
 
       // Reload or open file in editor so buffer matches disk
@@ -232,17 +233,6 @@ export const editFileTool = {
         } catch {
           // Post-edit analysis unavailable
         }
-      }
-
-      // Auto-fix: organize imports + fix unused vars (like IDE "on save")
-      try {
-        const { autoFixFile } = await import("./post-edit-fix.js");
-        const fixes = await autoFixFile(filePath);
-        if (fixes.length > 0) {
-          output += ` [auto: ${fixes.join(", ")}]`;
-        }
-      } catch {
-        // Auto-fix unavailable
       }
 
       return { success: true, output };

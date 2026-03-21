@@ -124,7 +124,7 @@ const ASCII: Record<string, string> = {
   play: "▶",
   compress: "↕",
   context: "◉",
-  lock: "🔒",
+  lock: "⊙",
   proxy: "⛨",
   vercel_gateway: "☁",
   panel: "▣",

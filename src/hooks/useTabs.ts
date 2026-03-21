@@ -15,6 +15,7 @@ export interface TabActivity {
   isLoading: boolean;
   hasUnread: boolean;
   hasError: boolean;
+  needsAttention: boolean;
   editedFileCount: number;
 }
 
@@ -33,6 +34,7 @@ export interface UseTabsReturn {
   prevTab: () => void;
   renameTab: (id: string, label: string) => void;
   moveTab: (id: string, direction: "left" | "right") => void;
+  resetTabLabel: (id: string) => void;
   autoLabel: (id: string, firstMessage: string) => void;
   setTabActivity: (id: string, activity: Partial<TabActivity>) => void;
   getTabActivity: (id: string) => TabActivity;
@@ -53,6 +55,7 @@ const DEFAULT_ACTIVITY: TabActivity = {
   isLoading: false,
   hasUnread: false,
   hasError: false,
+  needsAttention: false,
   editedFileCount: 0,
 };
 
@@ -179,6 +182,16 @@ export function useTabs(): UseTabsReturn {
         next[newIdx] = a;
       }
       return next;
+    });
+  }, []);
+
+  const resetTabLabel = useCallback((id: string) => {
+    autoLabeled.current.delete(id);
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) return prev;
+      const label = `Tab ${String(idx + 1)}`;
+      return prev.map((t) => (t.id === id ? { ...t, label } : t));
     });
   }, []);
 
@@ -311,6 +324,7 @@ export function useTabs(): UseTabsReturn {
     prevTab,
     renameTab,
     moveTab,
+    resetTabLabel,
     autoLabel,
     setTabActivity,
     getTabActivity,

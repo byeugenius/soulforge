@@ -402,6 +402,7 @@ function parsePlanResult(tc: ToolCall): { file?: string; resultStr?: string } {
 
 function WritePlanCall({ tc }: { tc: ToolCall }) {
   const plan = parsePlanFromArgs(tc);
+  const expanded = useCodeExpanded();
   const { file: planFile, resultStr } = parsePlanResult(tc);
   const markdown = useMemo(() => {
     if (!planFile) return null;
@@ -412,10 +413,20 @@ function WritePlanCall({ tc }: { tc: ToolCall }) {
     }
   }, [planFile]);
   if (!plan) return <ToolCallRow tc={tc} />;
+
+  // Collapse accepted plans by default — Ctrl+O toggles expanded
+  const hasResult = !!resultStr;
+  const collapsed = hasResult && !expanded;
+
   return (
     <>
-      <StructuredPlanView plan={plan} result={resultStr} planFile={planFile} />
-      {markdown && !resultStr?.includes("cancelled") && (
+      <StructuredPlanView
+        plan={plan}
+        result={resultStr}
+        planFile={planFile}
+        collapsed={collapsed}
+      />
+      {!collapsed && markdown && !resultStr?.includes("cancelled") && (
         <box
           flexDirection="column"
           flexShrink={0}

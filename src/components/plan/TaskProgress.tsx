@@ -101,11 +101,11 @@ export function TaskList({ tasks, nested }: TaskListProps) {
   );
 }
 
-export function TaskProgress() {
+export function TaskProgress({ tabId }: { tabId?: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [visible, setVisible] = useState(false);
 
-  useEffect(() => onTaskChange(setTasks), []);
+  useEffect(() => onTaskChange(setTasks, tabId), [tabId]);
 
   useEffect(() => {
     if (tasks.length === 0) {

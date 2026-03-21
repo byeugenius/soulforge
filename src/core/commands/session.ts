@@ -1,3 +1,4 @@
+import { emitCacheReset } from "../tools/file-events.js";
 import { clearTasks } from "../tools/task-list.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { sysMsg } from "./utils.js";
@@ -66,6 +67,8 @@ function handleClear(_input: string, ctx: CommandContext): void {
   });
   ctx.chat.setMessageQueue([]);
   clearTasks();
+  emitCacheReset();
+  ctx.tabMgr.resetTabLabel(ctx.tabMgr.activeTabId);
 }
 
 function handleCompact(_input: string, ctx: CommandContext): void {

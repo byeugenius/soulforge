@@ -1,4 +1,5 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getNvimInstance } from "../editor/instance.js";
@@ -74,7 +75,7 @@ export const undoEditTool = {
         return { success: false, output: msg, error: msg };
       }
 
-      writeFileSync(filePath, restored, "utf-8");
+      await writeFile(filePath, restored, "utf-8");
       emitFileEdited(filePath, restored);
 
       // Reload in editor

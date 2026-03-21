@@ -1,4 +1,5 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { analyzeFile } from "../analysis/complexity.js";
@@ -106,7 +107,7 @@ export const multiEditTool = {
       // Push single undo entry for the entire batch
       pushEdit(filePath, originalContent);
 
-      writeFileSync(filePath, content, "utf-8");
+      await writeFile(filePath, content, "utf-8");
       emitFileEdited(filePath, content);
 
       // Reload in editor
@@ -153,14 +154,6 @@ export const multiEditTool = {
         } catch {
           // Post-edit analysis unavailable
         }
-      }
-
-      try {
-        const { autoFixFile } = await import("./post-edit-fix.js");
-        const fixes = await autoFixFile(filePath);
-        if (fixes.length > 0) output += ` [auto: ${fixes.join(", ")}]`;
-      } catch {
-        // Auto-fix unavailable
       }
 
       return { success: true, output };

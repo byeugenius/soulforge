@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getIntelligenceRouter } from "../intelligence/index.js";
 import type { FormatEdit, RefactorResult } from "../intelligence/types.js";
@@ -25,7 +25,7 @@ export async function autoFixFile(filePath: string): Promise<string[]> {
     b.organizeImports ? b.organizeImports(absPath) : Promise.resolve(null),
   );
   if (organizeResult) {
-    applyRefactorEdits(organizeResult);
+    await applyRefactorEdits(organizeResult);
     applied.push("organizeImports");
   }
 
@@ -34,7 +34,7 @@ export async function autoFixFile(filePath: string): Promise<string[]> {
     b.fixAll ? b.fixAll(absPath) : Promise.resolve(null),
   );
   if (fixResult) {
-    applyRefactorEdits(fixResult);
+    await applyRefactorEdits(fixResult);
     applied.push("fixAll");
   }
 
@@ -42,11 +42,11 @@ export async function autoFixFile(filePath: string): Promise<string[]> {
   // Priority: project formatter (authoritative) → LSP formatDocument → skip
   try {
     const { formatFile } = await import("./project.js");
-    const preFormat = readFileSync(absPath, "utf-8");
+    const preFormat = await readFile(absPath, "utf-8");
     const formatted = await formatFile(absPath);
     if (formatted) {
       // Re-read the file that the formatter wrote and push to edit stack
-      const afterFormat = readFileSync(absPath, "utf-8");
+      const afterFormat = await readFile(absPath, "utf-8");
       if (afterFormat !== preFormat) {
         pushEdit(absPath, preFormat);
         emitFileEdited(absPath, afterFormat);
@@ -57,7 +57,7 @@ export async function autoFixFile(filePath: string): Promise<string[]> {
         b.formatDocument ? b.formatDocument(absPath) : Promise.resolve(null),
       );
       if (formatResult) {
-        applyFormatEdits(formatResult);
+        await applyFormatEdits(formatResult);
         applied.push("format");
       }
     }
@@ -90,8 +90,8 @@ export async function autoFixFiles(filePaths: string[]): Promise<Map<string, str
   return results;
 }
 
-function applyFormatEdits(formatEdit: FormatEdit): void {
-  const content = readFileSync(formatEdit.file, "utf-8");
+async function applyFormatEdits(formatEdit: FormatEdit): Promise<void> {
+  const content = await readFile(formatEdit.file, "utf-8");
 
   const lineStarts: number[] = [0];
   for (let i = 0; i < content.length; i++) {
@@ -114,17 +114,17 @@ function applyFormatEdits(formatEdit: FormatEdit): void {
 
   if (result === content) return;
   pushEdit(formatEdit.file, content);
-  writeFileSync(formatEdit.file, result, "utf-8");
+  await writeFile(formatEdit.file, result, "utf-8");
   emitFileEdited(formatEdit.file, result);
 }
 
-function applyRefactorEdits(result: RefactorResult): void {
+async function applyRefactorEdits(result: RefactorResult): Promise<void> {
   for (const edit of result.edits) {
     try {
-      const current = readFileSync(edit.file, "utf-8");
+      const current = await readFile(edit.file, "utf-8");
       if (current === edit.newContent) continue;
       pushEdit(edit.file, current);
-      writeFileSync(edit.file, edit.newContent, "utf-8");
+      await writeFile(edit.file, edit.newContent, "utf-8");
       emitFileEdited(edit.file, edit.newContent);
     } catch {
       // Skip files that can't be written

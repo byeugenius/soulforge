@@ -274,7 +274,7 @@ export function buildTools(
           .optional()
           .describe("Task status (for add/update)"),
       }),
-      execute: deferExecute((args) => taskListTool.execute(args)),
+      execute: deferExecute((args) => taskListTool.execute({ ...args, tabId: opts?.tabId })),
     }),
 
     list_dir: tool({
@@ -795,7 +795,7 @@ export function buildTools(
         ref: z.string().optional().describe("For show: commit hash or ref (default: HEAD)"),
       }),
       execute: deferExecute(async (args) => {
-        const mutating = ['pull', 'stash', 'restore', 'branch'].includes(args.action);
+        const mutating = ["pull", "stash", "restore", "branch"].includes(args.action);
         if (mutating) resetReadCache();
         return gitTool.execute(args);
       }),
@@ -1030,7 +1030,7 @@ export function buildSubagentExploreTools(opts?: {
           .optional()
           .describe("Task status (for add/update)"),
       }),
-      execute: deferExecute((args) => taskListTool.execute(args)),
+      execute: deferExecute((args) => taskListTool.execute({ ...args, tabId: opts?.tabId })),
     }),
 
     list_dir: tool({
