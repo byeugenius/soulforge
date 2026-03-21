@@ -588,7 +588,7 @@ const ToolRow = memo(
       }
     } else if (tc.state === "running" && seconds != null && seconds > 0) {
       suffix = ` ${formatDuration(seconds)}`;
-    } else if (tc.state === "done" && tc.result && !editDiff) {
+    } else if (tc.state === "done" && tc.result && !editDiff && !isEditTool(tc.toolName)) {
       suffix = ` → ${formatResult(tc.toolName, tc.result)}`;
     } else if (tc.state === "error" && tc.error) {
       suffix = ` → ${tc.error.slice(0, 50)}`;

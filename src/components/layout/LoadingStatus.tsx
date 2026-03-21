@@ -86,15 +86,14 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
     completedTimeRef.current = null;
   }
 
-  wasLoadingRef.current = isLoading;
-
-  useEffect(() => {
-    if (isLoading || !loadingStartRef.current) return;
+  // Compute completed time synchronously during render (not in useEffect)
+  // so the "Completed in Xs" message appears immediately when loading stops.
+  if (!isLoading && wasLoadingRef.current && loadingStartRef.current) {
     const finalSec = Math.floor((Date.now() - loadingStartRef.current) / 1000);
-    if (finalSec > 0) {
-      completedTimeRef.current = formatElapsed(finalSec);
-    }
-  }, [isLoading]);
+    completedTimeRef.current = finalSec > 0 ? formatElapsed(finalSec) : "<1s";
+  }
+
+  wasLoadingRef.current = isLoading;
 
   // Ghost animation — fast interval, only touches ghostRef
   useEffect(() => {
