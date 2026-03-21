@@ -486,7 +486,8 @@ function handleContext(_input: string, ctx: CommandContext): void {
       { type: "header", label: `All Tabs (${String(allTabs.length)})` },
     );
     for (let i = 0; i < tabEntries.length; i++) {
-      const entry = tabEntries[i]!;
+      const entry = tabEntries[i];
+      if (!entry) continue;
       const isActive = entry.usage === tu;
       const label = isActive ? `▸ Tab ${String(i + 1)}` : `  Tab ${String(i + 1)}`;
       popupLines.push({
