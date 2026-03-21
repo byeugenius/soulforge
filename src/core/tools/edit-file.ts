@@ -111,7 +111,9 @@ export const editFileTool = {
 
       // Create new file
       if (oldStr === "") {
-        mkdirSync(dirname(filePath), { recursive: true });
+        const dir = dirname(filePath);
+        const dirCreated = !existsSync(dir);
+        mkdirSync(dir, { recursive: true });
         writeFileSync(filePath, newStr, "utf-8");
         emitFileEdited(filePath, newStr);
         let openedInEditor = false;
@@ -126,6 +128,7 @@ export const editFileTool = {
         }
         const metrics = analyzeFile(newStr);
         let out = `Created ${filePath} (lines: ${String(metrics.lineCount)}, imports: ${String(metrics.importCount)})`;
+        if (dirCreated) out += ` [directory created: ${dir}]`;
         if (openedInEditor) out += " → opened in editor";
         return { success: true, output: out };
       }
