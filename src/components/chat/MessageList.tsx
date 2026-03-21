@@ -1,6 +1,6 @@
+import { TextAttributes } from "@opentui/core";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { TextAttributes } from "@opentui/core";
 import {
   createContext,
   memo,
@@ -88,6 +88,16 @@ function formatToolSummary(tc: ToolCall): string {
     return q.length > 50 ? `${q.slice(0, 47)}...` : q;
   }
   return "";
+}
+
+/** Extract human-readable output from edit tool results (may be double-wrapped JSON) */
+function extractEditOutput(raw?: string): string {
+  if (!raw) return "ok";
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.output === "string") return parsed.output;
+  } catch {}
+  return raw;
 }
 
 const RETRY_COLOR = "#fa0";
@@ -257,7 +267,7 @@ function ToolCallRow({ tc }: { tc: ToolCall }) {
   const shortResult = tc.result
     ? tc.result.success
       ? isEditTool
-        ? (tc.result.output ?? "ok")
+        ? extractEditOutput(tc.result.output)
         : "ok"
       : denied
         ? "denied"
