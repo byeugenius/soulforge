@@ -1,6 +1,6 @@
-import { resolve } from "node:path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { tool } from "ai";
+import { resolve } from "node:path";
 import { z } from "zod";
 import type { EditorIntegration } from "../../types/index.js";
 import { checkAndClaim, prependWarning } from "../coordination/tool-wrapper.js";
@@ -19,6 +19,7 @@ import { editFileTool } from "./edit-file";
 import { undoEditTool } from "./edit-stack.js";
 import { editorTool } from "./editor";
 import { fetchPageTool } from "./fetch-page.js";
+import { onFileEdited } from "./file-events.js";
 import { gitTool } from "./git.js";
 import { globTool } from "./glob";
 import { grepTool } from "./grep";
@@ -108,6 +109,12 @@ export function buildTools(
     sequentialReads = 0;
   };
 
+  // Mechanical re-read blocking — returns stub if agent already has full content in context
+  const fullReadCache = new Set<string>();
+  onFileEdited((absPath) => {
+    fullReadCache.delete(absPath);
+  });
+
   async function gateOutsideCwd(
     toolName: string,
     filePath: string,
@@ -141,7 +148,27 @@ export function buildTools(
         fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
       }),
       execute: deferExecute(async (args) => {
+        const normPath = resolve(args.path);
+        const isFullRead = args.startLine == null && args.endLine == null && !args.target;
+
+        if (isFullRead && !args.fresh && fullReadCache.has(normPath)) {
+          return {
+            success: true,
+            output: `[Already read — "${args.path}" content is in your context above. Pass fresh=true to re-read if the file has changed.]`,
+          };
+        }
+
         const result = await readFileTool.execute(args);
+
+        // Track successful full reads (not outlines — agent still needs the real content)
+        if (
+          isFullRead &&
+          result.success &&
+          !(result as unknown as Record<string, unknown>).outlineOnly
+        ) {
+          fullReadCache.add(normPath);
+        }
+
         sequentialReads++;
         if (result.success) {
           if (sequentialReads >= READ_NUDGE_HARD) {

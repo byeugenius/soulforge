@@ -25,6 +25,7 @@ import {
 
 const BASE_DELAY_MS = 2000;
 const MAX_RETRIES = 3;
+const MAX_NO_EDIT_RETRIES = 1;
 
 export const MAX_CONCURRENT_AGENTS = 3;
 const AGENT_TIMEOUT_MS = 300_000;
@@ -400,14 +401,14 @@ export async function runAgentTask(
         }
       }
 
-      const toolUses =
+      let toolUses =
         callbacks._acc.toolUses ||
         result.steps.reduce(
           (sum: number, s: { toolCalls?: unknown[] }) => sum + (s.toolCalls?.length ?? 0),
           0,
         );
-      const input = callbacks._acc.input || (result.totalUsage.inputTokens ?? 0);
-      const output = callbacks._acc.output || (result.totalUsage.outputTokens ?? 0);
+      let input = callbacks._acc.input || (result.totalUsage.inputTokens ?? 0);
+      let output = callbacks._acc.output || (result.totalUsage.outputTokens ?? 0);
       const cacheRead =
         callbacks._acc.cacheRead || (result.totalUsage.inputTokenDetails?.cacheReadTokens ?? 0);
 
@@ -472,7 +473,142 @@ export async function runAgentTask(
         }
       }
 
-      const resultText = formatDoneResult(doneResult);
+      // Auto-retry: code agent read files but made zero edits → focused retry
+      if (!calledDone && task.role === "code" && attempt === 0) {
+        const agentEdits = bus.getEditedFiles(task.agentId);
+        const agentReads = bus.getFileReadRecords(task.agentId);
+        if (agentEdits.size === 0 && agentReads.length > 0 && !abortSignal?.aborted) {
+          const readPaths = [...new Set(agentReads.map((r) => r.path))];
+
+          emitMultiAgentEvent({
+            parentToolCallId,
+            type: "agent-retry",
+            agentId: task.agentId,
+            role: task.role,
+            task: task.task,
+            totalAgents,
+            warning: `Code agent read ${String(readPaths.length)} file(s) but made 0 edits — retrying with focused prompt`,
+          });
+
+          // Build a focused retry prompt referencing what was already read
+          const retryPrompt =
+            `RETRY: You already read these files but made ZERO edits:\n` +
+            readPaths.map((p) => `  - ${p}`).join("\n") +
+            `\n\nThe files are already cached — do NOT re-read them. Apply ALL the requested edits NOW using multi_edit.` +
+            `\nOriginal task:\n${task.task}`;
+
+          for (let retryAttempt = 0; retryAttempt < MAX_NO_EDIT_RETRIES; retryAttempt++) {
+            try {
+              const { agent: retryAgent } = createAgent(task, models, bus, parentToolCallId);
+              const retryCallbacks = buildStepCallbacks(parentToolCallId, task.agentId);
+
+              // biome-ignore lint/suspicious/noExplicitAny: agent.generate result type varies with Output generic
+              let retryResult: any;
+              try {
+                retryResult = await retryAgent.generate({
+                  prompt: retryPrompt,
+                  abortSignal,
+                  timeout: { stepMs: 300_000 },
+                  ...retryCallbacks,
+                });
+              } catch (retryGenErr: unknown) {
+                const errWithSteps = retryGenErr as {
+                  steps?: unknown[];
+                  text?: string;
+                  totalUsage?: unknown;
+                };
+                const recoveredSteps =
+                  errWithSteps.steps && Array.isArray(errWithSteps.steps)
+                    ? errWithSteps.steps
+                    : retryCallbacks._steps.length > 0
+                      ? retryCallbacks._steps
+                      : [];
+
+                if (
+                  errWithSteps.steps ||
+                  NoObjectGeneratedError.isInstance(retryGenErr) ||
+                  NoOutputGeneratedError.isInstance(retryGenErr)
+                ) {
+                  retryResult = {
+                    text: (retryGenErr as { text?: string }).text ?? "",
+                    output: salvageJsonFromText((retryGenErr as { text?: string }).text),
+                    steps: recoveredSteps,
+                    totalUsage: {
+                      inputTokens: retryCallbacks._acc.input,
+                      outputTokens: retryCallbacks._acc.output,
+                    },
+                  };
+                } else {
+                  throw retryGenErr;
+                }
+              }
+
+              // Check if retry produced edits
+              const retryEdits = bus.getEditedFiles(task.agentId);
+              if (retryEdits.size > 0) {
+                // Retry succeeded — rebuild result from retry
+                const retryDone =
+                  extractDoneResult(retryResult) ??
+                  synthesizeDoneFromResults(
+                    retryResult,
+                    bus.getFindings().filter((f) => f.agentId === task.agentId),
+                    task,
+                  );
+                doneResult = retryDone;
+                calledDone = true;
+
+                // Accumulate token usage from retry
+                input += retryCallbacks._acc.input || (retryResult.totalUsage?.inputTokens ?? 0);
+                output += retryCallbacks._acc.output || (retryResult.totalUsage?.outputTokens ?? 0);
+                toolUses +=
+                  retryCallbacks._acc.toolUses ||
+                  retryResult.steps.reduce(
+                    (sum: number, s: { toolCalls?: unknown[] }) => sum + (s.toolCalls?.length ?? 0),
+                    0,
+                  );
+                break;
+              }
+            } catch {
+              // Retry failed — fall through to original result
+              break;
+            }
+          }
+        }
+      }
+
+      let resultText = formatDoneResult(doneResult);
+
+      // Post-edit diff verification: confirm code agent edits actually changed files
+      let editVerificationWarning: string | undefined;
+      if (task.role === "code" && calledDone) {
+        const editedFiles = bus.getEditedFiles(task.agentId);
+        if (editedFiles.size > 0) {
+          const noopEdits: string[] = [];
+          for (const [editedPath] of editedFiles) {
+            const cachedContent = bus.getFileContent(editedPath);
+            if (cachedContent == null) continue;
+            // Read current file from disk to compare
+            try {
+              const { readFileSync } = require("node:fs") as typeof import("node:fs");
+              const { resolve: resolvePath, isAbsolute } =
+                require("node:path") as typeof import("node:path");
+              const abs = isAbsolute(editedPath)
+                ? editedPath
+                : resolvePath(process.cwd(), editedPath);
+              const diskContent = readFileSync(abs, "utf-8");
+              // If cache and disk are identical, the "edit" was a no-op
+              if (cachedContent === diskContent) {
+                noopEdits.push(editedPath);
+              }
+            } catch {
+              // File doesn't exist or can't be read — skip verification
+            }
+          }
+          if (noopEdits.length > 0) {
+            editVerificationWarning = `Post-edit verification: ${String(noopEdits.length)} file(s) marked as edited but content unchanged: ${noopEdits.join(", ")}`;
+          }
+        }
+      }
 
       const agentResult: BusAgentResult = {
         agentId: task.agentId,
@@ -501,7 +637,18 @@ export async function runAgentTask(
         modelId: selectedModelId,
         tier: taskTier,
         calledDone,
+        warning: editVerificationWarning,
       });
+      if (editVerificationWarning) {
+        emitMultiAgentEvent({
+          parentToolCallId,
+          type: "agent-warning",
+          agentId: task.agentId,
+          role: task.role,
+          totalAgents,
+          warning: editVerificationWarning,
+        });
+      }
       if (task.taskId != null) {
         taskListTool.execute({
           action: "update",
@@ -548,13 +695,13 @@ export async function runAgentTask(
     salvaged = parts.join("\n");
   }
 
-  const resultText = salvaged || errMsg;
+  const errorResultText = salvaged || errMsg;
 
   const agentResult: BusAgentResult = {
     agentId: task.agentId,
     role: task.role,
     task: task.task,
-    result: resultText,
+    result: errorResultText,
     success: salvaged.length > 0,
     error: errMsg,
   };
@@ -593,7 +740,7 @@ export async function runAgentTask(
 
   return {
     doneResult,
-    resultText,
+    resultText: errorResultText,
     callbacks: buildStepCallbacks(parentToolCallId, task.agentId),
     result: agentResult,
   };
