@@ -1,6 +1,6 @@
 # Command Reference
 
-60 slash commands available. Press `/` in the chat input or `Ctrl+K` to open the command picker.
+73 slash commands available. Press `/` in the chat input or `Ctrl+K` to open the command picker.
 
 ## Models & Providers
 
@@ -16,7 +16,7 @@
 
 | Command | Description |
 |---------|-------------|
-| `/mode <name>` | Switch forge mode (default, architect, socratic, challenge, plan) |
+| `/mode <name>` | Switch forge mode (default, auto, architect, socratic, challenge, plan) |
 | `/plan` | Enter plan mode — research first, then structured plan with execution |
 | `/agent-features` | Toggle agent features (de-sloppify pass, tier routing) |
 | `/reasoning` | Toggle visibility of reasoning/thinking blocks |
@@ -101,6 +101,15 @@ Supports installation via npm, pip, cargo, go, and GitHub binaries.
 | `/close-tab` | Close current tab |
 | `/rename` | Rename current tab |
 | `/tabs` | List all open tabs |
+
+## Cross-Tab Coordination
+
+| Command | Description |
+|---------|-------------|
+| `/claims` | Show all active file claims across tabs |
+| `/unclaim <path>` | Release a file claim from current tab |
+| `/unclaim-all` | Release all claims from current tab |
+| `/force-claim <path>` | Steal a file claim from another tab |
 
 ## System
 

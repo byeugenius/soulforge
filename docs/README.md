@@ -2,7 +2,7 @@
 
 ## User Reference
 
-- **[Command Reference](commands-reference.md)** — All 60 slash commands organized by category
+- **[Command Reference](commands-reference.md)** — All 73 slash commands organized by category
 - **[Headless Mode](headless.md)** — Non-interactive CLI for CI/CD, scripting, and automation
 - **[Custom Providers](headless.md#custom-providers)** — Add any OpenAI-compatible API via config
 - **[Project Tool](project-tool.md)** — Toolchain detection, pre-commit checks, monorepo discovery
@@ -16,6 +16,7 @@
 - **[Agent Bus](agent-bus.md)** — Multi-agent coordination (shared cache, edit mutex, findings board)
 - **[Compound Tools](compound-tools.md)** — rename_symbol, move_symbol, refactor internals
 - **[Compaction](compaction.md)** — V1/V2 context management strategies
+- **[Cross-Tab Coordination](cross-tab-coordination.md)** — Advisory file claims, git blocking, contention handling
 
 ## Design Principles
 
