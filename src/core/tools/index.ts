@@ -1395,6 +1395,37 @@ export function buildSubagentCodeTools(opts?: {
       }),
     }),
 
+    refactor: tool({
+      description: refactorTool.description,
+      inputSchema: z.object({
+        action: z
+          .enum([
+            "extract_function",
+            "extract_variable",
+            "format",
+            "format_range",
+            "organize_imports",
+          ])
+          .describe("Action to perform"),
+        file: z.string().optional().describe("Target file"),
+        newName: z.string().optional().describe("New name for extracted symbol"),
+        startLine: z.number().optional().describe("Start line"),
+        endLine: z.number().optional().describe("End line"),
+        name: z.string().optional().describe("Symbol name to extract"),
+        apply: z.boolean().optional().describe("Apply changes to disk (default true)"),
+      }),
+      execute: deferExecute(async (args) => {
+        const warning = args.file
+          ? checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.file))
+          : null;
+        const result = await refactorTool.execute(args);
+        if (result.success && args.file) {
+          claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.file]);
+        }
+        return prependWarning(result, warning);
+      }),
+    }),
+
     shell: tool({
       description: shellTool.description,
       inputSchema: z.object({
