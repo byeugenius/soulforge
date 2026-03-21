@@ -248,11 +248,10 @@ export function buildSubagentTools(models: SubagentModels) {
   return {
     dispatch: tool({
       description:
-        "Dispatch parallel subagents. Provide a contract listing ALL files you need — the system verifies them against the Soul Map and rejects hallucinated paths. " +
-        "If you need ≤6 files, the system rejects dispatch and tells you to read directly (with Soul Map symbol info). " +
-        "BEFORE dispatching: can you answer from the Soul Map + ≤5 direct tool calls? If yes, don't dispatch. " +
+        "Dispatch parallel subagents (2+ tasks, 7+ files). " +
+        "AUTO-REJECTS (wastes tokens): ≤6 files, single task, hallucinated paths, cached files, vague tasks. " +
+        "BEFORE dispatching: use soul_find/soul_grep/read_file directly if ≤6 files — faster and cheaper. " +
         'Task format: "Read [symbol] from [path]. Trace callers, flag gaps." Every task MUST name specific files and symbols. ' +
-        "Include line numbers from the Soul Map when available. " +
         "Split by file ownership, not concept. explore: read-only. code: edits (distinct files per agent). " +
         "Web search: ONE focused query per task.",
       inputSchema: z.object({

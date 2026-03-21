@@ -100,6 +100,63 @@ function countReadsAfterLastDispatch(messages: ModelMessage[]): number {
   return count;
 }
 
+const DISPATCH_REJECT_RE = /(?:⛔|⚠️) dispatch \[rejected → ([^\]]+)\]/;
+
+function extractOutputText(output: unknown): string {
+  if (!output || typeof output !== "object") return String(output ?? "");
+  const o = output as Record<string, unknown>;
+  if (o.type === "text" && typeof o.value === "string") return o.value;
+  if (o.type === "json") return JSON.stringify(o.value);
+  return JSON.stringify(output);
+}
+
+function stripRejectedDispatches(messages: ModelMessage[]): ModelMessage[] {
+  const rejectedCallIds = new Set<string>();
+
+  for (const msg of messages) {
+    if (msg.role !== "tool" || typeof msg.content === "string") continue;
+    if (!Array.isArray(msg.content)) continue;
+    for (const part of msg.content) {
+      if (part.type !== "tool-result") continue;
+      if (DISPATCH_REJECT_RE.test(extractOutputText(part.output))) {
+        rejectedCallIds.add(part.toolCallId);
+      }
+    }
+  }
+
+  if (rejectedCallIds.size === 0) return messages;
+
+  return messages.map((msg) => {
+    if (typeof msg.content === "string" || !Array.isArray(msg.content)) return msg;
+
+    if (msg.role === "assistant") {
+      const filtered = msg.content.map((part) => {
+        if (part.type !== "tool-call" || !rejectedCallIds.has(part.toolCallId)) return part;
+        return { ...part, input: { _stripped: true } };
+      });
+      return { ...msg, content: filtered };
+    }
+
+    if (msg.role === "tool") {
+      const filtered = msg.content.map((part) => {
+        if (part.type !== "tool-result" || !rejectedCallIds.has(part.toolCallId)) return part;
+        const match = DISPATCH_REJECT_RE.exec(extractOutputText(part.output));
+        const reason = match?.[1] ?? "rejected";
+        return {
+          ...part,
+          output: {
+            type: "text" as const,
+            value: `[dispatch rejected: ${reason} — read files directly]`,
+          },
+        };
+      });
+      return { ...msg, content: filtered };
+    }
+
+    return msg;
+  });
+}
+
 // No step-level tool result pruning — main agent relies on v1/v2 compaction for context management.
 function buildForgePrepareStep(
   isPlanMode: boolean,
@@ -110,6 +167,7 @@ function buildForgePrepareStep(
   // biome-ignore lint/suspicious/noExplicitAny: PrepareStepFunction generic is invariant
   return ({ stepNumber, messages }: { stepNumber: number; messages: ModelMessage[] }): any => {
     const sanitized = sanitizeMessages(messages);
+    const stripped = stripRejectedDispatches(sanitized);
     const result: {
       messages?: ModelMessage[];
       activeTools?: string[];
@@ -117,8 +175,8 @@ function buildForgePrepareStep(
       system?: string;
     } = {};
 
-    if (sanitized !== messages) {
-      result.messages = sanitized;
+    if (stripped !== messages) {
+      result.messages = stripped;
     }
 
     // Cache breakpoint: mark the second-to-last message with cache_control.
