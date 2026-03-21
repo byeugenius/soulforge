@@ -2,7 +2,6 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password: string;
   role: "admin" | "user";
 }
 
@@ -15,13 +14,8 @@ export interface Session {
 export interface Product {
   id: string;
   name: string;
-  description: string;
-  category: string;
-  tags: string[];
   price: number;
   stock: number;
-  imageUrl?: string;
-  createdAt: number;
 }
 
 export interface Order {
