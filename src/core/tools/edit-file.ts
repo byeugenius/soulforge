@@ -1,5 +1,5 @@
-import { existsSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { ToolResult } from "../../types";
 import { analyzeFile } from "../analysis/complexity";
 import { getNvimInstance, readBufferContent } from "../editor/instance";
@@ -111,6 +111,7 @@ export const editFileTool = {
 
       // Create new file
       if (oldStr === "") {
+        mkdirSync(dirname(filePath), { recursive: true });
         writeFileSync(filePath, newStr, "utf-8");
         emitFileEdited(filePath, newStr);
         let openedInEditor = false;
