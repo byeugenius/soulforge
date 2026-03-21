@@ -32,7 +32,8 @@
     "lint:fix": "biome check --write src/",
     "format": "biome format --write src/",
     "test": "bun test",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage",
+    "test:coverage:html": "bun run test:coverage && genhtml coverage/lcov.info --output-directory coverage/html --dark-mode && open coverage/html/index.html",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "bun run lint && bun run typecheck && bun run build",
     "release": "bun run build && npm publish"
