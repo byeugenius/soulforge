@@ -1,6 +1,6 @@
-import { handle, mkUsr, mkProd, sendMail } from "./god.js";
-import { salesReport, inventoryAlerts } from "./analytics.js";
-import { logRequest } from "./middleware.js";
+import { inventoryAlerts, salesReport } from "./analytics.js";
+import { createProduct, createUser, handle, sendMail } from "./god.js";
+import { logRequest, rateLimit } from "./middleware.js";
 
 export function processRequest(
   method: string,
@@ -9,17 +9,44 @@ export function processRequest(
   token?: string,
   ip?: string,
 ) {
-  logRequest(method, path);
+  if (ip && !rateLimit(ip)) {
+    return { ok: false, error: "rate limited" };
+  }
   const result = handle(method, path, body, token);
+  logRequest(method, path);
   return result;
 }
 
 export function seedData() {
-  mkUsr({ id: "u_admin", nm: "Admin", email: "admin@test.com", role: "admin" });
-  mkUsr({ id: "u_jane", nm: "Jane", email: "jane@test.com", role: "user" });
-  mkProd({ id: "p_1", nm: "Widget", pr: 9.99, stk: 100 });
-  mkProd({ id: "p_2", nm: "Gadget", pr: 24.99, stk: 50 });
-  mkProd({ id: "p_3", nm: "Doohickey", pr: 4.99, stk: 200 });
+  createUser({ id: "u_admin", name: "Admin", email: "admin@test.com", role: "admin" });
+  createUser({ id: "u_jane", name: "Jane", email: "jane@test.com", role: "user" });
+  createProduct({
+    id: "p_1",
+    name: "Widget",
+    desc: "A versatile widget for everyday use",
+    category: "tools",
+    tags: ["hardware", "essential"],
+    price: 9.99,
+    stock: 100,
+  });
+  createProduct({
+    id: "p_2",
+    name: "Gadget",
+    desc: "High-tech gadget with multiple functions",
+    category: "electronics",
+    tags: ["tech", "premium"],
+    price: 24.99,
+    stock: 50,
+  });
+  createProduct({
+    id: "p_3",
+    name: "Doohickey",
+    desc: "Simple doohickey that gets the job done",
+    category: "tools",
+    tags: ["hardware", "budget"],
+    price: 4.99,
+    stock: 200,
+  });
 }
 
 export function runDailyReport() {
