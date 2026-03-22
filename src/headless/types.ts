@@ -16,6 +16,7 @@ export interface HeadlessRunOptions {
   noRepomap?: boolean;
   include?: string[];
   diff?: boolean;
+  render?: boolean;
 }
 
 export interface HeadlessChatOptions {

@@ -81,6 +81,7 @@ export async function parseHeadlessArgs(argv: string[]): Promise<HeadlessAction 
   let system: string | undefined;
   let noRepomap = false;
   let diff = false;
+  let render = false;
   const include: string[] = [];
   const promptParts: string[] = [];
 
@@ -127,6 +128,8 @@ export async function parseHeadlessArgs(argv: string[]): Promise<HeadlessAction 
       include.push(argv[++i] as string);
     } else if (arg === "--diff") {
       diff = true;
+    } else if (arg === "--render") {
+      render = true;
     } else if (arg === "--chat") {
       chat = true;
     } else if (arg && !arg.startsWith("--")) {
@@ -183,6 +186,7 @@ export async function parseHeadlessArgs(argv: string[]): Promise<HeadlessAction 
       noRepomap,
       include: include.length > 0 ? include : undefined,
       diff,
+      render,
     },
   };
 }

@@ -1,3 +1,4 @@
+import { renderMarkdownToAnsi } from "../core/utils/markdown-ansi.js";
 import { DIM, PURPLE, RED, RST, YELLOW } from "./constants.js";
 
 export function writeEvent(event: Record<string, unknown>): void {
@@ -34,4 +35,10 @@ export function formatTokens(tokens: { input: number; output: number; cacheRead:
 
 export function formatDuration(ms: number): string {
   return ms < 1000 ? `${String(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Render markdown text to ANSI and write to stdout. */
+export async function writeMarkdown(text: string): Promise<void> {
+  const rendered = await renderMarkdownToAnsi(text);
+  process.stdout.write(`${rendered}\n`);
 }

@@ -65,6 +65,7 @@ describe("parseHeadlessArgs", () => {
 				noRepomap: false,
 				include: undefined,
 				diff: false,
+				render: false,
 			},
 		});
 	});

@@ -92,3 +92,34 @@ export function getTSClient() {
   }
   return _tsClient;
 }
+
+const TREE_SITTER_LANGS = new Set(["ts", "tsx", "js", "jsx", "typescript", "javascript"]);
+
+/** Returns true if tree-sitter has a parser for this language. */
+export function isTreeSitterLanguage(lang: string): boolean {
+  return TREE_SITTER_LANGS.has(lang.toLowerCase());
+}
+
+/**
+ * Get shiki-highlighted tokens for TUI rendering.
+ * Falls back gracefully — returns null if shiki isn't available or the language isn't supported.
+ * Use when tree-sitter doesn't support the language.
+ */
+export async function getShikiTokensForTUI(
+  code: string,
+  lang: string,
+): Promise<{ text: string; fg?: string }[][] | null> {
+  if (isTreeSitterLanguage(lang)) return null; // prefer tree-sitter
+  try {
+    const { codeToStyledTokens, isShikiLanguage } = await import("./shiki.js");
+    if (!isShikiLanguage(lang)) {
+      // Ensure highlighter is loaded before checking
+      await import("./shiki.js").then((m) => m.getHighlighter());
+      if (!isShikiLanguage(lang)) return null;
+    }
+    const tokens = await codeToStyledTokens(code, lang);
+    return tokens.map((line) => line.map((t) => ({ text: t.content, fg: t.color })));
+  } catch {
+    return null;
+  }
+}

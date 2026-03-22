@@ -17,6 +17,7 @@ import {
   stderrLabel,
   stderrWarn,
   writeEvent,
+  writeMarkdown,
 } from "./output.js";
 import type { HeadlessChatOptions, HeadlessRunOptions } from "./types.js";
 
@@ -148,6 +149,7 @@ async function streamTurn(
     quiet?: boolean;
     maxSteps?: number;
     showProgress: boolean;
+    render?: boolean;
   },
 ): Promise<TurnResult> {
   let output = "";
@@ -178,7 +180,7 @@ async function streamTurn(
         output += part.text;
         if (reporting.events) {
           writeEvent({ type: "text", content: part.text });
-        } else if (!reporting.json) {
+        } else if (!reporting.json && !reporting.render) {
           process.stdout.write(part.text);
         }
       } else if (part.type === "tool-call") {
@@ -376,6 +378,7 @@ export async function runPrompt(opts: HeadlessRunOptions, merged: AppConfig): Pr
     quiet: isQuiet,
     maxSteps: opts.maxSteps,
     showProgress,
+    render: opts.render,
   });
 
   // Override exit code for timeout
@@ -435,7 +438,12 @@ export async function runPrompt(opts: HeadlessRunOptions, merged: AppConfig): Pr
       )}\n`,
     );
   } else {
-    if (turn.output.length > 0 && !turn.output.endsWith("\n")) process.stdout.write("\n");
+    if (opts.render && turn.output.length > 0) {
+      // Render accumulated markdown output with shiki syntax highlighting
+      await writeMarkdown(turn.output);
+    } else if (turn.output.length > 0 && !turn.output.endsWith("\n")) {
+      process.stdout.write("\n");
+    }
     if (!isQuiet) {
       if (turn.filesEdited.length > 0 && opts.diff) {
         separator();

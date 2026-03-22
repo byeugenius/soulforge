@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import { icon } from "../core/icons.js";
 import type { PendingQuestion } from "../types/index.js";
+import { Markdown } from "./chat/Markdown.js";
 
 interface Props {
   question: PendingQuestion;
@@ -91,7 +92,7 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
         </text>
       </box>
       <box>
-        <text fg="#eee">{question.question}</text>
+        <Markdown text={question.question} />
       </box>
       {typing ? (
         <box flexDirection="row" gap={1}>

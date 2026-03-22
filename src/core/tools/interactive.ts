@@ -294,7 +294,8 @@ export function buildInteractiveTools(
       description:
         "Ask the user a question with selectable options. " +
         "Use when you need clarification or the user must choose between approaches. " +
-        "Blocks until the user answers. Don't overuse — only when genuinely needed.",
+        "Blocks until the user answers. Don't overuse — only when genuinely needed. " +
+        "Keep the question brief (1-3 sentences). Put analysis in your response text, not in the question field.",
       inputSchema: z.object({
         question: z.string().describe("The question to ask"),
         options: z
