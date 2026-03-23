@@ -37,7 +37,12 @@ export async function listModels(providerId?: string): Promise<void> {
       `${BOLD}${PURPLE}${provider.name}${RST} ${DIM}(${provider.id})${RST}${tag}\n`,
     );
 
-    let models = await provider.fetchModels().catch(() => null);
+    let models = await provider.fetchModels().catch((err: unknown) => {
+      process.stderr.write(
+        `${DIM}  (model fetch failed: ${err instanceof Error ? err.message : String(err)} — showing cached models)${RST}\n`,
+      );
+      return null;
+    });
     if (!models) models = provider.fallbackModels;
 
     for (const m of models) {

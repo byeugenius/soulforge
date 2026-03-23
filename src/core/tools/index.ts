@@ -64,6 +64,8 @@ export {
 } from "./constants.js";
 export { buildInteractiveTools } from "./interactive.js";
 
+let _soulToolWarningEmitted = false;
+
 /**
  * Yield to the event loop before tool execution so the UI can render
  * the "running" spinner before synchronous operations block the thread.
@@ -1339,6 +1341,15 @@ export function buildSubagentExploreTools(opts?: {
       execute: deferExecute((args) => listDirTool.execute(args, opts?.repoMap)),
     }),
 
+    ...(!opts?.repoMap && !_soulToolWarningEmitted
+      ? (() => {
+          _soulToolWarningEmitted = true;
+          process.stderr.write(
+            "[soulforge] Soul tools (soul_grep, soul_find, soul_analyze, soul_impact) unavailable — repo map not ready\n",
+          );
+          return {};
+        })()
+      : {}),
     ...(opts?.repoMap
       ? {
           soul_grep: tool({

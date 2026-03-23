@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, watch, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
@@ -49,6 +49,7 @@ let projectPatterns: string[] = [];
 const sessionPatternsMap = new Map<string, string[]>();
 let aiIgnorePatterns: string[] = [];
 let initialized = false;
+let aiIgnoreWatcher: ReturnType<typeof watch> | null = null;
 const regexCache = new Map<string, RegExp>();
 
 function globToRegex(pattern: string): RegExp {
@@ -99,8 +100,22 @@ export function initForbidden(cwd: string): void {
   projectPatterns = loadPatternsFromFile(projectFile);
   sessionPatternsMap.clear();
 
-  // Respect .aiignore (AI-specific exclusions)
-  aiIgnorePatterns = parseIgnoreFile(join(cwd, ".aiignore"));
+  const aiIgnorePath = join(cwd, ".aiignore");
+  aiIgnorePatterns = parseIgnoreFile(aiIgnorePath);
+
+  if (aiIgnoreWatcher) {
+    aiIgnoreWatcher.close();
+    aiIgnoreWatcher = null;
+  }
+  if (existsSync(aiIgnorePath)) {
+    try {
+      aiIgnoreWatcher = watch(aiIgnorePath, () => {
+        aiIgnorePatterns = parseIgnoreFile(aiIgnorePath);
+        regexCache.clear();
+      });
+      aiIgnoreWatcher.unref();
+    } catch {}
+  }
 
   initialized = true;
 }

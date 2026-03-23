@@ -421,6 +421,25 @@ export function useChat({
     return onFileEdited((absPath, content) => sharedCacheRef.current.updateFile(absPath, content));
   }, []);
 
+  // First-run welcome hint — show proactively when model is "none" and no messages exist
+  const firstRunShown = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot effect guarded by ref, messages.length would re-trigger on every message
+  useEffect(() => {
+    if (firstRunShown.current) return;
+    if (activeModel === "none" && messages.length === 0 && visible) {
+      firstRunShown.current = true;
+      setMessages([
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            "Welcome to SoulForge! Press **Ctrl+L** or type **/model** to select a provider and model, then **/keys** to configure API keys.",
+          timestamp: Date.now(),
+        },
+      ]);
+    }
+  }, [activeModel, visible]);
+
   // Streaming token estimation
   const streamingCharsRef = useRef(0);
   const toolCharsRef = useRef(0);

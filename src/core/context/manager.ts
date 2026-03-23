@@ -733,7 +733,7 @@ export class ContextManager {
     this.unsubEdit = null;
     this.unsubRead = null;
     if (!this.isChild) {
-      this.repoMap.close();
+      this.repoMap.close().catch(() => {});
       this.memoryManager.close();
     }
   }

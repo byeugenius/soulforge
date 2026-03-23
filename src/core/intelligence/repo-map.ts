@@ -3578,7 +3578,7 @@ export class RepoMap {
     }
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.ready = false;
     if (this.dirtyTimer) {
       clearTimeout(this.dirtyTimer);
@@ -3591,6 +3591,11 @@ export class RepoMap {
     if (this.reindexTimer) {
       clearTimeout(this.reindexTimer);
       this.reindexTimer = null;
+    }
+    if (this.flushPromise) {
+      try {
+        await this.flushPromise;
+      } catch {}
     }
     this.db.close();
   }
