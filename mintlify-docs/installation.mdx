@@ -1,0 +1,125 @@
+---
+title: "Installation"
+description: "Install SoulForge on macOS or Linux. Prebuilt binary, Homebrew, npm, or source."
+icon: "download"
+---
+
+## Prerequisites
+
+### Neovim
+
+SoulForge embeds a real Neovim instance — your config, plugins, and LSP all work inside it.
+
+```bash
+# macOS
+brew install neovim
+
+# Ubuntu / Debian
+sudo apt install neovim
+
+# Arch
+sudo pacman -S neovim
+```
+
+Verify: `nvim --version` (need >= 0.11)
+
+### Nerd Font
+
+SoulForge uses [Nerd Font](https://www.nerdfonts.com/) icons throughout the UI. Without one, you'll see blank squares. Any Nerd Font works — popular choices: [JetBrains Mono](https://github.com/ryanoasis/nerd-fonts/releases), [FiraCode](https://github.com/ryanoasis/nerd-fonts/releases).
+
+After installing, set it as your terminal's font. Or run `/setup` inside SoulForge to check and install fonts automatically.
+
+### API key
+
+You need at least one LLM provider key:
+
+| Provider | Env Variable | Models |
+|----------|-------------|--------|
+| Anthropic | `ANTHROPIC_API_KEY` | Claude Opus 4, Sonnet 4, Haiku 3.5 |
+| OpenAI | `OPENAI_API_KEY` | GPT-4o, o3, o4-mini |
+| xAI | `XAI_API_KEY` | Grok |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini |
+| Ollama | *(none — runs locally)* | Llama, Mistral, Qwen, etc. |
+
+Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Alternatively, use a single [AI Gateway](https://sdk.vercel.ai/docs/ai-sdk-core/provider-management) key for all providers, or the built-in **Proxy provider** to relay through a local CLIProxyAPI instance (no API key needed).
+
+## Install
+
+<Tabs>
+  <Tab title="Prebuilt binary (recommended)">
+    Download the standalone binary — no runtime dependencies:
+
+    ```bash
+    # macOS (Apple Silicon)
+    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
+    sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
+
+    # macOS (Intel)
+    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
+    sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
+
+    # Linux (x64)
+    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
+    sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
+
+    # Linux (ARM64)
+    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-arm64.tar.gz | tar xz
+    sudo mv soulforge-linux-arm64 /usr/local/bin/soulforge
+    ```
+
+    Then run `soulforge` (or `sf`).
+  </Tab>
+  <Tab title="Homebrew">
+    ```bash
+    brew tap proxysoul/tap
+    brew install soulforge
+    ```
+  </Tab>
+  <Tab title="npm / Bun">
+    Requires [Bun](https://bun.sh) >= 1.0 as the runtime.
+
+    ```bash
+    # Install Bun (if needed)
+    curl -fsSL https://bun.sh/install | bash
+
+    # Configure GitHub Packages registry (one-time)
+    echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+    # Install globally
+    bun install -g @proxysoul/soulforge
+    ```
+  </Tab>
+  <Tab title="Build from source">
+    Requires [Bun](https://bun.sh) >= 1.0 and [Neovim](https://neovim.io) >= 0.11.
+
+    ```bash
+    git clone https://github.com/ProxySoul/soulforge.git
+    cd soulforge
+    bun install
+
+    # Run in development mode
+    bun run dev
+
+    # Or build and link globally
+    bun run build
+    bun link
+    soulforge
+    ```
+  </Tab>
+</Tabs>
+
+## First launch
+
+On first launch, SoulForge creates a config at `~/.soulforge/config.json` with sensible defaults. It checks for Neovim and Nerd Fonts and offers to install them if missing.
+
+```bash
+soulforge                    # Launch — select a model with Ctrl+L
+soulforge --set-key anthropic sk-ant-...   # Or save a key first
+soulforge --list-providers   # Check which providers are ready
+```

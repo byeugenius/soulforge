@@ -1,0 +1,118 @@
+---
+title: "Code Intelligence"
+description: "4-tier fallback chain, LSP integration, dual-backend architecture, and convention-based visibility detection."
+icon: "brain"
+---
+
+SoulForge routes every code intelligence operation through a tiered fallback chain. Each backend reports what it supports; the router picks the highest-tier backend available.
+
+## Fallback chain
+
+| Tier | Backend | Capabilities |
+|------|---------|-------------|
+| 1 | **LSP** | definitions, references, rename, diagnostics, code actions, call hierarchy, type info, formatting |
+| 2 | **ts-morph** | TypeScript/JavaScript — AST definitions, references, rename, extract function/variable, unused detection, type info |
+| 2 | **tree-sitter** | 33 languages — symbol extraction, imports/exports, scopes, outlines via WASM grammars |
+| 3 | **regex** | Universal fallback — symbol search, simple definitions, import patterns |
+
+For each operation, the router tries backends in tier order. If tier 1 returns null or throws, tier 2 is tried, then tier 3.
+
+```
+Symbol Query --> LSP available?
+                    |
+              yes --+--> Precise: types, refs, diagnostics
+                    |
+              no  --+--> ts-morph available?
+                           |
+                     yes --+--> AST: signatures, exports
+                           |
+                     no  --+--> tree-sitter grammar?
+                                  |
+                            yes --+--> Structural: outlines, imports
+                                  |
+                            no  --+--> Best-effort: pattern matching
+```
+
+## Dual LSP backend
+
+The agent always has LSP access regardless of editor state:
+
+### Neovim bridge
+
+When the editor is open, routes LSP requests through Neovim's running LSP servers via Lua RPC. Zero startup cost since servers are already warm.
+
+### Standalone client
+
+When the editor is closed, spawns LSP servers directly as child processes with JSON-RPC over stdin/stdout. Full protocol support: definitions, references, hover, diagnostics, rename, code actions, call/type hierarchy, formatting.
+
+### Multi-language warmup
+
+On boot, `detectAllLanguages()` scans project config files and spawns standalone LSP servers for all detected languages in parallel — not just the primary language. Standalone servers stay warm as hot standby even when Neovim is open.
+
+### Server discovery
+
+Servers are found in this order:
+1. System PATH
+2. `~/.soulforge/lsp-servers/`
+3. `~/.local/share/soulforge/mason/bin/`
+
+Mason servers are auto-installed via LazyVim's mason-tool-installer on first editor launch.
+
+## LSP operations
+
+| Operation | What it returns |
+|-----------|----------------|
+| **Go to definition** | File path + line number of the symbol's declaration |
+| **Find references** | All locations where the symbol is used |
+| **Rename** | Workspace-wide rename with all affected files |
+| **Diagnostics** | Errors, warnings, and info for a file |
+| **Code actions** | Available refactorings and quick fixes |
+| **Call hierarchy** | Incoming/outgoing calls for a function |
+| **Type hierarchy** | Subtypes/supertypes for a class |
+| **Hover/Type info** | Type signature and documentation |
+| **Formatting** | Language-specific code formatting |
+
+## Post-edit diagnostics
+
+After file edits, SoulForge snapshots LSP diagnostics and diffs against pre-edit state:
+
+- New errors introduced by the edit
+- New warnings
+- Previously existing errors that were resolved
+- Cross-file errors (in other files caused by this edit)
+
+This gives the agent immediate feedback on whether its edit introduced problems, without needing to run the full type checker.
+
+## Convention-based visibility
+
+The repo map uses convention-based rules to determine which symbols are "public" (exported) vs "private" across 33 languages. This affects which symbols appear in the Soul Map system prompt.
+
+| Convention | Languages | Rule |
+|---|---|---|
+| Name-based | Go | Capitalized = public |
+| Name-based | Python, Dart | No `_` prefix = public |
+| Keyword-based | Rust, Zig | `pub` keyword |
+| Keyword-based | Java, Kotlin, Swift, C#, Scala | Not `private` = public |
+| Keyword-based | Elixir | `def` (not `defp`) = public |
+| File-based | C, C++, Objective-C | Header file = public |
+| Default public | Ruby, Lua, Bash, OCaml | All top-level symbols public |
+
+## Definition keyword patterns
+
+The `navigate` tool uses `DEFINITION_KEYWORDS` covering 14 language families to build regex patterns when LSP is unavailable. `buildDefinitionPattern(symbol)` generates language-appropriate regex that finds function/class/type definitions across:
+
+- JavaScript/TypeScript: `function`, `class`, `const`, `let`, `type`, `interface`, `enum`
+- Python: `def`, `class`, `async def`
+- Rust: `fn`, `struct`, `enum`, `trait`, `impl`, `type`, `mod`
+- Go: `func`, `type`, `var`, `const`
+- And 10 more language families
+
+## Identifier extraction
+
+Three naming families for cross-file reference detection:
+
+- **camelCase + PascalCase**: TypeScript, JavaScript, Go, Rust, Java, Kotlin, Swift, C#, Dart, Scala
+- **snake_case + PascalCase**: Python, Ruby, Elixir, PHP, C, C++, Zig, Lua, Bash, OCaml
+- **Hyphenated**: Elisp
+
+`IDENTIFIER_KEYWORDS` filters ~190 reserved words across all supported languages to prevent noise in the reference graph.

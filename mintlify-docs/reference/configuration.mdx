@@ -1,0 +1,308 @@
+---
+title: "Configuration"
+description: "Config files, scoping, custom providers, task router, agent features, and all configurable settings."
+icon: "gear"
+---
+
+SoulForge uses layered configuration: global defaults plus per-project overrides. Every setting can be changed at runtime and persisted to either scope.
+
+## Config files
+
+| Scope | Path | Purpose |
+|-------|------|---------|
+| **Global** | `~/.soulforge/config.json` | Defaults for all projects |
+| **Project** | `.soulforge/config.json` | Project-specific overrides |
+
+Project settings override global. Session-level settings (changed via commands but not saved) override both.
+
+## Config example
+
+```json
+{
+  "defaultModel": "anthropic/claude-sonnet-4-6",
+  "thinking": { "mode": "adaptive" },
+  "repoMap": true,
+  "semanticSummaries": "ast",
+  "diffStyle": "default",
+  "chatStyle": "accent",
+  "vimHints": true,
+  "compaction": {
+    "strategy": "v2",
+    "triggerThreshold": 0.7,
+    "keepRecent": 4
+  },
+  "taskRouter": {
+    "planning": "anthropic/claude-sonnet-4-6",
+    "coding": "anthropic/claude-opus-4-6",
+    "exploration": "anthropic/claude-sonnet-4-6",
+    "webSearch": "anthropic/claude-haiku-3-5",
+    "trivial": "anthropic/claude-haiku-3-5",
+    "compact": "google/gemini-2.0-flash"
+  },
+  "agentFeatures": {
+    "desloppify": true,
+    "tierRouting": true,
+    "dispatchCache": true,
+    "targetFileValidation": true
+  },
+  "providers": []
+}
+```
+
+## Key fields
+
+### Model settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `defaultModel` | `string` | `"none"` | Active model ID (e.g. `"anthropic/claude-sonnet-4-6"`). `"none"` forces model selection on launch. |
+| `thinking` | `object` | — | Thinking mode config: `{mode: "off" \| "adaptive" \| "enabled", budget?: number}` |
+
+### Display
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `diffStyle` | `string` | `"default"` | Diff display: `"default"`, `"sidebyside"`, `"compact"` |
+| `chatStyle` | `string` | `"accent"` | Chat layout: `"accent"`, `"bubble"` |
+| `vimHints` | `boolean` | `true` | Show Neovim keybinding hints |
+| `nerdFont` | `boolean` | `true` | Show Nerd Font icons |
+
+### Intelligence
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `repoMap` | `boolean` | `true` | Enable repo map scanning |
+| `semanticSummaries` | `string` | `"ast"` | Summary mode: `"ast"` (tree-sitter), `"llm"` (LLM-generated), `"off"` |
+
+### Compaction
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `compaction.strategy` | `string` | `"v2"` | `"v2"` (incremental extraction) or `"v1"` (LLM summarization) |
+| `compaction.triggerThreshold` | `number` | `0.7` | Auto-compact at this % of context |
+| `compaction.resetThreshold` | `number` | `0.4` | Hysteresis reset threshold |
+| `compaction.keepRecent` | `number` | `4` | Recent messages to preserve verbatim |
+| `compaction.maxToolResults` | `number` | `30` | Rolling tool result window (V2) |
+| `compaction.llmExtraction` | `boolean` | `true` | LLM gap-fill on compact (V2) |
+
+See [Compaction](/context/compaction) for strategy details.
+
+## Task router
+
+Assign different models to different task types. Configure via `/router` in the TUI or in config:
+
+```json
+{
+  "taskRouter": {
+    "planning": "anthropic/claude-sonnet-4-6",
+    "coding": "anthropic/claude-opus-4-6",
+    "exploration": "anthropic/claude-sonnet-4-6",
+    "webSearch": "anthropic/claude-haiku-3-5",
+    "semantic": "anthropic/claude-haiku-3-5",
+    "trivial": "anthropic/claude-haiku-3-5",
+    "desloppify": "anthropic/claude-haiku-3-5",
+    "compact": "google/gemini-2.0-flash",
+    "default": null
+  }
+}
+```
+
+| Slot | Purpose |
+|------|---------|
+| `planning` | Plan mode, architecture decisions |
+| `coding` | File edits, implementation |
+| `exploration` | Read-only research, code analysis |
+| `webSearch` | Web search agent model |
+| `semantic` | Repo map semantic summaries |
+| `trivial` | Single-file reads, small edits (auto-detected) |
+| `desloppify` | Cleanup pass after code agents |
+| `compact` | Context compaction summarizer |
+| `default` | Fallback for unmatched tasks |
+
+Resolution order: `taskRouter[taskType]` then `taskRouter.default` then active model.
+
+## Agent features
+
+Toggle via `/agent-features` or in config:
+
+```json
+{
+  "agentFeatures": {
+    "desloppify": true,
+    "tierRouting": true,
+    "dispatchCache": true,
+    "targetFileValidation": true
+  }
+}
+```
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `desloppify` | `true` | Cleanup agent after code agents (requires `desloppify` model in router) |
+| `tierRouting` | `true` | Auto-classify trivial tasks and route to cheap model |
+| `dispatchCache` | `true` | Cache file reads across dispatch boundaries |
+| `targetFileValidation` | `true` | Require file paths on dispatch tasks |
+
+## Custom providers
+
+Add any OpenAI-compatible API as a provider:
+
+```json
+{
+  "providers": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "baseURL": "https://api.deepseek.com/v1",
+      "envVar": "DEEPSEEK_API_KEY",
+      "models": ["deepseek-chat", "deepseek-coder"],
+      "modelsAPI": "https://api.deepseek.com/v1/models"
+    }
+  ]
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Provider ID, used in model strings like `deepseek/deepseek-chat` |
+| `name` | No | Display name (defaults to `id`) |
+| `baseURL` | Yes | OpenAI-compatible API endpoint |
+| `envVar` | No | Env var name for the API key |
+| `models` | No | Fallback model list (strings or `{id, name, contextWindow}` objects) |
+| `modelsAPI` | No | URL to fetch models dynamically (OpenAI `/v1/models` format) |
+
+<Note>
+If a custom provider `id` matches a built-in (e.g. `"anthropic"`), it auto-renames to `{id}-custom`. The built-in is never replaced.
+</Note>
+
+### Provider examples
+
+**Local LLM server (no API key):**
+
+```json
+{
+  "providers": [{
+    "id": "local",
+    "name": "Local LLM",
+    "baseURL": "http://localhost:8080/v1",
+    "models": ["llama-3-70b"]
+  }]
+}
+```
+
+**Corporate proxy:**
+
+```json
+{
+  "providers": [{
+    "id": "corp",
+    "name": "Corp API Gateway",
+    "baseURL": "https://llm.internal.corp.com/v1",
+    "envVar": "CORP_LLM_KEY",
+    "modelsAPI": "https://llm.internal.corp.com/v1/models"
+  }]
+}
+```
+
+**Multiple providers:**
+
+```json
+{
+  "providers": [
+    { "id": "deepseek", "baseURL": "https://api.deepseek.com/v1", "envVar": "DEEPSEEK_API_KEY", "models": ["deepseek-chat"] },
+    { "id": "together", "baseURL": "https://api.together.xyz/v1", "envVar": "TOGETHER_API_KEY", "models": ["meta-llama/Llama-3-70b-chat-hf"] },
+    { "id": "groq", "baseURL": "https://api.groq.com/openai/v1", "envVar": "GROQ_API_KEY", "modelsAPI": "https://api.groq.com/openai/v1/models" }
+  ]
+}
+```
+
+## Project instructions
+
+SoulForge loads `SOULFORGE.md` from your project root as project-specific instructions. You can also load instruction files from other AI tools:
+
+| File | Source | Default |
+|------|--------|---------|
+| `SOULFORGE.md` | SoulForge | **on** |
+| `CLAUDE.md` | Claude Code | off |
+| `.cursorrules` | Cursor | off |
+| `.github/copilot-instructions.md` | GitHub Copilot | off |
+| `.clinerules` | Cline | off |
+| `.windsurfrules` | Windsurf | off |
+| `.aider.conf.yml` | Aider | off |
+| `AGENTS.md` | OpenAI Codex | off |
+| `.opencode/instructions.md` | OpenCode | off |
+| `AMPLIFY.md` | Amp | off |
+
+Toggle via `/instructions` in the TUI or set in config:
+
+```json
+{ "instructionFiles": ["soulforge", "claude", "cursorrules"] }
+```
+
+## Scoped configuration
+
+Every setting can be saved to one of three scopes:
+
+| Scope | Persistence | Priority |
+|-------|------------|----------|
+| **Session** | Lost on exit | Highest |
+| **Project** | `.soulforge/config.json` | Medium |
+| **Global** | `~/.soulforge/config.json` | Lowest |
+
+Use `/model-scope` to toggle model persistence between project and global.
+
+## Privacy / forbidden files
+
+Block files from AI access with `/privacy add <pattern>`:
+
+```
+/privacy add .env
+/privacy add secrets/**
+```
+
+- **Project scope** -- patterns in `.soulforge/forbidden`
+- **Global scope** -- patterns in `~/.soulforge/forbidden`
+- Built-in patterns cover `.env`, `.pem`, `credentials`, `private_key`, `id_rsa`, `.npmrc`, `.netrc`, `shadow`, `passwd`, and more
+
+## API keys
+
+Keys are stored in the OS keychain (macOS Keychain, Linux secret-tool) via `--set-key`:
+
+```bash
+soulforge --set-key anthropic sk-ant-...
+soulforge --set-key openai sk-...
+```
+
+Alternatively, set env vars in your shell profile:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+export GOOGLE_GENERATIVE_AI_API_KEY=...
+```
+
+| Provider | Env Variable |
+|----------|-------------|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Google | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| LLM Gateway | `LLM_GATEWAY_API_KEY` |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
+| Ollama | *(none -- runs locally)* |
+
+## Storage
+
+`/storage` shows per-component disk usage:
+
+- Repo map index (SQLite)
+- Sessions (JSONL)
+- Plans
+- Memory (SQLite)
+- Input history (SQLite)
+- Config files
+- Binaries (CLIProxyAPI, bundled tools)
+- Fonts (Nerd Font symbols)
+
+One-click cleanup for each component.

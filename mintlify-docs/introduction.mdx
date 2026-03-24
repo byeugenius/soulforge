@@ -1,0 +1,124 @@
+---
+title: "SoulForge"
+description: "AI-powered terminal IDE with embedded Neovim, multi-agent dispatch, and graph-powered code intelligence."
+icon: "terminal"
+---
+
+Your real Neovim — config, plugins, LSP — embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 10 providers. Works over SSH.
+
+## How it compares
+
+| | SoulForge | Claude Code | Copilot CLI | Aider |
+|---|---|---|---|---|
+| **Editor** | Embedded Neovim (LazyVim, your config) | No editor | No editor | No editor |
+| **Code graph** | SQLite graph — PageRank, blast radius, cochange, clone detection, FTS5, unused exports, file profiles, identifier frequency | None (file reads + grep) | None | Tree-sitter repo map + PageRank |
+| **Code intelligence** | 4-tier fallback: LSP → ts-morph → tree-sitter → regex. Dual LSP (Neovim bridge + standalone). 12 LSP operations including rename. 33 languages | LSP via plugin (5 ops, no rename, no auto-install) | Agent has no LSP access (IDE only) | Tree-sitter AST |
+| **Compound tools** | `rename_symbol`, `move_symbol`, `refactor` — compiler-guaranteed, atomic, cross-file | Rename via LSP | — | — |
+| **Semantic context** | AST summaries for top 500 symbols, dispatch auto-enrichment | — | — | Tree-sitter tag summaries |
+| **Multi-agent** | Parallel dispatch (8 agents, 3 concurrent, shared cache, edit ownership) | Subagents + Agent Teams | Subagents + Fleet | Single agent |
+| **Providers** | 10 (Anthropic, OpenAI, Google, xAI, Ollama, +5) | Anthropic only | Multi-model | 100+ LLMs |
+| **Task routing** | Per-task model assignment (plan, code, explore, search, trivial, cleanup, compact) | Single model | Single model | Single model |
+| **Context management** | 2-layer: per-step pruning + V1/V2 compaction | Auto-compaction | Context window management | — |
+| **License** | BSL 1.1 (source-available) | Proprietary | Proprietary | Apache 2.0 |
+
+## Highlights
+
+<CardGroup cols={2}>
+
+<Card title="Embedded Neovim + LazyVim" icon="code">
+  Your actual Neovim — LazyVim with 30+ plugins, LSP auto-installed via Mason, Catppuccin theme, treesitter highlighting. The AI reads and edits through the same editor you use.
+</Card>
+
+<Card title="Multi-Agent Dispatch" icon="users">
+  Parallelize work across explore, code, and web search agents. Shared file cache prevents redundant reads. Edit coordination prevents conflicts. Up to 8 agents, 3 concurrent.
+</Card>
+
+<Card title="Graph-Powered Repo Map" icon="diagram-project">
+  SQLite codebase graph with PageRank ranking, cochange analysis, blast radius estimation, and clone detection. The agent knows which files matter before reading a single line.
+</Card>
+
+<Card title="4-Tier Code Intelligence" icon="brain">
+  LSP, ts-morph, tree-sitter, regex fallback chain. 33 languages with convention-based visibility. Dual LSP: bridges to Neovim when open, spawns standalone servers when closed.
+</Card>
+
+<Card title="Compound Tools" icon="wrench">
+  `rename_symbol`, `move_symbol`, `refactor`, `project` do the complete job in one call. Compiler-guaranteed renames. Atomic moves with import updates across all importers.
+</Card>
+
+<Card title="Task Router + Cost Transparency" icon="route">
+  Assign models per task: Opus for planning, Sonnet for coding, Haiku for search. Token usage visible per task, per agent, per model.
+</Card>
+
+<Card title="Context Management" icon="layers">
+  Two-layer compaction: rolling tool-result pruning per step, plus V1 (LLM summary) or V2 (deterministic extraction) compaction on threshold.
+</Card>
+
+<Card title="User Steering" icon="compass">
+  Type messages while the agent is working — they queue up and inject into the next step. Steer without interrupting. Abort with Ctrl+X.
+</Card>
+
+<Card title="10 Providers, Any Model" icon="plug">
+  Anthropic, OpenAI, Google, xAI, Ollama, OpenRouter, LLM Gateway, Vercel AI Gateway, Proxy, and custom OpenAI-compatible APIs. No vendor lock-in.
+</Card>
+
+<Card title="Cross-Tab Coordination" icon="table-columns">
+  Up to 5 concurrent tabs with advisory file claims. Agents see what other tabs are editing. Git operations blocked during active dispatch.
+</Card>
+
+<Card title="Project Toolchain" icon="toolbox">
+  Auto-detects lint, typecheck, test, and build across 21 ecosystems. Pre-commit gate blocks git commit on errors. Monorepo package discovery.
+</Card>
+
+<Card title="Skills & Approval Gates" icon="shield-check">
+  Installable skill system for domain-specific capabilities. Destructive action approval — rm -rf, git push --force, sensitive file edits individually prompted.
+</Card>
+
+</CardGroup>
+
+## Tool suite
+
+SoulForge ships 31 tools organized by capability:
+
+### Code intelligence
+
+| Tool | What it does |
+|------|-------------|
+| `read_code` | Extract function/class/type by name (LSP-powered) |
+| `navigate` | Definition, references, call hierarchy, implementations |
+| `analyze` | File diagnostics, unused symbols, complexity |
+| `rename_symbol` | Compiler-guaranteed rename across all files |
+| `move_symbol` | Move to another file + update all importers |
+| `refactor` | Extract function/variable, organize imports |
+
+### Codebase analysis (zero LLM cost)
+
+| Tool | What it does |
+|------|-------------|
+| `soul_grep` | Count-mode ripgrep with repo map intercept |
+| `soul_find` | Fuzzy file/symbol search, PageRank-ranked, signatures included |
+| `soul_analyze` | Identifier frequency, unused exports, file profiles, top files, packages, symbols by kind |
+| `soul_impact` | Dependency graph — dependents, cochanges, blast radius |
+
+### Project management
+
+| Tool | What it does |
+|------|-------------|
+| `project` | Auto-detected lint, format, test, build, typecheck across 21 ecosystems |
+| `project(list)` | Discover monorepo packages with per-package capabilities |
+| `dispatch` | Parallel multi-agent execution (up to 8 agents, 3 concurrent) |
+| `git` | Structured git operations with auto co-author tracking |
+
+## LLM providers
+
+| Provider | Models | Setup |
+|----------|--------|-------|
+| **Anthropic** | Claude Opus 4.6, Sonnet 4, Haiku 3.5 | `ANTHROPIC_API_KEY` |
+| **OpenAI** | GPT-4.5, o3, o4-mini | `OPENAI_API_KEY` |
+| **Google** | Gemini 2.5 Pro/Flash | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **xAI** | Grok 3 | `XAI_API_KEY` |
+| **Ollama** | Any local model | Auto-detected |
+| **OpenRouter** | 200+ models | `OPENROUTER_API_KEY` |
+| **LLM Gateway** | Multi-model gateway | `LLM_GATEWAY_API_KEY` |
+| **Vercel AI Gateway** | Unified gateway for 15+ providers | `AI_GATEWAY_API_KEY` |
+| **Proxy** | Local proxy with auto-lifecycle | `PROXY_API_KEY` |
+| **Custom** | Any OpenAI-compatible API | Any env var |

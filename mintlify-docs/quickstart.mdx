@@ -1,0 +1,131 @@
+---
+title: "Quickstart"
+description: "Get productive with SoulForge in 5 minutes."
+icon: "rocket"
+---
+
+## 5-minute setup
+
+<Steps>
+
+<Step title="Install SoulForge">
+  ```bash
+  # macOS (Apple Silicon)
+  curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
+  sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
+  ```
+
+  Or via Homebrew: `brew tap proxysoul/tap && brew install soulforge`
+</Step>
+
+<Step title="Set an API key">
+  ```bash
+  export ANTHROPIC_API_KEY=sk-ant-...
+  # Or use --set-key to save to your OS keychain:
+  soulforge --set-key anthropic sk-ant-...
+  ```
+</Step>
+
+<Step title="Launch and select a model">
+  ```bash
+  soulforge
+  ```
+
+  Press `Ctrl+L` to open the model picker. Select a provider, then a model. Claude Sonnet 4 is a good default.
+</Step>
+
+<Step title="Send your first prompt">
+  Type a message in the input box and press Enter:
+
+  ```
+  > explain the project structure
+  ```
+
+  SoulForge scans your codebase on startup (repo map), so the AI already understands your file layout, imports, and key symbols.
+</Step>
+
+<Step title="Explore features">
+  Now that you're running, try these:
+
+  - **Open the editor**: `Ctrl+E` to toggle the embedded Neovim panel
+  - **Git menu**: `Ctrl+G` for commit, push, pull, stash
+  - **Browse commands**: Type `/` or press `Ctrl+K` for the command palette
+  - **Switch modes**: `Ctrl+D` to cycle through default, auto, architect, socratic, challenge
+  - **Plan mode**: `/plan refactor the auth module` for research-first structured planning
+  - **Skills**: `Ctrl+S` to browse and install community skills
+</Step>
+
+</Steps>
+
+## Key shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+L` | Select LLM model |
+| `Ctrl+E` | Toggle editor panel |
+| `Ctrl+G` | Git menu |
+| `Ctrl+K` | Command palette |
+| `Ctrl+S` | Skills browser |
+| `Ctrl+T` | New tab |
+| `Ctrl+W` | Close tab |
+| `Ctrl+D` | Cycle forge mode |
+| `Ctrl+X` | Abort generation |
+
+## The interface
+
+```
++-------------------------------------------------+
+|  SoulForge | tokens | context | git | model     |  <- header
+|                                                 |
+|  Chat messages appear here                      |  <- chat area
+|  Tool calls show in real time                   |
+|                                                 |
+|  > type here...                                 |  <- input
+|  ^X Stop  ^D Mode  ^E Editor  ^G Git  ^L LLM   |  <- footer
++-------------------------------------------------+
+```
+
+**Header** shows token usage, context budget, git branch, and active model.
+
+**Chat area** renders messages with markdown, syntax-highlighted code blocks, and live tool call progress.
+
+**Input box** accepts natural language or slash commands (type `/` to see them).
+
+## Task router
+
+Use `/router` to assign different models to different tasks. For example:
+
+| Slot | Model | Purpose |
+|------|-------|---------|
+| Planning | Opus | Architecture decisions |
+| Coding | Sonnet | File edits |
+| Exploration | Haiku | Read-only research |
+| Web Search | Haiku | Search queries |
+| Trivial | Haiku | Small tasks |
+
+## Headless mode
+
+Run SoulForge without the TUI for scripting and CI/CD:
+
+```bash
+# Inline prompt
+soulforge --headless "explain the auth middleware"
+
+# JSON output
+soulforge --headless --json "list all TODO comments"
+
+# Event stream
+soulforge --headless --events "refactor the store"
+
+# Interactive chat
+soulforge --headless --chat
+```
+
+See [Headless mode](/tools/headless) for the full reference.
+
+## Next steps
+
+- [Architecture](/concepts/architecture) — understand the system design
+- [Repo Map](/concepts/repo-map) — how SoulForge understands your codebase
+- [Commands](/reference/commands) — all 76 slash commands
+- [Configuration](/reference/configuration) — customize everything

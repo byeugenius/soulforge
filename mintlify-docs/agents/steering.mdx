@@ -1,0 +1,62 @@
+---
+title: "User Steering"
+description: "Type messages while the agent is running — they queue up and inject into the next agent step."
+icon: "compass"
+---
+
+User steering lets you redirect the agent mid-execution without aborting. Messages are queued and injected at the next natural breakpoint.
+
+## How it works
+
+```
+User types while loading
+        |
+        v
+  messageQueue (state)
+  messageQueueRef (ref)
+        |
+        v  prepareStep calls drainSteering()
+  flushBeforeSteering():
+    - Commits current assistant progress to messages
+    - Appends steering messages after it
+    - Resets accumulators (fullText, segments, tool calls)
+        |
+        v
+  Combined text injected into AI messages as:
+  { role: "user", content: "IMPORTANT -- ..." }
+        |
+        v
+  Agent processes in next step (fresh accumulators)
+```
+
+<Steps>
+  <Step title="Queue">
+    User types a message while the agent is busy (loading indicator visible). Message is queued (up to 5 messages, shown in UI with "queued" label).
+  </Step>
+  <Step title="Drain">
+    At the next `prepareStep` call (between agent steps), `drainSteering()` drains all queued messages at once.
+  </Step>
+  <Step title="Flush">
+    Current assistant progress is committed as a completed message, steering messages are appended, and accumulators are reset.
+  </Step>
+  <Step title="Inject">
+    Combined steering text is injected as a user message into the AI conversation.
+  </Step>
+  <Step title="Adjust">
+    Agent sees the steering and adjusts its approach on the next step.
+  </Step>
+</Steps>
+
+## Safety
+
+| Guard | Purpose |
+|-------|---------|
+| **Abort gate** | `steeringAbortedRef` prevents drainSteering from firing after Ctrl+X |
+| **Ref sync** | `messageQueueRef.current = []` set directly in abort handler |
+| **Queue cap** | Maximum 5 queued messages |
+| **Post-completion drain** | After stream ends, remaining queue auto-submitted as the next message |
+| **Plan-aware** | Queue survives across plan revision/execution continuations |
+
+## UI
+
+Queued messages appear below the chat with a left rail border and "queued" label. They disappear as they're consumed by the agent or cleared on abort.

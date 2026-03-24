@@ -1,0 +1,124 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "SoulForge",
+  "appearance": {
+    "default": "dark"
+  },
+  "colors": {
+    "primary": "#9B30FF",
+    "light": "#B366FF",
+    "dark": "#9B30FF"
+  },
+  "rounded": "sharp",
+  "font": {
+    "headings": {
+      "family": "JetBrains Mono",
+      "weight": 700
+    }
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/repo-map",
+              "concepts/intelligence",
+              "concepts/compound-tools"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "agents/dispatch",
+              "agents/steering",
+              "agents/cross-tab"
+            ]
+          },
+          {
+            "group": "Context management",
+            "pages": [
+              "context/compaction",
+              "context/provider-options",
+              "context/prompt-system"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "tools/project",
+              "tools/headless"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/commands",
+              "reference/configuration"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/proxysoul/soulforge",
+          "icon": "github"
+        },
+        {
+          "anchor": "Blog",
+          "href": "https://pouiiro.com/blog/soulforge",
+          "icon": "newspaper"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/proxysoul/soulforge"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Install",
+      "href": "/installation"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "claude",
+      "cursor",
+      "mcp"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/proxysoul/soulforge",
+      "linkedin": "https://linkedin.com/in/pouiiro",
+      "x": "https://x.com/proxysoul"
+    }
+  }
+}

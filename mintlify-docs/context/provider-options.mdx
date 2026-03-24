@@ -1,0 +1,51 @@
+---
+title: "Provider Options"
+description: "Thinking modes, context management, and per-family configuration for LLM providers."
+icon: "sliders"
+---
+
+Model-specific options for thinking, context management, and capabilities.
+
+## Thinking modes
+
+Configured via `/provider` in the Claude tab:
+
+| Mode | Behavior |
+|------|----------|
+| `off` | No thinking blocks |
+| `auto` / `adaptive` | Model decides when to think (Claude 4+ only) |
+| `enabled` | Fixed budget thinking with configurable token budget |
+
+Budget tokens (when mode is `enabled`): 1024, 2048, 5000, 10000, 20000.
+
+## Context management
+
+Anthropic API context management features:
+
+| Feature | What it does |
+|---------|-------------|
+| **Clear Thinking** | Auto-clears old thinking blocks, keeps last 5 turns |
+| **Clear Tool Uses** | Clears old tool use content when input exceeds 100k tokens |
+| **Compact** | API-side compaction at 75% of context window |
+
+These are applied per-model based on capabilities. Clear thinking requires thinking to be enabled — the system enforces this at the code level.
+
+## Subagent options
+
+Subagents inherit the parent's provider options with one exception: `contextManagement` is stripped. Subagents are short-lived (token-budgeted) and don't need context window management strategies. This prevents errors when the subagent model doesn't support the same features as the parent.
+
+## Graceful degradation
+
+When provider options cause an API error, the system automatically retries with degraded options:
+
+| Level | Options |
+|-------|---------|
+| **Level 0** | Full options (thinking + context management) |
+| **Level 1** | Reduced (basic thinking, no context management) |
+| **Level 2** | No Anthropic-specific options |
+
+Detection patterns: "not supported", "thinking is not supported", "adaptive thinking", "clear_thinking", "context management", "unknown parameter".
+
+<Note>
+Degradation is automatic and transparent. If a model doesn't support thinking, SoulForge detects the error and retries without it — no user intervention needed.
+</Note>
