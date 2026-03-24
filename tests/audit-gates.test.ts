@@ -4,6 +4,7 @@ import {
 	isDestructiveCommand,
 	isSensitiveFile,
 } from "../src/core/security/approval-gates.js";
+import { detectRepeatedCalls } from "../src/core/agents/step-utils.js";
 
 // ─── Data extracted from real audit session (audit_issue.json) ───
 
@@ -434,5 +435,110 @@ describe("grep patterns from audit — none are destructive or sensitive", () =>
 		for (const p of searchPaths) {
 			expect(isSensitiveFile(p)).toBe(false);
 		}
+	});
+});
+
+// ─── Degenerate loop detection ───
+
+function makeStep(calls: Array<{ toolName: string; input?: unknown }>) {
+	return { toolCalls: calls };
+}
+
+describe("detectRepeatedCalls", () => {
+	it("returns null when no repetitions", () => {
+		const steps = [
+			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "foo" } }]),
+		];
+		expect(detectRepeatedCalls(steps)).toBeNull();
+	});
+
+	it("detects 3 identical calls", () => {
+		const steps = [
+			makeStep([{ toolName: "grep", input: { pattern: "vague" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "vague" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "vague" } }]),
+		];
+		const result = detectRepeatedCalls(steps);
+		expect(result).not.toBeNull();
+		expect(result!.toolName).toBe("grep");
+		expect(result!.count).toBe(3);
+	});
+
+	it("ignores calls below threshold", () => {
+		const steps = [
+			makeStep([{ toolName: "grep", input: { pattern: "foo" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "foo" } }]),
+		];
+		expect(detectRepeatedCalls(steps)).toBeNull();
+	});
+
+	it("distinguishes different args", () => {
+		const steps = [
+			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
+			makeStep([{ toolName: "read_file", input: { path: "c.ts" } }]),
+		];
+		expect(detectRepeatedCalls(steps)).toBeNull();
+	});
+
+	it("respects window parameter", () => {
+		const steps = [
+			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
+			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
+		];
+		expect(detectRepeatedCalls(steps, 2)).toBeNull();
+		expect(detectRepeatedCalls(steps, 5)).not.toBeNull();
+	});
+
+	it("picks the worst offender", () => {
+		const steps = [
+			makeStep([{ toolName: "grep", input: { pattern: "a" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "a" } }]),
+			makeStep([{ toolName: "grep", input: { pattern: "a" } }]),
+			makeStep([{ toolName: "shell", input: { command: "ls" } }]),
+			makeStep([{ toolName: "shell", input: { command: "ls" } }]),
+			makeStep([{ toolName: "shell", input: { command: "ls" } }]),
+			makeStep([{ toolName: "shell", input: { command: "ls" } }]),
+		];
+		const result = detectRepeatedCalls(steps);
+		expect(result).not.toBeNull();
+		expect(result!.toolName).toBe("shell");
+		expect(result!.count).toBe(4);
+	});
+
+	it("handles multiple calls per step", () => {
+		const steps = [
+			makeStep([
+				{ toolName: "grep", input: { pattern: "x" } },
+				{ toolName: "read_file", input: { path: "a.ts" } },
+			]),
+			makeStep([
+				{ toolName: "grep", input: { pattern: "x" } },
+				{ toolName: "read_file", input: { path: "b.ts" } },
+			]),
+			makeStep([
+				{ toolName: "grep", input: { pattern: "x" } },
+			]),
+		];
+		const result = detectRepeatedCalls(steps);
+		expect(result).not.toBeNull();
+		expect(result!.toolName).toBe("grep");
+		expect(result!.count).toBe(3);
+	});
+
+	it("handles missing input gracefully", () => {
+		const steps = [
+			makeStep([{ toolName: "done" }]),
+			makeStep([{ toolName: "done" }]),
+			makeStep([{ toolName: "done" }]),
+		];
+		const result = detectRepeatedCalls(steps);
+		expect(result).not.toBeNull();
+		expect(result!.toolName).toBe("done");
 	});
 });

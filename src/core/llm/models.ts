@@ -346,6 +346,7 @@ export async function fetchGroupedModels(providerId: string): Promise<GroupedMod
   if (providerId === "vercel_gateway") return fetchVercelGatewayGrouped();
   if (providerId === "llmgateway") return fetchLLMGatewayGrouped();
   if (providerId === "proxy") return fetchProxyGrouped();
+  if (providerId === "openrouter") return fetchOpenRouterGrouped();
 
   return {
     subProviders: [],
@@ -463,6 +464,57 @@ async function fetchLLMGatewayGrouped(): Promise<GroupedModelsResult> {
   } catch (err) {
     const msg = toErrorMessage(err);
     return { ...groupFallbackModels("llmgateway"), error: `LLM Gateway: ${msg}` };
+  }
+}
+
+async function fetchOpenRouterGrouped(): Promise<GroupedModelsResult> {
+  const apiKey = getProviderApiKey("OPENROUTER_API_KEY");
+  if (!apiKey) {
+    return groupFallbackModels("openrouter");
+  }
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) {
+      return {
+        ...groupFallbackModels("openrouter"),
+        error: `OpenRouter error: ${String(res.status)}`,
+      };
+    }
+
+    const data = (await res.json()) as { data: OpenRouterModel[] };
+    // Cache for context-window lookups
+    openRouterCache = data.data;
+
+    const grouped: Record<string, ProviderModelInfo[]> = {};
+
+    for (const m of data.data) {
+      // model IDs are "provider/model-name"
+      const slashIdx = m.id.indexOf("/");
+      const group = slashIdx >= 0 ? m.id.slice(0, slashIdx).toLowerCase() : "other";
+      if (!grouped[group]) grouped[group] = [];
+      grouped[group].push({
+        id: m.id,
+        name: m.name.replace(/^[^:]+:\s*/, ""),
+        contextWindow: m.context_length,
+      });
+    }
+
+    const subProviders: SubProvider[] = Object.keys(grouped)
+      .sort()
+      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
+
+    const result: GroupedModelsResult = {
+      subProviders,
+      modelsByProvider: grouped,
+    };
+    groupedCache.set("openrouter", { result, ts: Date.now() });
+    return result;
+  } catch (err) {
+    const msg = toErrorMessage(err);
+    return { ...groupFallbackModels("openrouter"), error: `OpenRouter: ${msg}` };
   }
 }
 

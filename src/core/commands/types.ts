@@ -41,7 +41,6 @@ export interface CommandContext {
   verbose: boolean;
   diffStyle: "default" | "sidebyside" | "compact";
   compactionStrategy: CompactionStrategy;
-  disablePruning: boolean;
   showReasoning: boolean;
   setShowReasoning: (v: boolean) => void;
   openSetup: () => void;

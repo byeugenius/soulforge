@@ -4,7 +4,9 @@ This guide walks you through setting up SoulForge for the first time. For a quic
 
 ## Prerequisites
 
-### Bun
+> If you're using the **prebuilt binary** or **Homebrew**, skip to [Neovim](#neovim) — Bun is not required.
+
+### Bun (npm/source installs only)
 
 SoulForge runs on [Bun](https://bun.sh), not Node.js.
 
@@ -33,7 +35,7 @@ sudo apt install neovim
 sudo pacman -S neovim
 ```
 
-Verify: `nvim --version` (need >= 0.9)
+Verify: `nvim --version` (need >= 0.11)
 
 ### A Nerd Font
 
@@ -70,22 +72,58 @@ export AI_GATEWAY_API_KEY=...
 
 Or use the built-in **Proxy provider** to relay through a local CLIProxyAPI instance (no API key needed — uses your Claude web session). Set up with `/proxy install` and `/proxy login` after launching SoulForge.
 
-## Install & Run
+## Install
+
+### Option 1: Prebuilt binary (recommended)
+
+Download the standalone binary — no runtime dependencies:
 
 ```bash
-git clone https://github.com/proxysoul/soulforge
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
+sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
+
+# macOS (Intel)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
+sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
+
+# Linux (x64)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
+sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
+```
+
+### Option 2: Homebrew
+
+```bash
+brew tap proxysoul/tap
+brew install soulforge
+```
+
+### Option 3: npm / Bun
+
+Requires [Bun](https://bun.sh) >= 1.0.
+
+```bash
+# Configure GitHub Packages (one-time)
+echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install
+bun install -g @proxysoul/soulforge
+```
+
+### Option 4: Build from source
+
+```bash
+git clone https://github.com/ProxySoul/soulforge.git
 cd soulforge
 bun install
-bun run dev
+bun run dev          # development mode
+# or: bun run build && bun link   # install globally
 ```
 
-On first run, SoulForge creates a config at `~/.soulforge/config.json` with sensible defaults.
+### First run
 
-To install globally so you can run `soulforge` or `sf` from anywhere:
-
-```bash
-bun link
-```
+On first launch, SoulForge creates a config at `~/.soulforge/config.json` with sensible defaults. It will check for Neovim and Nerd Fonts and offer to install them if missing.
 
 ## The Interface
 

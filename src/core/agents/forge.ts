@@ -346,6 +346,39 @@ function buildForgePrepareStep(
           );
         }
       }
+
+      // Degenerate loop detection: identical tool calls repeated in recent messages
+      const LOOP_THRESHOLD = 3;
+      const LOOP_WINDOW = 16;
+      const callCounts = new Map<string, { toolName: string; count: number }>();
+      const startIdx = Math.max(0, messages.length - LOOP_WINDOW);
+      for (let i = startIdx; i < messages.length; i++) {
+        const m = messages[i];
+        if (m?.role !== "assistant" || !Array.isArray(m.content)) continue;
+        for (const part of m.content) {
+          if (typeof part !== "object" || part === null || !("type" in part)) continue;
+          const p = part as { type: string; toolName?: string; input?: unknown };
+          if (p.type !== "tool-call" || !p.toolName) continue;
+          let argStr: string;
+          try {
+            argStr = JSON.stringify(p.input ?? {});
+          } catch {
+            argStr = "{}";
+          }
+          const sig = `${p.toolName}::${argStr}`;
+          const entry = callCounts.get(sig);
+          if (entry) entry.count++;
+          else callCounts.set(sig, { toolName: p.toolName, count: 1 });
+        }
+      }
+      for (const [, entry] of callCounts) {
+        if (entry.count >= LOOP_THRESHOLD) {
+          appendSystemHint(
+            `🔁 LOOP DETECTED: ${entry.toolName} called ${String(entry.count)} times with identical arguments. Results have not changed. Do NOT call it again. Act on the results you already have or try a different approach.`,
+          );
+          break;
+        }
+      }
     }
 
     // Inject task list so it survives compaction and is always visible

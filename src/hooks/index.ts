@@ -1,3 +1,4 @@
+export { useAllProviderModels } from "./useAllProviderModels.js";
 export { useAnimatedNumber } from "./useAnimatedNumber.js";
 export type { ChatInstance, TabState, UseChatOptions } from "./useChat.js";
 export { useChat } from "./useChat.js";

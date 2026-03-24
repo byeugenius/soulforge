@@ -167,6 +167,6 @@ If only one task is dispatched, the system skips bus coordination overhead and r
 | Edit safety | Promise-chaining mutex | Worktree isolation | N/A |
 | Cache persistence | Between dispatches | Per-session | N/A |
 
-**SoulForge's advantage**: Shared cache eliminates duplicate reads across parallel agents. In a typical 3-agent dispatch touching 15 files, the cache saves 40-60% of file read tokens.
+**SoulForge's advantage**: Shared cache eliminates duplicate disk reads across parallel agents. In a typical 3-agent dispatch touching 15 files, the cache serves 40-60% of file read requests from memory instead of disk. Each agent still receives the full content in its context window — the savings are I/O latency, not tokens.
 
 **Claude Code's advantage**: Worktree isolation is inherently safer — no mutex needed, no possibility of edit conflicts. Better for large-scale parallel refactoring where agents touch many overlapping files.

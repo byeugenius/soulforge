@@ -8,12 +8,16 @@ import { useRepoMapStore } from "../../stores/repomap.js";
 import { SPINNER_FRAMES } from "./shared.js";
 
 const PURPLE = "#9B30FF";
+const PURPLE_DIM = "#6B20B0";
+const PURPLE_GLOW = "#BF5FFF";
 const RED = "#FF0040";
-const FAINT = "#222";
+const FAINT = "#1a1a2e";
 const MUTED = "#555";
 const SUBTLE = "#444";
 const GREEN = "#4a7";
 const AMBER = "#b87333";
+
+const GLOW_CYCLE = [PURPLE_DIM, PURPLE, PURPLE_GLOW, PURPLE, PURPLE_DIM];
 
 const WORDMARK = [
   "┌─┐┌─┐┬ ┬┬  ┌─┐┌─┐┬─┐┌─┐┌─┐",
@@ -35,9 +39,21 @@ function lerpHex(a: string, b: string, t: number): string {
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
 }
 
-function GradientLine({ text, from, to }: { text: string; from: string; to: string }) {
+/** Animated gradient line with optional reveal (chars appear left-to-right). */
+function GradientLine({
+  text,
+  from,
+  to,
+  revealedChars,
+}: {
+  text: string;
+  from: string;
+  to: string;
+  revealedChars?: number;
+}) {
   const len = text.length;
   if (len === 0) return null;
+  const reveal = revealedChars ?? len;
 
   const segments: { chars: string; color: string }[] = [];
   const CHUNK = 4;
@@ -45,8 +61,16 @@ function GradientLine({ text, from, to }: { text: string; from: string; to: stri
   for (let i = 0; i < len; i += CHUNK) {
     const slice = text.slice(i, i + CHUNK);
     const t = len > 1 ? i / (len - 1) : 0;
-    const color = lerpHex(from, to, t);
-    segments.push({ chars: slice, color });
+    if (i >= reveal) {
+      segments.push({ chars: slice.replace(/[^ ]/g, " "), color: FAINT });
+    } else if (i + CHUNK > reveal) {
+      const visCount = reveal - i;
+      const vis = slice.slice(0, visCount);
+      const hid = slice.slice(visCount).replace(/[^ ]/g, " ");
+      segments.push({ chars: vis + hid, color: lerpHex(from, to, t) });
+    } else {
+      segments.push({ chars: slice, color: lerpHex(from, to, t) });
+    }
   }
 
   return (
@@ -55,6 +79,39 @@ function GradientLine({ text, from, to }: { text: string; from: string; to: stri
         // biome-ignore lint/suspicious/noArrayIndexKey: stable gradient segments
         <text key={i} fg={seg.color} attributes={TextAttributes.BOLD}>
           {seg.chars}
+        </text>
+      ))}
+    </box>
+  );
+}
+
+/** Animated divider — a bright cursor sweeps across a dim line. */
+function ScanDivider({ width: w, speed = 120 }: { width: number; speed?: number }) {
+  const [pos, setPos] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setPos((p) => (p + 1) % (w + 6)), speed);
+    return () => clearInterval(timer);
+  }, [w, speed]);
+
+  const chars = useMemo(() => {
+    const out: { ch: string; color: string }[] = [];
+    for (let i = 0; i < w; i++) {
+      const dist = Math.abs(i - pos);
+      if (dist === 0) out.push({ ch: "━", color: PURPLE_GLOW });
+      else if (dist === 1) out.push({ ch: "─", color: PURPLE });
+      else if (dist === 2) out.push({ ch: "─", color: PURPLE_DIM });
+      else out.push({ ch: "─", color: FAINT });
+    }
+    return out;
+  }, [pos, w]);
+
+  return (
+    <box flexDirection="row">
+      {chars.map((c, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional divider chars
+        <text key={i} fg={c.color}>
+          {c.ch}
         </text>
       ))}
     </box>
@@ -75,6 +132,43 @@ export function LandingPage({ bootProviders, bootPrereqs }: LandingPageProps) {
 
   const showWordmark = columns >= 35;
   const wordmarkW = showWordmark ? (WORDMARK[0]?.length ?? 0) : 0;
+
+  /* ── reveal animation ── */
+  const totalChars = WORDMARK[0]?.length ?? 0;
+  const [revealed, setRevealed] = useState(0);
+  const revealDone = revealed >= totalChars;
+
+  useEffect(() => {
+    if (revealDone) return;
+    const timer = setInterval(() => {
+      setRevealed((r) => {
+        const next = r + 2;
+        if (next >= totalChars) {
+          clearInterval(timer);
+          return totalChars;
+        }
+        return next;
+      });
+    }, 25);
+    return () => clearInterval(timer);
+  }, [totalChars, revealDone]);
+
+  /* ── ghost pulse ── */
+  const [glowIdx, setGlowIdx] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setGlowIdx((g) => (g + 1) % GLOW_CYCLE.length), 400);
+    return () => clearInterval(timer);
+  }, []);
+  const ghostColor = GLOW_CYCLE[glowIdx] ?? PURPLE;
+
+  /* ── staggered fade-in after reveal ── */
+  const [fadeStep, setFadeStep] = useState(0);
+  useEffect(() => {
+    if (fadeStep >= 3) return;
+    if (!revealDone) return;
+    const timer = setTimeout(() => setFadeStep((s) => s + 1), 120);
+    return () => clearTimeout(timer);
+  }, [fadeStep, revealDone]);
 
   const activeProviders = useMemo(() => bootProviders.filter((p) => p.available), [bootProviders]);
   const inactiveProviders = useMemo(
@@ -103,83 +197,109 @@ export function LandingPage({ bootProviders, bootPrereqs }: LandingPageProps) {
   return (
     <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} justifyContent="center">
       <box flexDirection="column" alignItems="center" gap={0}>
-        <text fg={PURPLE} attributes={TextAttributes.BOLD}>
+        {/* ── Ghost icon with pulse glow ── */}
+        <text fg={ghostColor} attributes={TextAttributes.BOLD}>
           {icon("ghost")}
         </text>
 
         <box height={compact ? 0 : 1} />
 
+        {/* ── Wordmark with scan reveal ── */}
         {showWordmark ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: stable wordmark rows
-          WORDMARK.map((line, i) => <GradientLine key={i} text={line} from={PURPLE} to={RED} />)
+          WORDMARK.map((line, i) => (
+            <GradientLine
+              // biome-ignore lint/suspicious/noArrayIndexKey: stable wordmark rows
+              key={i}
+              text={line}
+              from={PURPLE}
+              to={RED}
+              revealedChars={revealed}
+            />
+          ))
         ) : (
           <text fg={PURPLE} attributes={TextAttributes.BOLD}>
             SOULFORGE
           </text>
         )}
 
-        <box flexDirection="row" gap={0}>
-          <text fg={SUBTLE}>{"── "}</text>
-          <text fg={MUTED} attributes={TextAttributes.ITALIC}>
-            AI-Powered Terminal IDE
-          </text>
-          <text fg={SUBTLE}>{" ──"}</text>
-        </box>
-
-        <box height={compact ? 0 : 1} />
-        <text fg={FAINT}>{"─".repeat(divW)}</text>
-        <box height={compact ? 0 : 1} />
-
-        <box flexDirection="row" gap={0} justifyContent="center" flexWrap="wrap">
-          {visibleProviders.map((p, i) => (
-            <box key={p.id} flexDirection="row" gap={0}>
-              {i > 0 && <text fg={FAINT}>{" · "}</text>}
-              <text fg={p.available ? GREEN : SUBTLE}>
-                {providerIcon(p.id)} {p.name}
-              </text>
-            </box>
-          ))}
-          {providerOverflow > 0 && (
-            <>
-              <text fg={FAINT}>{" · "}</text>
-              <text fg={SUBTLE}>+{providerOverflow}</text>
-            </>
-          )}
-        </box>
-
-        <box flexDirection="row" gap={0} justifyContent="center">
-          {allToolsOk ? (
-            <text fg={MUTED}>{icon("check")} all tools ready</text>
-          ) : (
-            bootPrereqs.map((t, i) => (
-              <box key={t.prerequisite.name} flexDirection="row" gap={0}>
-                {i > 0 && <text fg={FAINT}>{" · "}</text>}
-                <text fg={t.installed ? GREEN : t.prerequisite.required ? RED : "#FF8C00"}>
-                  {t.installed ? icon("check") : "○"} {t.prerequisite.name}
-                </text>
-              </box>
-            ))
-          )}
-        </box>
-
-        <IndexingStatus />
-
-        {(missingRequired.length > 0 || !anyProvider) && (
-          <text fg={SUBTLE}>/setup to configure</text>
+        {/* ── Tagline (appears after reveal) ── */}
+        {revealDone && (
+          <box flexDirection="row" gap={0}>
+            <text fg={SUBTLE}>{"── "}</text>
+            <text fg={MUTED} attributes={TextAttributes.ITALIC}>
+              AI-Powered Terminal IDE
+            </text>
+            <text fg={SUBTLE}>{" ──"}</text>
+          </box>
         )}
 
         <box height={compact ? 0 : 1} />
-        <text fg={FAINT}>{"─".repeat(divW)}</text>
-        {!compact && <box height={1} />}
 
-        <box flexDirection="row" gap={1} justifyContent="center" flexWrap="wrap">
-          <Cmd name="help" />
-          <Cmd name="open" arg="<file>" />
-          <Cmd name="editor" />
-          <Cmd name="skills" />
-          <Cmd name="setup" />
-          <Cmd name="models" />
-        </box>
+        {/* ── Animated scan divider ── */}
+        <ScanDivider width={divW} />
+
+        {/* ── Status section (staggered fade-in) ── */}
+        {fadeStep >= 1 && (
+          <>
+            <box height={compact ? 0 : 1} />
+
+            <box flexDirection="row" gap={0} justifyContent="center" flexWrap="wrap">
+              {visibleProviders.map((p, i) => (
+                <box key={p.id} flexDirection="row" gap={0}>
+                  {i > 0 && <text fg={FAINT}>{" · "}</text>}
+                  <text fg={p.available ? GREEN : SUBTLE}>
+                    {providerIcon(p.id)} {p.name}
+                  </text>
+                </box>
+              ))}
+              {providerOverflow > 0 && (
+                <>
+                  <text fg={FAINT}>{" · "}</text>
+                  <text fg={SUBTLE}>+{providerOverflow}</text>
+                </>
+              )}
+            </box>
+
+            <box flexDirection="row" gap={0} justifyContent="center">
+              {allToolsOk ? (
+                <text fg={MUTED}>{icon("check")} all tools ready</text>
+              ) : (
+                bootPrereqs.map((t, i) => (
+                  <box key={t.prerequisite.name} flexDirection="row" gap={0}>
+                    {i > 0 && <text fg={FAINT}>{" · "}</text>}
+                    <text fg={t.installed ? GREEN : t.prerequisite.required ? RED : "#FF8C00"}>
+                      {t.installed ? icon("check") : "○"} {t.prerequisite.name}
+                    </text>
+                  </box>
+                ))
+              )}
+            </box>
+
+            <IndexingStatus />
+
+            {(missingRequired.length > 0 || !anyProvider) && (
+              <text fg={SUBTLE}>/setup to configure</text>
+            )}
+          </>
+        )}
+
+        {/* ── Commands section (last to appear) ── */}
+        {fadeStep >= 2 && (
+          <>
+            <box height={compact ? 0 : 1} />
+            {/* <ScanDivider width={divW} speed={100} /> */}
+            {!compact && <box height={1} />}
+
+            <box flexDirection="row" gap={1} justifyContent="center" flexWrap="wrap">
+              <Cmd name="help" />
+              <Cmd name="open" arg="<file>" />
+              <Cmd name="editor" />
+              <Cmd name="skills" />
+              <Cmd name="setup" />
+              <Cmd name="models" />
+            </box>
+          </>
+        )}
 
         <box height={compact ? 0 : 1} />
       </box>
@@ -261,7 +381,7 @@ function IndexingStatus() {
 function Cmd({ name, arg }: { name: string; arg?: string }) {
   return (
     <box flexDirection="row" gap={0}>
-      <text fg={RED}>/</text>
+      <text fg={PURPLE}>/</text>
       <text fg="#777">{name}</text>
       {arg && <text fg={SUBTLE}> {arg}</text>}
     </box>

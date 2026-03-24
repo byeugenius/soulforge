@@ -166,14 +166,7 @@ export function StatusDashboard({
   }, [visible, initialTab]);
 
   const modelId = chat?.activeModel ?? "none";
-  const tu = chat?.tokenUsage ?? {
-    prompt: 0,
-    completion: 0,
-    total: 0,
-    cacheRead: 0,
-    subagentInput: 0,
-    subagentOutput: 0,
-  };
+  const tu = sb.tokenUsage;
 
   const contextLines = useMemo(() => {
     const breakdown = contextManager.getContextBreakdown();
@@ -232,36 +225,99 @@ export function StatusDashboard({
     }
 
     lines.push(<SectionHeader key="h-tok" label="Token Usage (session)" innerW={innerW} />);
-    lines.push(
-      <EntryRow
-        key="t-in"
-        label="  Input"
-        value={fmtTokens(tu.prompt)}
-        valueColor="#2d9bf0"
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow
-        key="t-out"
-        label="  Output"
-        value={fmtTokens(tu.completion)}
-        valueColor="#e0a020"
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow key="t-total" label="  Total" value={fmtTokens(tu.total)} innerW={innerW} />,
-    );
-    if (tu.subagentInput > 0 || tu.subagentOutput > 0) {
+    {
+      const totalInput = tu.prompt + tu.subagentInput;
+      const totalOutput = tu.completion + tu.subagentOutput;
+      const hasSub = tu.subagentInput > 0 || tu.subagentOutput > 0;
+      const cachePct =
+        totalInput > 0 ? Math.min(100, Math.round((tu.cacheRead / totalInput) * 100)) : 0;
+      const uncached = Math.max(0, totalInput - tu.cacheRead);
+
       lines.push(
         <EntryRow
-          key="t-sub"
-          label="  Dispatch"
-          value={`${fmtTokens(tu.subagentInput)}↑ ${fmtTokens(tu.subagentOutput)}↓`}
-          valueColor="#9B30FF"
+          key="t-in"
+          label="  Input"
+          value={fmtTokens(totalInput)}
+          valueColor="#2d9bf0"
           innerW={innerW}
         />,
+      );
+      if (hasSub) {
+        lines.push(
+          <EntryRow
+            key="t-in-main"
+            label="    Main"
+            value={fmtTokens(tu.prompt)}
+            valueColor="#5a8abf"
+            innerW={innerW}
+          />,
+        );
+        lines.push(
+          <EntryRow
+            key="t-in-sub"
+            label="    Dispatch"
+            value={fmtTokens(tu.subagentInput)}
+            valueColor="#9B30FF"
+            innerW={innerW}
+          />,
+        );
+      }
+
+      lines.push(
+        <EntryRow
+          key="t-out"
+          label="  Output"
+          value={fmtTokens(totalOutput)}
+          valueColor="#e0a020"
+          innerW={innerW}
+        />,
+      );
+      if (hasSub) {
+        lines.push(
+          <EntryRow
+            key="t-out-main"
+            label="    Main"
+            value={fmtTokens(tu.completion)}
+            valueColor="#b89030"
+            innerW={innerW}
+          />,
+        );
+        lines.push(
+          <EntryRow
+            key="t-out-sub"
+            label="    Dispatch"
+            value={fmtTokens(tu.subagentOutput)}
+            valueColor="#9B30FF"
+            innerW={innerW}
+          />,
+        );
+      }
+
+      lines.push(
+        <BarRow
+          key="t-cache"
+          label="  Cache Read"
+          pct={cachePct}
+          desc={tu.cacheRead > 0 ? `${fmtTokens(tu.cacheRead)} (${String(cachePct)}%)` : "—"}
+          barColor={tu.cacheRead > 0 ? "#2d5" : "#333"}
+          descColor={tu.cacheRead > 0 ? "#2d5" : "#444"}
+          innerW={innerW}
+        />,
+      );
+      if (tu.cacheRead > 0) {
+        lines.push(
+          <EntryRow
+            key="t-uncached"
+            label="    Uncached"
+            value={fmtTokens(uncached)}
+            valueColor="#888"
+            innerW={innerW}
+          />,
+        );
+      }
+
+      lines.push(
+        <EntryRow key="t-total" label="  Total" value={fmtTokens(tu.total)} innerW={innerW} />,
       );
     }
 
@@ -282,7 +338,7 @@ export function StatusDashboard({
         const c = tabMgr.getChat(t.id);
         const u = c?.tokenUsage ?? { prompt: 0, completion: 0, total: 0 };
         grandTotal += u.total;
-        const isActive = u === tu;
+        const isActive = t.id === tabMgr.activeTabId;
         lines.push(
           <EntryRow
             key={`tab-${t.id}`}
@@ -303,43 +359,6 @@ export function StatusDashboard({
       );
     }
 
-    if (tu.cacheRead > 0) {
-      const cachePct = tu.prompt > 0 ? Math.round((tu.cacheRead / tu.prompt) * 100) : 0;
-      lines.push(<Spacer key="s4" innerW={innerW} />);
-      lines.push(
-        <SectionHeader key="h-cache" label={`${icon("lightning")} Cache`} innerW={innerW} />,
-      );
-      lines.push(
-        <BarRow
-          key="cache-bar"
-          label="  Hit Rate"
-          pct={cachePct}
-          desc={`${String(cachePct)}%`}
-          barColor="#2d5"
-          descColor="#2d5"
-          innerW={innerW}
-        />,
-      );
-      lines.push(
-        <EntryRow
-          key="cache-hit"
-          label="  Cached"
-          value={`${fmtTokens(tu.cacheRead)} tokens`}
-          valueColor="#2d5"
-          innerW={innerW}
-        />,
-      );
-      lines.push(
-        <EntryRow
-          key="cache-new"
-          label="  New Input"
-          value={`${fmtTokens(tu.prompt - tu.cacheRead)} tokens`}
-          valueColor="#888"
-          innerW={innerW}
-        />,
-      );
-    }
-
     return lines;
   }, [
     contextManager,
@@ -354,86 +373,12 @@ export function StatusDashboard({
   ]);
 
   const systemLines = useMemo(() => {
-    const ctxWindow = sb.contextWindow > 0 ? sb.contextWindow : getModelContextInfo(modelId).tokens;
-    const usedTokens =
-      sb.contextTokens > 0 ? sb.contextTokens : Math.ceil((sb.chatChars + sb.subagentChars) / 4);
-    const ctxPct = ctxWindow > 0 ? Math.min(100, Math.round((usedTokens / ctxWindow) * 100)) : 0;
-    const ctxColor =
-      ctxPct < 50 ? "#4a7" : ctxPct < 70 ? "#b87333" : ctxPct < 85 ? "#FF8C00" : "#f44";
     const lspStatus = getIntelligenceStatus();
     const lspCount = lspStatus?.lspServers.length ?? 0;
     const rssMB = sb.rssMB;
     const memColor = rssMB < 2048 ? "#4a7" : rssMB < 4096 ? "#b87333" : "#f44";
 
     const lines: React.ReactNode[] = [];
-
-    lines.push(<SectionHeader key="h-ctx" label="Context" innerW={innerW} />);
-    lines.push(
-      <BarRow
-        key="ctx-bar"
-        label="  Usage"
-        pct={ctxPct}
-        desc={`${String(ctxPct)}%`}
-        barColor={ctxColor}
-        descColor={ctxColor}
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow key="ctx-win" label="  Window" value={fmtTokens(ctxWindow)} innerW={innerW} />,
-    );
-    lines.push(
-      <EntryRow
-        key="ctx-comp"
-        label="  Compaction"
-        value={sb.compacting ? "active" : sb.compactionStrategy}
-        valueColor={sb.compacting ? "#5af" : "#666"}
-        innerW={innerW}
-      />,
-    );
-    lines.push(<Spacer key="s1" innerW={innerW} />);
-
-    lines.push(<SectionHeader key="h-tok" label="Tokens (session)" innerW={innerW} />);
-    lines.push(
-      <EntryRow
-        key="t-in"
-        label="  Input"
-        value={fmtTokens(sb.tokenUsage.prompt)}
-        valueColor="#2d9bf0"
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow
-        key="t-out"
-        label="  Output"
-        value={fmtTokens(sb.tokenUsage.completion)}
-        valueColor="#e0a020"
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow
-        key="t-cache"
-        label="  Cache Read"
-        value={fmtTokens(sb.tokenUsage.cacheRead)}
-        valueColor={sb.tokenUsage.cacheRead > 0 ? "#4a7" : "#666"}
-        innerW={innerW}
-      />,
-    );
-    const subTotal = sb.tokenUsage.subagentInput + sb.tokenUsage.subagentOutput;
-    if (subTotal > 0) {
-      lines.push(
-        <EntryRow
-          key="t-sub"
-          label="  Subagents"
-          value={fmtTokens(subTotal)}
-          valueColor="#9B30FF"
-          innerW={innerW}
-        />,
-      );
-    }
-    lines.push(<Spacer key="s2" innerW={innerW} />);
 
     lines.push(<SectionHeader key="h-map" label="Soul Map" innerW={innerW} />);
     const rmStatusColor =
@@ -506,14 +451,6 @@ export function StatusDashboard({
     );
     lines.push(
       <EntryRow
-        key="sys-model"
-        label="  Model"
-        value={getShortModelLabel(modelId)}
-        innerW={innerW}
-      />,
-    );
-    lines.push(
-      <EntryRow
         key="sys-mode"
         label="  Mode"
         value={currentModeLabel}
@@ -523,7 +460,7 @@ export function StatusDashboard({
     );
 
     return lines;
-  }, [sb, rm, modelId, currentMode, currentModeLabel, innerW]);
+  }, [sb, rm, currentMode, currentModeLabel, innerW]);
 
   const activeLines = tab === "Context" ? contextLines : systemLines;
   const clampedScroll = Math.min(scrollOffset, Math.max(0, activeLines.length - maxVisible));

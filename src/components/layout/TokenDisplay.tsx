@@ -39,16 +39,28 @@ function usageEqual(a: TokenUsage, b: TokenUsage): boolean {
   );
 }
 
+const CACHE_BAR_W = 6;
+
 function buildContent(u: TokenUsage): StyledText {
-  const uncachedInput = Math.max(0, u.prompt - u.cacheRead);
+  const totalInput = u.prompt + u.subagentInput;
+  const totalOutput = u.completion + u.subagentOutput;
   const chunks = [
-    fgStyle("#2d9bf0")(fmt(uncachedInput)),
+    fgStyle("#2d9bf0")(fmt(totalInput)),
     fgStyle("#444")("↑ "),
-    fgStyle("#e0a020")(fmt(u.completion)),
-    fgStyle("#444")("↓ "),
+    fgStyle("#e0a020")(fmt(totalOutput)),
+    fgStyle("#444")("↓"),
   ];
   if (u.cacheRead > 0) {
-    chunks.push(fgStyle("#4a7")(` ${fmt(u.cacheRead)} cached`));
+    const cachePct =
+      totalInput > 0 ? Math.min(100, Math.round((u.cacheRead / totalInput) * 100)) : 0;
+    const filled = Math.round((cachePct / 100) * CACHE_BAR_W);
+    chunks.push(
+      fgStyle("#444")(" ["),
+      fgStyle("#2d5")("▰".repeat(filled)),
+      fgStyle("#222")("▱".repeat(CACHE_BAR_W - filled)),
+      fgStyle("#444")("]"),
+      fgStyle("#2d5")(` ${fmt(u.cacheRead)} cached`),
+    );
   }
   const sub = u.subagentInput + u.subagentOutput;
   if (sub > 0) {

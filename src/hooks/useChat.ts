@@ -512,6 +512,11 @@ export function useChat({
     if (visible) useStatusBarStore.getState().setContext(contextTokens, chatChars);
   }, [contextTokens, chatChars, visible]);
 
+  // Sync tokenUsage to statusbar store when this tab becomes visible (tab switch)
+  useEffect(() => {
+    if (visible) useStatusBarStore.getState().setTokenUsage(tokenUsageRef.current);
+  }, [visible]);
+
   const coreMessagesRef = useRef(coreMessages);
   coreMessagesRef.current = coreMessages;
   const activeModelRef = useRef(activeModel);
@@ -1255,7 +1260,10 @@ export function useChat({
       const finalSegments: MessageSegment[] = [];
 
       // Track subagent token usage and aggregate into the main total
-      const subagentCumulative = new Map<string, { input: number; output: number }>();
+      const subagentCumulative = new Map<
+        string,
+        { input: number; output: number; cache: number }
+      >();
       const completedResultChars = new Map<string, number>();
 
       // All values in chars for consistent units with ContextBar (divides by CHARS_PER_TOKEN)
@@ -1269,20 +1277,23 @@ export function useChat({
       };
 
       const unsubAgentStats = onAgentStats((event) => {
-        const prev = subagentCumulative.get(event.agentId) ?? { input: 0, output: 0 };
+        const prev = subagentCumulative.get(event.agentId) ?? { input: 0, output: 0, cache: 0 };
         const deltaIn = event.tokenUsage.input - prev.input;
         const deltaOut = event.tokenUsage.output - prev.output;
+        const deltaCache = (event.cacheHits ?? 0) - prev.cache;
         subagentCumulative.set(event.agentId, {
           input: event.tokenUsage.input,
           output: event.tokenUsage.output,
+          cache: event.cacheHits ?? 0,
         });
-        if (deltaIn > 0 || deltaOut > 0) {
+        if (deltaIn > 0 || deltaOut > 0 || deltaCache > 0) {
           const base = baseTokenUsageRef.current;
           const newUsage: TokenUsage = {
             ...base,
             total: base.total + deltaIn + deltaOut,
             subagentInput: base.subagentInput + deltaIn,
             subagentOutput: base.subagentOutput + deltaOut,
+            cacheRead: base.cacheRead + (deltaCache > 0 ? deltaCache : 0),
           };
           pendingTokenUsage.current = newUsage;
           baseTokenUsageRef.current = newUsage;

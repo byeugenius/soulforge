@@ -148,7 +148,7 @@ LSP-backed navigation. Returns locations with surrounding context lines. The age
 
 ## Benchmark Results
 
-Measured on `rename_symbol` (renaming an exported class across 8 files):
+Single representative run on `rename_symbol` (renaming an exported class across 8 files). Results vary by model, codebase size, and symbol complexity:
 
 | Metric | Before (manual) | After (compound) | Improvement |
 |--------|-----------------|-------------------|-------------|

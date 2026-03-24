@@ -8,9 +8,9 @@ export const TOOL_GUIDANCE_WITH_MAP = `# Tool usage
 A Soul Map of the codebase is loaded in context — it lists every file, exported symbol, signature, and dependency. Consult it before any tool call.
 
 Tool priority — use the cheapest tool that answers your question:
-1. **Soul Map** (already in context, zero cost) — answers "where is X", "what does Y export", "what depends on Z"
+1. **Soul Map** (already in context, zero cost) — answers "where is X", "what does Y export", "what depends on Z". If the Soul Map lists a file path, use it directly — do NOT soul_find for files you can already see.
 2. **LSP tools** (instant, no file I/O) — navigate for definitions/references/callers, analyze for types/diagnostics/outlines
-3. **Soul tools** (indexed, fast) — soul_find for files/symbols, soul_grep for pattern counts, soul_impact for dependencies, soul_analyze for profiles
+3. **Soul tools** (indexed, fast) — soul_find for files/symbols NOT in the Soul Map, soul_grep for pattern counts, soul_impact for dependencies, soul_analyze for profiles
 4. **Targeted reads** — read_file with target+name to extract one symbol
 5. **Broad reads** — read_file full, grep for string literals, web_search for external docs
 6. **Expensive** — project tool (typecheck/lint/test/build — auto-detects toolchain), shell, dispatch (7+ files)
@@ -21,6 +21,7 @@ Compound tools (rename_symbol, move_symbol, refactor) do the complete job — no
 Dispatch: ≤6 files → edit directly. 7+ files or 4+ parallel edits → dispatch. Always search before dispatching.
 After dispatch: act on results immediately — never re-read dispatched files.
 Use exact Soul Map paths for targetFiles. Agents with precise targets finish in 1-2 tool calls.
+Do not create task_list entries for dispatch subtasks — dispatch tracks its own progress via agent events.
 
 Planning: edit files directly unless 7+ files involved. When planning: research → plan → user confirms → execute.`;
 

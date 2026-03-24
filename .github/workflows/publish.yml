@@ -50,6 +50,100 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  update-homebrew:
+    runs-on: ubuntu-latest
+    needs: binaries
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SHA256 checksums
+        id: sha
+        run: |
+          BASE="https://github.com/ProxySoul/soulforge/releases/download/${{ github.event.release.tag_name }}"
+
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            SHA=$(curl -fsSL "${BASE}/soulforge-${platform}.tar.gz" | sha256sum | awk '{print $1}')
+            KEY=$(echo "$platform" | tr '-' '_')
+            echo "${KEY}=${SHA}" >> "$GITHUB_OUTPUT"
+            echo "  ${platform}: ${SHA}"
+          done
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v5
+        with:
+          repository: ProxySoul/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Generate formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA_DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
+          SHA_DARWIN_X64: ${{ steps.sha.outputs.darwin_x64 }}
+          SHA_LINUX_X64: ${{ steps.sha.outputs.linux_x64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+        run: |
+          mkdir -p homebrew-tap/Formula
+          # Single heredoc — bash expands ${VAR} but leaves #{var} (Ruby) alone
+          cat > homebrew-tap/Formula/soulforge.rb << FORMULA
+          # typed: false
+          # frozen_string_literal: true
+
+          class Soulforge < Formula
+            desc "AI-Powered Terminal IDE"
+            homepage "https://github.com/ProxySoul/soulforge"
+            version "${VERSION}"
+            license "BUSL-1.1"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/ProxySoul/soulforge/releases/download/v#{version}/soulforge-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              if Hardware::CPU.intel?
+                url "https://github.com/ProxySoul/soulforge/releases/download/v#{version}/soulforge-darwin-x64.tar.gz"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+                url "https://github.com/ProxySoul/soulforge/releases/download/v#{version}/soulforge-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              if Hardware::CPU.intel?
+                url "https://github.com/ProxySoul/soulforge/releases/download/v#{version}/soulforge-linux-x64.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              Dir["soulforge-*"].each do |f|
+                next unless File.file?(f)
+                mv f, "soulforge"
+              end
+              bin.install "soulforge"
+              bin.install_symlink "soulforge" => "sf"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/soulforge --version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/soulforge.rb
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "soulforge ${{ steps.version.outputs.version }}"
+          git push
+
   github-packages:
     runs-on: ubuntu-latest
     needs: binaries

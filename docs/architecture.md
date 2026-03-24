@@ -34,7 +34,7 @@ User Input
                     ▼                ▼                ▼
              ┌───────────┐   ┌───────────┐   ┌───────────┐
              │   Tools   │   │Intelligence│   │  Neovim   │
-             │ 39 tools │   │  Router    │   │ (msgpack) │
+             │ 31 tools │   │  Router    │   │ (msgpack) │
              └───────────┘   └─────┬─────┘   └───────────┘
                                    │
                         ┌──────────┼──────────┐
@@ -521,7 +521,7 @@ src/
     ├── security/               # Forbidden file patterns
     ├── sessions/               # Session persistence + rebuild
     ├── setup/                  # Prerequisite checks
-    └── tools/                  # All 39 tools
+    └── tools/                  # All 31 tools
         ├── rename-symbol.ts
         ├── move-symbol.ts
         ├── project.ts

@@ -333,7 +333,7 @@ export async function runAgentTask(
         );
       let input = callbacks._acc.input || (result.totalUsage.inputTokens ?? 0);
       let output = callbacks._acc.output || (result.totalUsage.outputTokens ?? 0);
-      const cacheRead =
+      let cacheRead =
         callbacks._acc.cacheRead || (result.totalUsage.inputTokenDetails?.cacheReadTokens ?? 0);
 
       // Synthesize structured result deterministically from tool calls + bus findings.
@@ -450,6 +450,9 @@ export async function runAgentTask(
                 // Accumulate token usage from retry
                 input += retryCallbacks._acc.input || (retryResult.totalUsage?.inputTokens ?? 0);
                 output += retryCallbacks._acc.output || (retryResult.totalUsage?.outputTokens ?? 0);
+                cacheRead +=
+                  retryCallbacks._acc.cacheRead ||
+                  (retryResult.totalUsage?.inputTokenDetails?.cacheReadTokens ?? 0);
                 toolUses +=
                   retryCallbacks._acc.toolUses ||
                   retryResult.steps.reduce(

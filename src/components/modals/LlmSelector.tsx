@@ -1,42 +1,38 @@
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fuzzyMatch } from "../../core/history/fuzzy.js";
 import { icon, providerIcon } from "../../core/icons.js";
 import { PROVIDER_CONFIGS } from "../../core/llm/models.js";
-import {
-  checkProviders,
-  getCachedProviderStatuses,
-  type ProviderStatus,
-} from "../../core/llm/provider.js";
-import { hasSecret, type SecretKey } from "../../core/secrets.js";
-import { useGroupedModels } from "../../hooks/useGroupedModels.js";
-import { usePopupScroll } from "../../hooks/usePopupScroll.js";
-import { useProviderModels } from "../../hooks/useProviderModels.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow, SPINNER_FRAMES_FILLED } from "../layout/shared.js";
+import { useAllProviderModels } from "../../hooks/useAllProviderModels.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupRow, SPINNER_FRAMES } from "../layout/shared.js";
 
-/** Map provider envVar → SecretKey for key-status lookup */
-const ENV_TO_SECRET_KEY: Record<string, SecretKey> = {
-  ANTHROPIC_API_KEY: "anthropic-api-key",
-  OPENAI_API_KEY: "openai-api-key",
-  GOOGLE_GENERATIVE_AI_API_KEY: "google-api-key",
-  XAI_API_KEY: "xai-api-key",
-  OPENROUTER_API_KEY: "openrouter-api-key",
-  LLM_GATEWAY_API_KEY: "llmgateway-api-key",
-  AI_GATEWAY_API_KEY: "vercel-gateway-api-key",
-};
+const MAX_W = 72;
 
-function keyStatus(envVar: string): { color: string; label: string } | null {
-  if (!envVar) return null; // ollama, proxy — no key needed
-  const secretKey = ENV_TO_SECRET_KEY[envVar];
-  if (!secretKey) return null;
-  const info = hasSecret(secretKey);
-  if (!info.set) return { color: "#FF0040", label: "" };
-  if (info.source === "env") return { color: "#00FF00", label: "env" };
-  return { color: "#00FF00", label: "sec" };
+type Entry =
+  | {
+      kind: "header";
+      id: string;
+      name: string;
+      avail: boolean;
+      loading: boolean;
+      count: number;
+    }
+  | {
+      kind: "model";
+      providerId: string;
+      id: string;
+      fullId: string;
+      name: string;
+      ctx?: number;
+      hasDesc: boolean;
+    };
+
+function fmtCtx(n?: number): string {
+  if (!n) return "";
+  if (n >= 1_000_000) return `${String(Math.round(n / 1_000_000))}M`;
+  return `${String(Math.round(n / 1_000))}k`;
 }
-
-const MAX_POPUP_WIDTH = 70;
 
 interface Props {
   visible: boolean;
@@ -45,122 +41,6 @@ interface Props {
   onClose: () => void;
 }
 
-type Level = "provider" | "subprovider" | "model";
-
-function isGroupedProvider(id: string | null): boolean {
-  return !!id && !!PROVIDER_CONFIGS.find((p) => p.id === id)?.grouped;
-}
-
-const CHROME_ROWS = 8;
-
-const ProviderRow = memo(function ProviderRow({
-  provider,
-  isActive,
-  available,
-  innerW,
-}: {
-  provider: { id: string; name: string; envVar: string };
-  isActive: boolean;
-  available: boolean;
-  innerW: number;
-}) {
-  const ks = keyStatus(provider.envVar);
-  const bg = isActive ? POPUP_HL : POPUP_BG;
-  return (
-    <PopupRow bg={bg} w={innerW}>
-      <text bg={bg} fg={isActive ? "#FF0040" : "#555"}>
-        {isActive ? "› " : "  "}
-      </text>
-      {ks && (
-        <text bg={bg} fg={ks.color}>
-          {icon(ks.label ? "key" : "key_missing")}
-          {ks.label ? `[${ks.label}]` : ""}{" "}
-        </text>
-      )}
-      <text
-        bg={bg}
-        fg={isActive ? "#FF0040" : "#aaa"}
-        attributes={isActive ? TextAttributes.BOLD : undefined}
-      >
-        {providerIcon(provider.id)} {provider.name}
-      </text>
-      <text bg={bg}> </text>
-      <text bg={bg} fg={available ? "#00FF00" : "#FF0040"}>
-        {available ? "●" : "○"}
-      </text>
-    </PopupRow>
-  );
-});
-
-const ModelRow = memo(function ModelRow({
-  modelId,
-  displayId,
-  isActive,
-  isCurrent,
-  innerW,
-}: {
-  modelId: string;
-  displayId: string;
-  isActive: boolean;
-  isCurrent: boolean;
-  innerW: number;
-}) {
-  const bg = isActive ? POPUP_HL : POPUP_BG;
-  return (
-    <PopupRow key={modelId} bg={bg} w={innerW}>
-      <text bg={bg} fg={isActive ? "#FF0040" : "#555"}>
-        {isActive ? "› " : "  "}
-      </text>
-      <text
-        bg={bg}
-        fg={isActive ? "#FF0040" : isCurrent ? "#00FF00" : "#aaa"}
-        attributes={isActive ? TextAttributes.BOLD : undefined}
-        truncate
-      >
-        {displayId.length > innerW - 8 ? `${displayId.slice(0, innerW - 11)}…` : displayId}
-      </text>
-      {isCurrent && (
-        <text bg={bg} fg="#00FF00">
-          {" "}
-          ✓
-        </text>
-      )}
-    </PopupRow>
-  );
-});
-
-const SubProviderRow = memo(function SubProviderRow({
-  sub,
-  isActive,
-  modelCount,
-  innerW,
-}: {
-  sub: { id: string; name: string };
-  isActive: boolean;
-  modelCount: number;
-  innerW: number;
-}) {
-  const bg = isActive ? POPUP_HL : POPUP_BG;
-  return (
-    <PopupRow bg={bg} w={innerW}>
-      <text bg={bg} fg={isActive ? "#FF0040" : "#555"}>
-        {isActive ? "› " : "  "}
-      </text>
-      <text
-        bg={bg}
-        fg={isActive ? "#FF0040" : "#aaa"}
-        attributes={isActive ? TextAttributes.BOLD : undefined}
-      >
-        {providerIcon(sub.id)} {sub.name}
-      </text>
-      <text bg={bg} fg="#555" attributes={TextAttributes.DIM}>
-        {" "}
-        ({String(modelCount)})
-      </text>
-    </PopupRow>
-  );
-});
-
 export const LlmSelector = memo(function LlmSelector({
   visible,
   activeModel,
@@ -168,578 +48,417 @@ export const LlmSelector = memo(function LlmSelector({
   onClose,
 }: Props) {
   const { width: termCols, height: termRows } = useTerminalDimensions();
-  const containerRows = termRows - 2;
-  const popupWidth = Math.min(MAX_POPUP_WIDTH, Math.floor(termCols * 0.8));
-  const maxVisible = Math.max(4, Math.floor(containerRows * 0.8) - CHROME_ROWS);
-  const [level, setLevel] = useState<Level>("provider");
-  const [providerCursor, setProviderCursor] = useState(0);
-  const {
-    cursor: subproviderCursor,
-    setCursor: setSubproviderCursor,
-    scrollOffset: subScrollOffset,
-    adjustScroll: adjustSubScroll,
-    resetScroll: resetSubScroll,
-  } = usePopupScroll(maxVisible);
-  const {
-    cursor: modelCursor,
-    setCursor: setModelCursor,
-    scrollOffset: modelScrollOffset,
-    adjustScroll: adjustModelScroll,
-    resetScroll: resetModelScroll,
-  } = usePopupScroll(maxVisible);
-  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
-  const [expandedSubprovider, setExpandedSubprovider] = useState<string | null>(null);
-  const [spinnerIdx, setSpinnerIdx] = useState(0);
-  const [modelQuery, setModelQuery] = useState("");
-  const [subQuery, setSubQuery] = useState("");
+  const pw = Math.min(MAX_W, Math.floor(termCols * 0.85));
+  const iw = pw - 2;
+  // Chrome: title(1) + sep(1) + search(1) + sep(1) + spacer(1) + sep(1) + footer(1) = 7
+  const maxVis = Math.max(6, termRows - 4 - 7);
 
-  const isGrouped = isGroupedProvider(expandedProvider);
+  const { providerData: provData, availability, anyLoading } = useAllProviderModels(visible);
 
-  const directProviderId = expandedProvider && !isGrouped ? expandedProvider : null;
-  const {
-    models: directModels,
-    loading: directLoading,
-    error: directError,
-  } = useProviderModels(directProviderId);
-
-  const groupedProviderId = isGrouped ? expandedProvider : null;
-  const {
-    subProviders,
-    modelsByProvider: groupedModelsByProvider,
-    loading: groupedLoading,
-    error: groupedError,
-  } = useGroupedModels(groupedProviderId);
-
-  const loading = isGrouped ? groupedLoading : directLoading;
-
-  const [providerStatuses, setProviderStatuses] = useState<ProviderStatus[]>(
-    () => getCachedProviderStatuses() ?? [],
-  );
-
-  const statusMap = useMemo(() => {
-    const map = new Map<string, boolean>();
-    for (const s of providerStatuses) map.set(s.id, s.available);
-    return map;
-  }, [providerStatuses]);
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const [scrollOff, setScrollOff] = useState(0);
+  const [spinFrame, setSpinFrame] = useState(0);
 
   useEffect(() => {
-    if (visible) {
-      const cached = getCachedProviderStatuses();
-      if (cached) setProviderStatuses(cached);
-      // Only re-check providers if cache is stale (>30s) or empty
-      const shouldRefresh = !cached || cached.length === 0;
-      if (shouldRefresh) {
-        checkProviders().then(setProviderStatuses);
-      } else {
-        // Background refresh — don't block the popup
-        queueMicrotask(() => checkProviders().then(setProviderStatuses));
-      }
-      setLevel("provider");
-      setExpandedProvider(null);
-      setExpandedSubprovider(null);
-      setModelQuery("");
-      setSubQuery("");
-      resetModelScroll();
-      resetSubScroll();
+    if (!visible) return;
+    setQuery("");
+    setCursor(0);
+    setScrollOff(0);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!anyLoading || !visible) return;
+    const timer = setInterval(() => {
+      setSpinFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 120);
+    return () => clearInterval(timer);
+  }, [anyLoading, visible]);
+
+  // Parse "provider/model" scoped search
+  const { providerFilter, modelFilter } = useMemo(() => {
+    const raw = query.toLowerCase().trim();
+    const slashIdx = raw.indexOf("/");
+    if (slashIdx >= 0) {
+      return { providerFilter: raw.slice(0, slashIdx), modelFilter: raw.slice(slashIdx + 1) };
     }
-  }, [visible, resetModelScroll, resetSubScroll]);
+    return { providerFilter: "", modelFilter: raw };
+  }, [query]);
 
+  // Build flat entry list
+  const entries = useMemo(() => {
+    const out: Entry[] = [];
+
+    for (const cfg of PROVIDER_CONFIGS) {
+      const pd = provData[cfg.id];
+      const items = pd?.items ?? [];
+      const loading = pd?.loading ?? true;
+      const avail = availability.get(cfg.id) ?? false;
+
+      if (providerFilter) {
+        const provTarget = `${cfg.id} ${cfg.name}`.toLowerCase();
+        const provMatch =
+          provTarget.includes(providerFilter) || fuzzyMatch(providerFilter, provTarget) !== null;
+        if (!provMatch) continue;
+      }
+
+      const provTarget = `${cfg.id} ${cfg.name}`.toLowerCase();
+      const queryMatchesProvider =
+        !providerFilter &&
+        modelFilter &&
+        (provTarget.includes(modelFilter) || fuzzyMatch(modelFilter, provTarget) !== null);
+
+      let filtered = items;
+      if (modelFilter && !queryMatchesProvider) {
+        filtered = items.filter((m) => {
+          const t = `${m.id} ${m.name ?? ""} ${cfg.id} ${cfg.name}`.toLowerCase();
+          return t.includes(modelFilter) || fuzzyMatch(modelFilter, t) !== null;
+        });
+        if (filtered.length === 0 && !loading) continue;
+      }
+
+      if (!avail && items.length === 0 && !loading) continue;
+
+      out.push({
+        kind: "header",
+        id: cfg.id,
+        name: cfg.name,
+        avail,
+        loading,
+        count: filtered.length,
+      });
+
+      for (const m of filtered) {
+        const name = m.name || m.id;
+        const hasDesc = name !== m.id;
+        out.push({
+          kind: "model",
+          providerId: cfg.id,
+          id: m.id,
+          fullId: `${cfg.id}/${m.id}`,
+          name,
+          ctx: m.contextWindow,
+          hasDesc,
+        });
+      }
+    }
+    return out;
+  }, [provData, providerFilter, modelFilter, availability]);
+
+  const eH = useCallback((e: Entry): number => (e.kind === "model" && e.hasDesc ? 2 : 1), []);
+
+  // Visual row count (models with descriptions take 2 rows)
+  const visualRowCount = useMemo(() => {
+    let count = 0;
+    for (const e of entries) count += eH(e);
+    return count;
+  }, [entries, eH]);
+
+  // Reset cursor when entries change
+  const prevEntries = useRef(entries);
   useEffect(() => {
-    if (!loading) return;
-    const interval = setInterval(() => {
-      setSpinnerIdx((prev) => (prev + 1) % SPINNER_FRAMES_FILLED.length);
-    }, 150);
-    return () => clearInterval(interval);
-  }, [loading]);
+    if (entries !== prevEntries.current) {
+      prevEntries.current = entries;
+      const first = entries.findIndex((e) => e.kind === "model");
+      if (first >= 0) {
+        setCursor(first);
+        setScrollOff(
+          Math.max(0, first > 0 && entries[first - 1]?.kind === "header" ? first - 1 : 0),
+        );
+      } else {
+        setCursor(0);
+        setScrollOff(0);
+      }
+    }
+  }, [entries]);
 
-  const rawModels =
-    isGrouped && expandedSubprovider
-      ? (groupedModelsByProvider[expandedSubprovider] ?? [])
-      : directModels;
+  // Refs for keyboard handler
+  const scrollRef = useRef(scrollOff);
+  scrollRef.current = scrollOff;
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
 
-  const currentModels = useMemo(() => {
-    if (!modelQuery.trim()) return rawModels;
-    const q = modelQuery.toLowerCase();
-    return rawModels.filter((m) => {
-      const target = `${m.id} ${m.name ?? ""}`.toLowerCase();
-      return target.includes(q) || fuzzyMatch(q, target) !== null;
-    });
-  }, [rawModels, modelQuery]);
-
-  const filteredSubProviders = useMemo(() => {
-    if (!subQuery.trim()) return subProviders;
-    const q = subQuery.toLowerCase();
-    return subProviders.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
-    );
-  }, [subProviders, subQuery]);
-
-  const currentError = isGrouped ? groupedError : directError;
+  const ensureVisible = (idx: number) => {
+    const ents = entriesRef.current;
+    let top = idx;
+    if (idx > 0 && ents[idx - 1]?.kind === "header") top = idx - 1;
+    const so = scrollRef.current;
+    if (top < so) {
+      setScrollOff(top);
+      scrollRef.current = top;
+    } else {
+      let rowsNeeded = 0;
+      for (let i = so; i <= idx && i < ents.length; i++) {
+        const e = ents[i];
+        if (e) rowsNeeded += eH(e);
+      }
+      if (rowsNeeded > maxVis) {
+        let newOff = so;
+        while (newOff < idx) {
+          const e = ents[newOff];
+          if (e) rowsNeeded -= eH(e);
+          newOff++;
+          if (rowsNeeded <= maxVis) break;
+        }
+        setScrollOff(newOff);
+        scrollRef.current = newOff;
+      }
+    }
+  };
 
   useKeyboard((evt) => {
     if (!visible) return;
+    const ents = entriesRef.current;
 
-    if (level === "provider") {
-      if (evt.name === "escape") {
+    if (evt.name === "escape") {
+      if (query) {
+        setQuery("");
+        return;
+      }
+      onClose();
+      return;
+    }
+
+    if (evt.name === "return") {
+      const e = ents[cursorRef.current];
+      if (e?.kind === "model") {
+        onSelect(e.fullId);
         onClose();
-        return;
       }
-      if (evt.name === "return") {
-        const provider = PROVIDER_CONFIGS[providerCursor];
-        if (provider) {
-          setExpandedProvider(provider.id);
-          setModelQuery("");
-          setSubQuery("");
-          if (provider.grouped) {
-            setLevel("subprovider");
-            resetSubScroll();
-          } else {
-            setLevel("model");
-            setModelCursor(0);
-            resetModelScroll();
-          }
-        }
-        return;
-      }
-      if (evt.name === "up") {
-        setProviderCursor((prev) => (prev > 0 ? prev - 1 : PROVIDER_CONFIGS.length - 1));
-        return;
-      }
-      if (evt.name === "down") {
-        setProviderCursor((prev) => (prev < PROVIDER_CONFIGS.length - 1 ? prev + 1 : 0));
-        return;
-      }
+      return;
     }
 
-    if (level === "subprovider") {
-      if (evt.name === "escape") {
-        if (subQuery) {
-          setSubQuery("");
-          resetSubScroll();
-          return;
-        }
-        setLevel("provider");
-        setExpandedProvider(null);
-        setExpandedSubprovider(null);
-        return;
+    const move = (dir: 1 | -1) => {
+      if (ents.length === 0) return;
+      let next = cursorRef.current + dir;
+      if (next < 0) next = ents.length - 1;
+      if (next >= ents.length) next = 0;
+      const start = next;
+      while (ents[next]?.kind !== "model") {
+        next += dir;
+        if (next < 0) next = ents.length - 1;
+        if (next >= ents.length) next = 0;
+        if (next === start) return;
       }
-      if (evt.name === "left" && !subQuery) {
-        setLevel("provider");
-        setExpandedProvider(null);
-        setExpandedSubprovider(null);
-        return;
-      }
-      if (evt.name === "return" && !groupedLoading && filteredSubProviders.length > 0) {
-        const sub = filteredSubProviders[subproviderCursor];
-        if (sub) {
-          setExpandedSubprovider(sub.id);
-          setSubQuery("");
-          setModelQuery("");
-          setLevel("model");
-          setModelCursor(0);
-          resetModelScroll();
-        }
-        return;
-      }
-      if (evt.name === "up") {
-        setSubproviderCursor((prev) => {
-          const next = prev > 0 ? prev - 1 : Math.max(0, filteredSubProviders.length - 1);
-          adjustSubScroll(next);
-          return next;
-        });
-        return;
-      }
-      if (evt.name === "down") {
-        setSubproviderCursor((prev) => {
-          const next = prev < filteredSubProviders.length - 1 ? prev + 1 : 0;
-          adjustSubScroll(next);
-          return next;
-        });
-        return;
-      }
-      if (evt.name === "backspace" || evt.name === "delete") {
-        setSubQuery((q) => q.slice(0, -1));
-        resetSubScroll();
-        return;
-      }
-      if (evt.name && evt.name.length === 1 && !evt.ctrl && !evt.meta) {
-        setSubQuery((q) => q + evt.name);
-        resetSubScroll();
-      }
+      setCursor(next);
+      cursorRef.current = next;
+      ensureVisible(next);
+    };
+
+    if (evt.name === "up") {
+      move(-1);
+      return;
+    }
+    if (evt.name === "down") {
+      move(1);
+      return;
     }
 
-    if (level === "model") {
-      if (evt.name === "escape") {
-        if (modelQuery) {
-          setModelQuery("");
-          resetModelScroll();
-          return;
-        }
-        if (isGrouped) {
-          setLevel("subprovider");
-          setExpandedSubprovider(null);
-        } else {
-          setLevel("provider");
-          setExpandedProvider(null);
-        }
-        return;
+    if (evt.name === "tab") {
+      let i = cursorRef.current + 1;
+      while (i < ents.length && ents[i]?.kind !== "header") i++;
+      if (i < ents.length) i++;
+      while (i < ents.length && ents[i]?.kind !== "model") i++;
+      if (i >= ents.length) {
+        i = ents.findIndex((e) => e.kind === "model");
+        if (i < 0) return;
       }
-      if (evt.name === "left" && !modelQuery) {
-        if (isGrouped) {
-          setLevel("subprovider");
-          setExpandedSubprovider(null);
-        } else {
-          setLevel("provider");
-          setExpandedProvider(null);
-        }
-        return;
-      }
-      if (evt.name === "return" && !loading && currentModels.length > 0) {
-        const model = currentModels[modelCursor];
-        if (model) {
-          onSelect(`${expandedProvider}/${model.id}`);
-          onClose();
-        }
-        return;
-      }
-      if (evt.name === "up") {
-        setModelCursor((prev) => {
-          const next = prev > 0 ? prev - 1 : Math.max(0, currentModels.length - 1);
-          adjustModelScroll(next);
-          return next;
-        });
-        return;
-      }
-      if (evt.name === "down") {
-        setModelCursor((prev) => {
-          const next = prev < currentModels.length - 1 ? prev + 1 : 0;
-          adjustModelScroll(next);
-          return next;
-        });
-        return;
-      }
-      if (evt.name === "backspace" || evt.name === "delete") {
-        setModelQuery((q) => q.slice(0, -1));
-        resetModelScroll();
-        return;
-      }
-      if (evt.name && evt.name.length === 1 && !evt.ctrl && !evt.meta) {
-        setModelQuery((q) => q + evt.name);
-        resetModelScroll();
-      }
+      setCursor(i);
+      cursorRef.current = i;
+      ensureVisible(i);
+      return;
+    }
+
+    if (evt.name === "backspace" || evt.name === "delete") {
+      setQuery((q) => q.slice(0, -1));
+      return;
+    }
+
+    if (evt.name && evt.name.length === 1 && !evt.ctrl && !evt.meta) {
+      setQuery((q) => q + evt.name);
     }
   });
 
   if (!visible) return null;
 
-  const slashIdx = activeModel.indexOf("/");
-  const activeProvider = slashIdx >= 0 ? activeModel.slice(0, slashIdx) : "";
-  const activeModelId = slashIdx >= 0 ? activeModel.slice(slashIdx + 1) : "";
-  const innerW = popupWidth - 2;
-
-  if (level === "provider") {
-    return (
-      <Overlay>
-        <box
-          flexDirection="column"
-          borderStyle="rounded"
-          border={true}
-          borderColor="#8B5CF6"
-          width={popupWidth}
-        >
-          <PopupRow w={innerW}>
-            <text fg="white" attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-              {"\uDB80\uDE26"} Select Provider
-            </text>
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text fg="#333" bg={POPUP_BG}>
-              {"─".repeat(innerW - 4)}
-            </text>
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text>{""}</text>
-          </PopupRow>
-
-          {PROVIDER_CONFIGS.map((provider, i) => (
-            <ProviderRow
-              key={provider.id}
-              provider={provider}
-              isActive={i === providerCursor}
-              available={statusMap.get(provider.id) ?? false}
-              innerW={innerW}
-            />
-          ))}
-
-          <PopupRow w={innerW}>
-            <text>{""}</text>
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text fg="#555" bg={POPUP_BG}>
-              {"↑↓"} navigate | {"⏎"} select | esc close
-            </text>
-          </PopupRow>
-        </box>
-      </Overlay>
-    );
+  // Build visible slice accounting for variable-height entries
+  const visEntries: Entry[] = [];
+  let visRows = 0;
+  for (let i = scrollOff; i < entries.length && visRows < maxVis; i++) {
+    const e = entries[i];
+    if (!e) break;
+    const h = eH(e);
+    if (visRows + h > maxVis && visRows > 0) break;
+    visEntries.push(e);
+    visRows += h;
   }
 
-  if (level === "subprovider") {
-    const totalModels = Object.values(groupedModelsByProvider).reduce(
-      (sum, arr) => sum + arr.length,
-      0,
-    );
-    const providerName =
-      PROVIDER_CONFIGS.find((p) => p.id === expandedProvider)?.name ?? expandedProvider ?? "";
-
-    return (
-      <Overlay>
-        <box
-          flexDirection="column"
-          borderStyle="rounded"
-          border={true}
-          borderColor="#8B5CF6"
-          width={popupWidth}
-        >
-          <PopupRow w={innerW}>
-            <text fg="white" attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-              {providerIcon(expandedProvider ?? "")} {providerName}
-            </text>
-            {!groupedLoading && subProviders.length > 0 && (
-              <text fg="#555" attributes={TextAttributes.DIM} bg={POPUP_BG}>
-                {" "}
-                {String(totalModels)} models
-              </text>
-            )}
-          </PopupRow>
-          {expandedProvider === "proxy" && !groupedLoading && subProviders.length > 0 && (
-            <>
-              <PopupRow w={innerW}>
-                <text fg="#8B5CF6" bg={POPUP_BG}>
-                  {"  "}
-                  {icon("check_link")} Claude subscription
-                </text>
-                <text fg="#555" bg={POPUP_BG}>
-                  {" "}
-                  · local proxy
-                </text>
-              </PopupRow>
-              <PopupRow w={innerW}>
-                <text fg="#a5650a" bg={POPUP_BG}>
-                  {"  "} ⚠ Unofficial — uses CLIProxyAPI. Use at your own risk.
-                </text>
-              </PopupRow>
-            </>
-          )}
-          <PopupRow w={innerW}>
-            <text fg="#333" bg={POPUP_BG}>
-              {"─".repeat(innerW - 4)}
-            </text>
-          </PopupRow>
-          {/* Search */}
-          <PopupRow w={innerW}>
-            <text fg="#8B5CF6" bg={POPUP_BG}>
-              {icon("search")} {"> "}
-            </text>
-            <text fg="white" bg={POPUP_BG}>
-              {subQuery}
-            </text>
-            <text fg="#8B5CF6" bg={POPUP_BG}>
-              ▎
-            </text>
-            {!subQuery && (
-              <text fg="#444" bg={POPUP_BG}>
-                {" type to filter…"}
-              </text>
-            )}
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text fg="#222" bg={POPUP_BG}>
-              {"─".repeat(innerW - 4)}
-            </text>
-          </PopupRow>
-
-          {groupedError && (
-            <PopupRow w={innerW}>
-              <text fg="#f44" bg={POPUP_BG}>
-                ⚠ {groupedError}
-              </text>
-            </PopupRow>
-          )}
-
-          {groupedLoading ? (
-            <PopupRow w={innerW}>
-              <text fg="#9B30FF" bg={POPUP_BG}>
-                {SPINNER_FRAMES_FILLED[spinnerIdx]} fetching providers...
-              </text>
-            </PopupRow>
-          ) : filteredSubProviders.length === 0 && !groupedError ? (
-            <PopupRow w={innerW}>
-              <text fg="#888" bg={POPUP_BG}>
-                {"  "}
-                {subQuery ? "no matching providers" : "No models found — try restarting SoulForge"}
-              </text>
-            </PopupRow>
-          ) : (
-            <box
-              flexDirection="column"
-              height={Math.min(filteredSubProviders.length || 1, maxVisible)}
-              overflow="hidden"
-            >
-              {filteredSubProviders
-                .slice(subScrollOffset, subScrollOffset + maxVisible)
-                .map((sub, vi) => (
-                  <SubProviderRow
-                    key={sub.id}
-                    sub={sub}
-                    isActive={vi + subScrollOffset === subproviderCursor}
-                    modelCount={groupedModelsByProvider[sub.id]?.length ?? 0}
-                    innerW={innerW}
-                  />
-                ))}
-            </box>
-          )}
-          {!groupedLoading && filteredSubProviders.length > maxVisible && (
-            <PopupRow w={innerW}>
-              <text fg="#555" bg={POPUP_BG}>
-                {subScrollOffset > 0 ? "↑ " : "  "}
-                {String(subproviderCursor + 1)}/{String(filteredSubProviders.length)}
-                {subScrollOffset + maxVisible < filteredSubProviders.length ? " ↓" : ""}
-              </text>
-            </PopupRow>
-          )}
-
-          <PopupRow w={innerW}>
-            <text>{""}</text>
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text fg="#444" bg={POPUP_BG}>
-              ↑↓ navigate | ⏎ select | type to search | esc back
-            </text>
-          </PopupRow>
-        </box>
-      </Overlay>
-    );
-  }
-
-  const headerIcon = isGrouped
-    ? providerIcon(expandedSubprovider ?? "")
-    : providerIcon(expandedProvider ?? "");
-  const headerName = isGrouped
-    ? (subProviders.find((s) => s.id === expandedSubprovider)?.name ?? expandedSubprovider ?? "")
-    : (PROVIDER_CONFIGS.find((p) => p.id === expandedProvider)?.name ?? expandedProvider ?? "");
+  const totalModels = entries.filter((e) => e.kind === "model").length;
+  const cursorModelIdx = entries.slice(0, cursor + 1).filter((e) => e.kind === "model").length;
+  const canScrollUp = scrollOff > 0;
+  const canScrollDown = scrollOff + visEntries.length < entries.length;
 
   return (
     <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor="#8B5CF6"
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
+      <box flexDirection="column" borderStyle="rounded" border borderColor="#8B5CF6" width={pw}>
+        {/* Title — match CommandPicker style */}
+        <PopupRow w={iw}>
+          <text fg="#9B30FF" bg={POPUP_BG}>
+            {icon("model")}{" "}
+          </text>
           <text fg="white" attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            {headerIcon} {headerName}
+            Select Model
           </text>
-          {isGrouped && (
-            <text fg="#555" attributes={TextAttributes.DIM} bg={POPUP_BG}>
-              {" "}
-              via {expandedProvider}
-            </text>
-          )}
         </PopupRow>
-        <PopupRow w={innerW}>
+
+        <PopupRow w={iw}>
           <text fg="#333" bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
+            {"─".repeat(iw - 4)}
           </text>
         </PopupRow>
+
         {/* Search */}
-        <PopupRow w={innerW}>
-          <text fg="#8B5CF6" bg={POPUP_BG}>
-            {icon("search")} {"> "}
+        <PopupRow w={iw}>
+          <text fg="#555" bg={POPUP_BG}>
+            {icon("search")}{" "}
           </text>
           <text fg="white" bg={POPUP_BG}>
-            {modelQuery}
+            {query}
           </text>
           <text fg="#8B5CF6" bg={POPUP_BG}>
             ▎
           </text>
-          {!modelQuery && (
-            <text fg="#444" bg={POPUP_BG}>
-              {" type to filter models…"}
+          {!query && (
+            <text fg="#333" bg={POPUP_BG}>
+              {" search… (provider/model to scope)"}
             </text>
           )}
         </PopupRow>
-        <PopupRow w={innerW}>
+
+        <PopupRow w={iw}>
           <text fg="#222" bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
+            {"─".repeat(iw - 4)}
           </text>
         </PopupRow>
 
-        {currentError && (
-          <PopupRow w={innerW}>
-            <text fg="#f44" bg={POPUP_BG}>
-              ⚠ {currentError}
-            </text>
-          </PopupRow>
-        )}
+        {/* Spacer */}
+        <PopupRow w={iw}>
+          <text>{""}</text>
+        </PopupRow>
 
-        {loading ? (
-          <PopupRow w={innerW}>
-            <text fg="#9B30FF" bg={POPUP_BG}>
-              {SPINNER_FRAMES_FILLED[spinnerIdx]} fetching models...
-            </text>
-          </PopupRow>
-        ) : currentModels.length === 0 && !currentError ? (
-          <PopupRow w={innerW}>
-            <text fg="#888" bg={POPUP_BG}>
-              {"  "}
-              {modelQuery ? "no matching models" : "No models found — try restarting SoulForge"}
+        {/* List */}
+        {entries.length === 0 ? (
+          <PopupRow w={iw}>
+            <text fg="#555" bg={POPUP_BG}>
+              {query ? "no matching models" : "no providers available"}
             </text>
           </PopupRow>
         ) : (
-          <box
-            flexDirection="column"
-            height={Math.min(currentModels.length || 1, maxVisible)}
-            overflow="hidden"
-          >
-            {currentModels
-              .slice(modelScrollOffset, modelScrollOffset + maxVisible)
-              .map((model, vi) => {
-                const displayId = model.id.includes("/")
-                  ? model.id.slice(model.id.indexOf("/") + 1)
-                  : model.id;
+          <box flexDirection="column" height={Math.min(visualRowCount, maxVis)} overflow="hidden">
+            {visEntries.map((entry) => {
+              if (entry.kind === "header") {
                 return (
-                  <ModelRow
-                    key={model.id}
-                    modelId={model.id}
-                    displayId={displayId}
-                    isActive={vi + modelScrollOffset === modelCursor}
-                    isCurrent={expandedProvider === activeProvider && model.id === activeModelId}
-                    innerW={innerW}
-                  />
+                  <PopupRow key={`h-${entry.id}`} w={iw}>
+                    <text
+                      fg={entry.avail ? "#8B5CF6" : "#333"}
+                      attributes={TextAttributes.BOLD}
+                      bg={POPUP_BG}
+                    >
+                      {providerIcon(entry.id)} {entry.name.toUpperCase()}
+                    </text>
+                    {entry.loading && (
+                      <text fg="#555" bg={POPUP_BG}>
+                        {" "}
+                        {SPINNER_FRAMES[spinFrame]}
+                      </text>
+                    )}
+                    {!entry.loading && entry.count > 0 && (
+                      <text fg="#333" bg={POPUP_BG}>
+                        {" "}
+                        {String(entry.count)}
+                      </text>
+                    )}
+                    {!entry.avail && !entry.loading && (
+                      <text fg="#333" bg={POPUP_BG}>
+                        {" · no key"}
+                      </text>
+                    )}
+                  </PopupRow>
                 );
-              })}
+              }
+
+              const entryIdx = entries.indexOf(entry);
+              const active = entryIdx === cursor;
+              const isCur = entry.fullId === activeModel;
+              const bg = active ? POPUP_HL : POPUP_BG;
+              const ctxStr = fmtCtx(entry.ctx);
+              const checkW = isCur ? 2 : 0;
+              const avail = iw - 6 - ctxStr.length - checkW;
+              const nm =
+                entry.name.length > avail
+                  ? `${entry.name.slice(0, Math.max(0, avail - 1))}…`
+                  : entry.name;
+              const pad = Math.max(1, iw - 4 - nm.length - ctxStr.length - checkW);
+
+              return (
+                <box key={`m-${entry.fullId}`} flexDirection="column">
+                  <PopupRow bg={bg} w={iw}>
+                    <text fg={active ? "#FF0040" : "#555"} bg={bg}>
+                      {active ? "› " : "  "}
+                    </text>
+                    <text
+                      fg={active ? "#FF0040" : isCur ? "#00FF00" : "#aaa"}
+                      bg={bg}
+                      attributes={active ? TextAttributes.BOLD : undefined}
+                    >
+                      {nm}
+                    </text>
+                    {ctxStr ? (
+                      <text fg={active ? "#994060" : "#444"} bg={bg}>
+                        {" ".repeat(pad)}
+                        {ctxStr}
+                      </text>
+                    ) : null}
+                    {isCur && (
+                      <text fg="#00FF00" bg={bg}>
+                        {" ✓"}
+                      </text>
+                    )}
+                  </PopupRow>
+                  {entry.hasDesc && (
+                    <PopupRow bg={bg} w={iw}>
+                      <text fg={active ? "#888" : "#555"} bg={bg} truncate>
+                        {"    "}
+                        {entry.id.length > iw - 10 ? `${entry.id.slice(0, iw - 13)}…` : entry.id}
+                      </text>
+                    </PopupRow>
+                  )}
+                </box>
+              );
+            })}
           </box>
         )}
-        {!loading && currentModels.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg="#555" bg={POPUP_BG}>
-              {modelScrollOffset > 0 ? "↑ " : "  "}
-              {String(modelCursor + 1)}/{String(currentModels.length)}
-              {modelScrollOffset + maxVisible < currentModels.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
 
-        <PopupRow w={innerW}>
+        {/* Spacer */}
+        <PopupRow w={iw}>
           <text>{""}</text>
         </PopupRow>
-        <PopupRow w={innerW}>
-          <text fg="#444" bg={POPUP_BG}>
-            ↑↓ navigate | ⏎ select | type to search | esc back
+
+        {/* Footer */}
+        <PopupRow w={iw}>
+          <text fg="#555" bg={POPUP_BG}>
+            {"↑↓"} navigate | {"⏎"} select | tab next | esc {query ? "clear" : "close"}
           </text>
+          {totalModels > 0 && (
+            <text fg="#444" bg={POPUP_BG}>
+              {"  "}
+              {canScrollUp ? "↑" : " "}
+              {String(cursorModelIdx)}/{String(totalModels)}
+              {canScrollDown ? "↓" : " "}
+            </text>
+          )}
         </PopupRow>
       </box>
     </Overlay>

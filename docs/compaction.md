@@ -107,3 +107,100 @@ Context > threshold ───► buildV2Summary() ──► serialize WSM       
 ### Guard behavior
 
 When strategy is not `"v2"`, the `WorkingStateManager` is `null`. Every extraction call site checks `if (workingStateRef.current)` — no WSM instance means zero v2 code executes. No background tasks, no timers, no allocations.
+
+## Real-World Example
+
+A session with 10 user turns fixing TypeScript errors, updating a README comparison table, testing LSP rename, and fixing a `project format` bug. Model: Claude Opus 4.6.
+
+### Before compaction
+
+| Metric | Value |
+|---|---|
+| Core messages | 34 |
+| Prompt tokens | 4,517,349 |
+| Cache read tokens | 2,740,557 (60.6% hit rate) |
+| Completion tokens | 14,364 |
+| Estimated cost | ~$33 |
+| Context utilization | 6% |
+
+### After V2 compaction
+
+| Metric | Value |
+|---|---|
+| Core messages | **5** |
+| Prompt tokens | **7,539** |
+| Cache read tokens | 0 (cache invalidated by new content) |
+| Gap-fill tokens | **0** (WSM had ≥15 slots, skipped) |
+| Context utilization | **4%** |
+
+34 messages → 5. The compaction cost **zero tokens** — no LLM call at all.
+
+### What V2 produced
+
+The compacted summary is a single structured message:
+
+```markdown
+## Task
+(all user requests concatenated)
+
+## User Requirements
+- fix all issues
+- are they really forwarded and the stuff will work?
+- run tests, lint, typecheck format and commit
+- ...9 items total
+
+## Files Touched
+- `tsconfig.json`: read; edited (×2)
+- `src/core/tools/web-search.ts`: read (×4); analyzed (×3); edited
+- `node_modules/ai/dist/index.d.ts`: read (×3)
+- `node_modules/ai/src/agent/tool-loop-agent.ts`: read (×3)
+- `README.md`: read (×2); edited
+- `src/core/intelligence/router.ts`: read (×4); grep
+- `src/core/tools/project.ts`: read (×9); grep; edited
+
+## Assistant Notes
+- `baseUrl` is only needed to support `paths` mapping...
+- `AgentCallParameters` doesn't include experimental callbacks...
+- (truncated excerpts from assistant reasoning)
+
+## Tool Results
+- **soul_analyze**: Top 20 identifiers by cross-file reference count...
+- **navigate**: References to 'emitSubagentStep' (13): 5 files
+- **rename_symbol**: Renamed across 5 files [lsp], verified zero remaining
+- **project**: typecheck passed, lint passed, 2080 tests passed
+
+## Errors & Failures
+- project: typecheck failed — TS5090 non-relative paths
+- project: typecheck failed — TS2353 experimental_onToolCallStart
+- project: lint failed — formatter would have printed different content
+- project: format failed — biome check without --write (×3)
+```
+
+Then just the last 2 messages (the final commit + result) are kept verbatim.
+
+### What this means for the next turn
+
+Without compaction, the next API call would re-send all 34 messages (~100K+ tokens). After V2 compaction, the next call sends:
+
+- System prompt + Soul Map: ~15K tokens (unchanged)
+- V2 summary: ~3-4K tokens
+- Last 2 messages: ~500 tokens
+- **Total: ~19K tokens** — an ~80% reduction in per-turn input cost
+
+The one-turn cost is the **cache invalidation**: the old prefix cache is gone, so the first post-compaction turn has 0% cache hits. Subsequent turns rebuild the cache from the new prefix.
+
+### Gap-fill threshold
+
+The WSM tracks state across these slot categories: task, plan, files, decisions, failures, discoveries, environment, toolResults, userRequirements, assistantNotes. When **≥15 slots are populated** across all categories, the state is considered rich enough and the LLM gap-fill pass is skipped entirely.
+
+This session filled slots from ~60 tool calls (read_file, edit_file, project, navigate, rename_symbol, soul_grep, web_search, git, shell) — well above the threshold. Sessions with fewer tool calls (e.g. mostly discussion) would trigger the 2K-token gap-fill to capture reasoning that only existed in prose.
+
+### V1 comparison
+
+The same compaction with V1 would have:
+- Sent all 34 messages to an LLM for summarization
+- Cost ~8K output tokens (~$0.60 on Haiku, ~$6 on Opus)
+- Taken 5-15 seconds of latency
+- Produced a prose summary that captures reasoning better but loses structured data
+
+V2's tradeoff: **zero cost, instant, structured data preserved, but reasoning chains truncated**. For mechanical coding sessions (fix/edit/test cycles), V2 is strictly better. For design-heavy sessions where the "why" matters more than the "what", V1's LLM summarization may retain more nuance.

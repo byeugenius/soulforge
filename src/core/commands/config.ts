@@ -311,7 +311,6 @@ function handleReasoning(_input: string, ctx: CommandContext): void {
 function handleCompaction(_input: string, ctx: CommandContext): void {
   type Strategy = import("../compaction/types.js").CompactionStrategy;
   let localStrategy = ctx.compactionStrategy as Strategy;
-  let localPruning = !ctx.disablePruning;
 
   const buildOptions = () => [
     {
@@ -329,15 +328,10 @@ function handleCompaction(_input: string, ctx: CommandContext): void {
       label: `Disabled${localStrategy === "disabled" ? " ●" : ""}`,
       description: "no auto-compaction — context will fill until the model's limit",
     },
-    {
-      value: "pruning",
-      label: `Subagent Pruning: ${localPruning ? "on" : "off"}`,
-      description: `semantic pruning of old tool results in subagent context windows${localPruning ? " — breaks prompt cache, auto-disabled for Claude models" : ""}`,
-    },
   ];
 
   ctx.openCommandPicker({
-    title: "Compaction & Pruning",
+    title: "Compaction",
     icon: icon("compact"),
     keepOpen: true,
     currentValue: localStrategy,
@@ -345,26 +339,13 @@ function handleCompaction(_input: string, ctx: CommandContext): void {
     initialScope: ctx.detectScope("compaction"),
     options: buildOptions(),
     onSelect: (value, scope) => {
-      if (value === "pruning") {
-        localPruning = !localPruning;
-        ctx.saveToScope({ compaction: { disablePruning: !localPruning } }, scope ?? "project");
-        sysMsg(
-          ctx,
-          `Subagent pruning ${localPruning ? "enabled" : "disabled"} (${scope ?? "project"})`,
-        );
-      } else {
-        localStrategy = value as Strategy;
-        ctx.saveToScope({ compaction: { strategy: localStrategy } }, scope ?? "project");
-        sysMsg(ctx, `Compaction strategy: ${value} (${scope ?? "project"})`);
-      }
+      localStrategy = value as Strategy;
+      ctx.saveToScope({ compaction: { strategy: localStrategy } }, scope ?? "project");
+      sysMsg(ctx, `Compaction strategy: ${value} (${scope ?? "project"})`);
       useUIStore.getState().updatePickerOptions(buildOptions());
     },
-    onScopeMove: (value, from, to) => {
-      if (value === "pruning") {
-        ctx.saveToScope({ compaction: { disablePruning: !localPruning } }, to, from);
-      } else {
-        ctx.saveToScope({ compaction: { strategy: localStrategy } }, to, from);
-      }
+    onScopeMove: (_value, from, to) => {
+      ctx.saveToScope({ compaction: { strategy: localStrategy } }, to, from);
     },
   });
 }

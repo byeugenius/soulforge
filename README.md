@@ -33,7 +33,7 @@ Your real Neovim — config, plugins, LSP — embedded in an AI agent that under
 |---|---|---|---|---|
 | **Editor** | Embedded Neovim (LazyVim, your config) | No editor | No editor | No editor |
 | **Code graph** | SQLite graph — PageRank, blast radius, cochange, clone detection, FTS5 search, unused export detection, file profiles, identifier frequency | None (file reads + grep) | None | Tree-sitter repo map + PageRank |
-| **Code intelligence** | 4-tier fallback: LSP → ts-morph → tree-sitter → regex. Dual LSP (Neovim bridge + standalone). 33 languages | Native LSP (go-to-definition, references, hover) | LSP (VS Code engines) | Tree-sitter AST |
+| **Code intelligence** | 4-tier fallback: LSP → ts-morph → tree-sitter → regex. Dual LSP (Neovim bridge + standalone). 33 languages | LSP via plugin (go-to-definition, references — no rename, no auto-install) | LSP (VS Code engines) | Tree-sitter AST |
 | **Compound tools** | `rename_symbol`, `move_symbol`, `refactor` — compiler-guaranteed, atomic, cross-file | Rename via LSP | — | — |
 | **Semantic context** | AST summaries for top 500 symbols, dispatch auto-enrichment with symbol line ranges | — | — | Tree-sitter tag summaries |
 | **Multi-agent** | Parallel dispatch (8 agents, 3 concurrent, shared file cache, edit ownership) | Subagents + Agent Teams | Subagents + Fleet | Single agent |
@@ -123,7 +123,7 @@ Up to 5 concurrent tabs with advisory file claims. Agents see what other tabs ar
 <td>
 
 ### Project Toolchain
-Auto-detects lint, typecheck, test, and build commands across 17 ecosystems from config files. Pre-commit gate blocks `git commit` on lint/type errors. Monorepo package discovery. [Deep dive →](docs/project-tool.md)
+Auto-detects lint, typecheck, test, and build commands across 21 ecosystems from config files. Pre-commit gate blocks `git commit` on lint/type errors. Monorepo package discovery. [Deep dive →](docs/project-tool.md)
 
 </td>
 <td>
@@ -139,7 +139,7 @@ Installable skill system for domain-specific capabilities. Destructive action ap
 
 ## Architecture
 
-The Forge Agent is the orchestrator. It holds 39 tools including the `dispatch` tool, which creates an AgentBus and launches parallel subagents. Subagents share file/tool caches through the bus and coordinate edits via ownership tracking.
+The Forge Agent is the orchestrator. It holds 31 tools including the `dispatch` tool, which creates an AgentBus and launches parallel subagents. Subagents share file/tool caches through the bus and coordinate edits via ownership tracking.
 
 ```mermaid
 graph TB
@@ -147,7 +147,7 @@ graph TB
     Chat --> Forge[Forge Agent]
 
     subgraph Forge Tools
-        Tools[39 Direct Tools]
+        Tools[31 Direct Tools]
         Dispatch[dispatch tool]
     end
 
@@ -235,16 +235,116 @@ sequenceDiagram
 
 ## Installation
 
-**Requirements:** [Bun](https://bun.sh) >= 1.0, [Neovim](https://neovim.io) >= 0.11
+Pick the method that fits your workflow. SoulForge checks for prerequisites on first launch and offers to install Neovim and Nerd Fonts if missing.
+
+### Prebuilt Binary (recommended)
+
+Download the latest release for your platform — no runtime dependencies needed:
 
 ```bash
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
+sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
+
+# macOS (Intel)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
+sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
+
+# Linux (x64)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
+sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
+
+# Linux (ARM64)
+curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-arm64.tar.gz | tar xz
+sudo mv soulforge-linux-arm64 /usr/local/bin/soulforge
+```
+
+Then run `soulforge` (or `sf`).
+
+<details>
+<summary><strong>Homebrew</strong></summary>
+
+```bash
+brew tap proxysoul/tap
+brew install soulforge
+```
+
+</details>
+
+<details>
+<summary><strong>npm / Bun (from GitHub Packages)</strong></summary>
+
+Requires [Bun](https://bun.sh) >= 1.0 as the runtime.
+
+```bash
+# Configure GitHub Packages registry (one-time)
+echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
+
+# Install globally
 bun install -g @proxysoul/soulforge
+# or: npm install -g @proxysoul/soulforge
+
 soulforge   # or: sf
 ```
 
-SoulForge checks for prerequisites on first launch and offers to install Neovim and Nerd Fonts if missing.
+</details>
 
-> Configure your `.npmrc` for GitHub Packages, or see [GETTING_STARTED.md](GETTING_STARTED.md) for detailed setup.
+<details>
+<summary><strong>Self-contained bundle (includes Neovim, ripgrep, fd, lazygit)</strong></summary>
+
+The bundle ships everything — Neovim 0.11, ripgrep, fd, lazygit, tree-sitter grammars, Nerd Font symbols, and a local LLM proxy. No system dependencies required. Build it from source:
+
+```bash
+git clone https://github.com/ProxySoul/soulforge.git
+cd soulforge
+bun install
+
+# Build bundle (macOS ARM64 by default)
+./scripts/bundle.sh              # → dist/bundle/soulforge-1.0.0-darwin-arm64/
+./scripts/bundle.sh x64          # Intel Mac
+./scripts/bundle.sh x64 linux    # Linux x64
+./scripts/bundle.sh arm64 linux  # Linux ARM64
+
+# Install
+cd dist/bundle/soulforge-*/
+./install.sh                     # installs to ~/.soulforge, adds to PATH
+
+# Uninstall
+~/.soulforge/uninstall.sh
+```
+
+</details>
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+Requires [Bun](https://bun.sh) >= 1.0 and [Neovim](https://neovim.io) >= 0.11.
+
+```bash
+git clone https://github.com/ProxySoul/soulforge.git
+cd soulforge
+bun install
+
+# Run in development mode
+bun run dev
+
+# Or build and link globally
+bun run build
+bun link
+soulforge
+```
+
+</details>
+
+### Quick start
+
+```bash
+soulforge                    # Launch — select a model with Ctrl+L
+soulforge --set-key anthropic sk-ant-...   # Or save a key first
+soulforge --list-providers   # Check which providers are ready
+```
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for a full walkthrough — first launch, model setup, editor configuration, and tips.
 
 ---
 
@@ -343,7 +443,7 @@ soulforge --version                          # Version info
 
 ## Tool Suite
 
-SoulForge ships 39 tools organized by capability:
+SoulForge ships 31 tools organized by capability:
 
 ### Code Intelligence
 
@@ -369,7 +469,7 @@ SoulForge ships 39 tools organized by capability:
 
 | Tool | What it does |
 |------|-------------|
-| `project` | Auto-detected lint, format, test, build, typecheck across [17 ecosystems](#project-toolchain-detection) |
+| `project` | Auto-detected lint, format, test, build, typecheck across [21 ecosystems](#project-toolchain-detection) |
 | `project(list)` | Discover monorepo packages with per-package capabilities |
 | `dispatch` | Parallel multi-agent execution (up to 8 agents, 3 concurrent) |
 | `git` | Structured git operations with auto co-author tracking |
@@ -377,11 +477,11 @@ SoulForge ships 39 tools organized by capability:
 <details>
 <summary><strong>All tools</strong></summary>
 
-**Read/Write:** `read_file`, `edit_file`, `write_file`, `create_file`, `list_dir`, `glob`, `grep`
+**Read/Write:** `read_file` (with `target` param for symbol extraction), `edit_file` (also handles create/write), `multi_edit`, `undo_edit`, `list_dir`, `glob`, `grep`
 
 **Shell:** `shell` (with pre-commit lint gate, co-author injection, project tool redirect)
 
-**Memory:** `memory_write`, `memory_search`, `memory_list`, `memory_delete`
+**Memory:** `memory` (actions: write, search, list, delete)
 
 **Agent:** `dispatch`, `web_search`, `fetch_page`
 
@@ -538,6 +638,11 @@ The `project` tool auto-detects your toolchain from config files — no setup re
 | **Zig** | — | zig build | zig build test | zig build |
 | **Haskell** | hlint | stack build | stack test | stack build |
 | **Scala** | — | sbt compile | sbt test | sbt compile |
+| **.NET/C#** | dotnet format | dotnet build | dotnet test | dotnet build |
+| **iOS/Xcode** | swiftlint | xcodebuild build | xcodebuild test | xcodebuild build |
+| **Java (Maven)** | checkstyle | mvn compile | mvn test | mvn package |
+| **C/C++ (Make)** | — | — | make test | make |
+| **Clojure** | clj-kondo | — | lein test / clj -M:test | lein uberjar |
 
 **Monorepo support:** `project(action: "list")` discovers workspace packages across pnpm, npm/yarn, Cargo, and Go workspaces.
 
@@ -616,7 +721,7 @@ bun run lint:fix      # auto-fix
 
 | Document | Description |
 |----------|-------------|
-| **[Command Reference](docs/commands-reference.md)** | All 75 slash commands by category |
+| **[Command Reference](docs/commands-reference.md)** | All 76 slash commands by category |
 | **[Headless Mode](docs/headless.md)** | Non-interactive CLI for CI/CD, scripting, automation |
 | **[Architecture](docs/architecture.md)** | System overview, data flow, component lifecycle |
 | **[Repo Map](docs/repo-map.md)** | PageRank, cochange, blast radius, clone detection |
@@ -647,7 +752,7 @@ sf --headless              CLI mode — CI/CD, scripts, automation  ✓ shipped
 SoulForge TUI              Full experience (what you're looking at now)
 ```
 
-- **`@soulforge/intelligence`** — graph intelligence, 39 tools, and agent orchestration as an importable package. Build your own AI tools on top of SoulForge's brain.
+- **`@soulforge/intelligence`** — graph intelligence, 31 tools, and agent orchestration as an importable package. Build your own AI tools on top of SoulForge's brain.
 - **`@soulforge/mcp`** — expose soul_grep, soul_find, soul_analyze, soul_impact, navigate, read_code as MCP tools. Any AI tool that supports MCP gets SoulForge's graph intelligence.
 - **`sf --headless`** — non-interactive mode. Pipe in a prompt, get back results. For CI/CD, automation, and benchmarks. [Documentation →](docs/headless.md)
 
@@ -656,6 +761,7 @@ SoulForge TUI              Full experience (what you're looking at now)
 - **Repo Map visualization** — interactive dependency graph, PageRank heatmap, blast radius explorer
 - **GitHub CLI integration** — native `gh_pr`, `gh_issue`, `gh_status` tools with structured output
 - **Dispatch worktrees** — git worktree per code agent for conflict-free parallel edits
+- **[ACP support](https://agentclientprotocol.com/)** — Agent Client Protocol integration. Run SoulForge as a coding agent inside Zed, JetBrains, Neovim (agentic.nvim), or any ACP-compatible editor. Headless mode already covers 80% of the protocol surface — `sf --acp` would expose graph intelligence, multi-agent dispatch, and all 31 tools via JSON-RPC 2.0 over stdio
 
 **Planned:**
 - **Monorepo graph support** — cross-package dependency tracking for pnpm/npm/yarn workspaces, Cargo workspaces, Go workspaces (`go.work`), Nx/Turborepo, and Bazel/Buck. Currently the repo map treats each workspace root as an isolated unit — cross-package imports resolve as external dependencies instead of internal edges. This means PageRank, blast radius, and unused export detection don't span package boundaries.

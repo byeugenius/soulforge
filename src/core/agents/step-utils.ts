@@ -39,8 +39,49 @@ const STEP_NUDGE_EXPLORE = 18;
 const STEP_NUDGE_CODE = 10;
 // Consecutive read operations before injecting a "stop reading, start editing" hint
 const CONSECUTIVE_READ_LIMIT = 3;
+// Identical tool call repetitions before injecting a loop-break hint
+const REPEAT_CALL_THRESHOLD = 3;
+const REPEAT_CALL_WINDOW = 8;
 
 const READ_TOOL_NAMES = new Set(["read_file", "navigate", "soul_find", "list_dir"]);
+
+/**
+ * Detect degenerate tool-call loops: same tool + same args repeated across recent steps.
+ * Returns the worst offender (highest repeat count) or null.
+ */
+export function detectRepeatedCalls(
+  steps: ReadonlyArray<{
+    toolCalls: ReadonlyArray<{ toolName: string; input?: unknown }>;
+  }>,
+  window = REPEAT_CALL_WINDOW,
+  threshold = REPEAT_CALL_THRESHOLD,
+): { toolName: string; count: number; signature: string } | null {
+  const counts = new Map<string, { toolName: string; count: number }>();
+  const start = Math.max(0, steps.length - window);
+  for (let i = start; i < steps.length; i++) {
+    const calls = steps[i]?.toolCalls;
+    if (!calls) continue;
+    for (const tc of calls) {
+      let argStr: string;
+      try {
+        argStr = JSON.stringify(tc.input ?? {});
+      } catch {
+        argStr = "{}";
+      }
+      const sig = `${tc.toolName}::${argStr}`;
+      const entry = counts.get(sig);
+      if (entry) entry.count++;
+      else counts.set(sig, { toolName: tc.toolName, count: 1 });
+    }
+  }
+  let worst: { toolName: string; count: number; signature: string } | null = null;
+  for (const [sig, entry] of counts) {
+    if (entry.count >= threshold && (!worst || entry.count > worst.count)) {
+      worst = { toolName: entry.toolName, count: entry.count, signature: sig };
+    }
+  }
+  return worst;
+}
 
 const SUMMARIZABLE_TOOLS = new Set([
   "read_file",
@@ -512,6 +553,16 @@ export function buildPrepareStep({
           : "You have the file contents. Apply your edits with multi_edit NOW.";
         result.system =
           `${existing}\n\n${String(consecutiveReads)} consecutive reads without action. ${hint}`.trim();
+      }
+    }
+
+    // Degenerate loop detection: identical tool calls repeated across recent steps
+    if (stepNumber >= REPEAT_CALL_THRESHOLD) {
+      const repeated = detectRepeatedCalls(steps);
+      if (repeated) {
+        const existing = result.system ?? "";
+        result.system =
+          `${existing}\n\n🔁 LOOP DETECTED: ${repeated.toolName} called ${String(repeated.count)} times with identical arguments. Results have not changed. Do NOT call it again. Act on the results you already have or try a different approach.`.trim();
       }
     }
 
