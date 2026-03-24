@@ -923,7 +923,9 @@ export function App({
             activeTabId={tabMgr.activeTabId}
             onSwitch={tabMgr.switchTab}
             getActivity={tabMgr.getTabActivity}
-            getMode={(id) => tabMgr.getChat(id)?.forgeMode ?? "default"}
+            getMode={(id) =>
+              id === tabMgr.activeTabId ? forgeMode : (tabMgr.getChat(id)?.forgeMode ?? "default")
+            }
           />
         </box>
       ) : !editorVisible ? (
