@@ -1,38 +1,57 @@
 # Changelog
 
-All notable changes to SoulForge will be documented in this file.
+All notable changes to SoulForge are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.0.0] — 2026-03-25
 
-## [1.0.0] - 2026-03-14
+Initial public release.
 
-### Added
-- Multi-agent dispatch system with parallel explore, code, and web search agents
-- AgentBus: shared file cache, edit mutex, real-time findings, tool result deduplication
-- Repo map with PageRank ranking, git cochange analysis, clone detection (MinHash/Jaccard), blast radius graphs
-- AST semantic summaries (tree-sitter docstring extraction, zero LLM cost)
-- Soul tools suite: soul_grep, soul_find, soul_analyze, soul_impact (zero-cost repo map queries)
-- Compound tools: rename_symbol (cross-file LSP rename), move_symbol (cross-file move + import updates), project (20+ toolchain auto-detect)
-- Line-anchored edit_file with auto re-read on content drift
-- V2 compaction: incremental structured extraction via WorkingStateManager
-- Rolling tool result pruning with symbol enrichment (step-utils)
-- Forge modes: default, architect, socratic, challenge, plan
-- Task router: per-task model assignment (planning, coding, exploration, trivial, desloppify)
-- Persistent memory system (SQLite FTS5, title-only, pull-based)
-- Multi-tab sessions with independent chat contexts
-- Embedded Neovim with LSP integration (msgpack-RPC)
-- 4-tier code intelligence: LSP, ts-morph, tree-sitter, regex
-- 9 LLM providers: Anthropic, OpenAI, Google, xAI, Ollama, OpenRouter, LLMGateway, Vercel Gateway, Proxy
-- Web search with multi-step research agent
-- Crash-resilient session saves (incremental + exit handler)
-- Boot splash with child-process spinner (survives blocking imports)
-- Forbidden file enforcement across all tools
-- Outside-CWD write confirmation
-- Shell anti-pattern blocking
+### Core
 
-### Fixed
-- SQLite "database is locked" crash on concurrent repo map access
-- useMemo after early return in WritePlanCall (Rules of Hooks violation)
-- Database busy_timeout set on all SQLite databases (Memory, History, RepoMap)
-- Non-null assertions replaced with safe checks in multi-edit and edit-stack
+- **Embedded Neovim** — full LazyVim distribution with 30+ plugins, LSP via Mason, Catppuccin theme, msgpack-RPC bridge
+- **Multi-agent dispatch** — up to 8 parallel agents (3 concurrent slots) with shared file cache, edit ownership, and dependency ordering
+- **Graph-powered repo map** — SQLite-backed codebase graph with PageRank, cochange analysis, blast radius, clone detection, and FTS5 search
+- **4-tier code intelligence** — LSP → ts-morph → tree-sitter → regex fallback chain across 33 languages
+- **V2 incremental compaction** — deterministic state extraction from tool calls with cheap LLM gap-fill
+- **Per-step tool result pruning** — rolling window keeps last 4 results full, older results become one-line summaries enriched with repo map symbols
+
+### Tools (39 total)
+
+- **Compound tools** — `rename_symbol` (compiler-guaranteed), `move_symbol` (with cross-file import updates), `refactor` (extract function/variable)
+- **Soul tools** — `soul_grep` (count-mode with repo map intercept), `soul_find` (fuzzy search with PageRank + signatures), `soul_analyze` (file profiles, unused exports, identifier frequency), `soul_impact` (dependents, cochanges, blast radius)
+- **Project tool** — auto-detects lint/test/build/typecheck across 17 ecosystems, pre-commit gate, monorepo workspace discovery
+- **Web tools** — `web_search` and `fetch_page` with SSRF protection and approval gates
+- **Memory system** — SQLite with FTS5, title-only memories, pull-based recall
+- **Line-anchored editing** — `edit_file` with `lineStart` hint, auto re-read on content drift, rich error output
+
+### Providers
+
+- 10 built-in providers: Anthropic, OpenAI, Google, xAI, Ollama, OpenRouter, LLM Gateway, Vercel AI Gateway, Proxy, and custom OpenAI-compatible
+- Task router — assign models per task type (plan, code, explore, search, trivial, cleanup, compact)
+- Per-family prompt system with separate base prompts for Claude, OpenAI, Gemini, and generic fallback
+
+### Interface
+
+- 76 slash commands, 10 keyboard shortcuts
+- 6 forge modes: default, auto, architect, socratic, challenge, plan
+- Multi-tab chat with cross-tab file coordination and advisory claims
+- User steering — type while the agent works, messages inject at the next step
+- Installable skill system for domain-specific capabilities
+- Destructive action approval gates — individually prompted for `rm -rf`, `git push --force`, sensitive file edits
+- Unified model selector with search, provider scoping (`provider/model`), and context window display
+
+### Distribution
+
+- Prebuilt standalone binaries for macOS (ARM64, x64) and Linux (x64, ARM64)
+- Self-contained bundle with Neovim, ripgrep, fd, lazygit, tree-sitter grammars, Nerd Fonts
+- npm via GitHub Packages (`@proxysoul/soulforge`)
+- Homebrew (`brew install proxysoul/tap/soulforge`)
+- Headless mode for CI/CD and scripting with JSON, JSONL, and streaming output
+- Automated releases with git-cliff changelog generation
+
+### Documentation
+
+- README with architecture diagrams, comparison table, full tool reference
+- 12 deep-dive docs covering architecture, repo map, agent bus, compound tools, compaction, project tool, steering, provider options, prompt system, headless mode, commands reference, and cross-tab coordination
+- Getting started guide with multi-platform installation
+- Contributing guide with project structure, conventions, and PR guidelines

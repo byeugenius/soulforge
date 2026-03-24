@@ -46,12 +46,11 @@ commit_parsers = [
   { message = "^fix", group = "Bug Fixes" },
   { message = "^perf", group = "Performance" },
   { message = "^refactor", group = "Refactor" },
-  { message = "^doc", group = "Documentation" },
-  { message = "^style", group = "Styling" },
+  { message = "^docs", group = "Documentation" },
   { message = "^test", group = "Testing" },
   { message = "^chore\\(release\\)", skip = true },
   { message = "^chore\\(deps\\)", skip = true },
-  { message = "^chore|^ci", group = "Miscellaneous" },
+  { message = "^chore|^ci|^style|^build", group = "Miscellaneous" },
   { body = ".*security", group = "Security" },
 ]
 protect_breaking_commits = false

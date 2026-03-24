@@ -67,11 +67,11 @@ fi
 TMPFILE=$(mktemp)
 jq ".version = \"${VERSION}\"" package.json > "$TMPFILE" && mv "$TMPFILE" package.json
 
-# Generate changelog
-git-cliff --tag "$TAG" -o CHANGELOG.md
-
-# Extract release notes for this version only (for GH release body)
+# Generate release notes for this version (for GH release body)
 RELEASE_NOTES=$(git-cliff --tag "$TAG" --unreleased --strip header)
+
+# Prepend new version to CHANGELOG.md (preserve existing v1.0.0 and earlier)
+git-cliff --tag "$TAG" --unreleased --prepend CHANGELOG.md
 
 # Commit and tag
 git add package.json CHANGELOG.md
