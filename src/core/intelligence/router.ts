@@ -356,7 +356,8 @@ export class CodeIntelligenceRouter {
     let visited = 0;
 
     while (queue.length > 0 && visited < MAX_DIRS) {
-      const item = queue.shift()!;
+      const item = queue.shift();
+      if (!item) break;
       visited++;
       try {
         const entries = readdirSync(item.dir, { withFileTypes: true });
@@ -423,7 +424,8 @@ export class CodeIntelligenceRouter {
     let visited = 0;
 
     while (queue.length > 0 && visited < MAX_DIRS) {
-      const item = queue.shift()!;
+      const item = queue.shift();
+      if (!item) break;
       visited++;
       try {
         const entries = readdirSync(item.dir, { withFileTypes: true });
