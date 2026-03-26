@@ -256,10 +256,17 @@ function buildForgePrepareStep(
       }
 
       // Prepend fresh Soul Map + Skills as user→assistant message pairs
+      // Soul Map messages are cached by ContextManager — identical bytes when
+      // unchanged, enabling prefix cache hits across providers.
       const prefix: ModelMessage[] = [];
       const soulMapMsgs = contextManager.buildSoulMapMessages();
       if (soulMapMsgs) {
-        prefix.push(...(soulMapMsgs as unknown as ModelMessage[]));
+        const [userMsg, assistantMsg] = soulMapMsgs;
+        prefix.push(userMsg as unknown as ModelMessage);
+        prefix.push({
+          ...(assistantMsg as unknown as ModelMessage),
+          providerOptions: EPHEMERAL_CACHE,
+        });
       }
       const skillsMsgs = contextManager.buildSkillsMessages();
       if (skillsMsgs) {
@@ -275,20 +282,26 @@ function buildForgePrepareStep(
       result.messages = stripped;
     }
 
-    // Cache breakpoint: mark the second-to-last message with cache_control.
-    // This tells the API "everything up to this point is a prefix — cache it."
-    // Same technique as Claude Code: append-only messages + breakpoint on penultimate.
+    // Cache breakpoints: Anthropic supports up to 4.
+    // Breakpoint 1: Soul Map assistant message (prefix[1]) — stable when no edits.
+    // Breakpoint 2: second-to-last conversation message — append-only pattern.
     if (stepNumber > 0) {
       const msgs = result.messages ?? messages;
       if (msgs.length >= 2) {
-        // Strip cache_control from all messages first (only one breakpoint allowed)
-        for (const msg of msgs) {
-          if (msg.providerOptions?.anthropic) {
+        // Strip old cache_control from conversation messages (skip Soul Map at prefix)
+        const soulMapEnd =
+          msgs[0]?.role === "user" &&
+          typeof msgs[0]?.content === "string" &&
+          msgs[0].content.startsWith("<soul_map>")
+            ? 2
+            : 0;
+        for (let i = soulMapEnd; i < msgs.length; i++) {
+          const msg = msgs[i];
+          if (msg?.providerOptions?.anthropic) {
             const { anthropic: _, ...rest } = msg.providerOptions;
             msg.providerOptions = Object.keys(rest).length > 0 ? rest : undefined;
           }
         }
-        // Place breakpoint on second-to-last message
         const target = msgs[msgs.length - 2];
         if (target) {
           target.providerOptions = { ...target.providerOptions, ...EPHEMERAL_CACHE };
@@ -383,10 +396,11 @@ function buildForgePrepareStep(
         }
       }
 
-      // Degenerate loop detection: identical tool calls repeated in recent messages
+      // Degenerate loop detection: identical tool calls OR same tool+path repeated in recent messages
       const LOOP_THRESHOLD = 3;
       const LOOP_WINDOW = 16;
-      const callCounts = new Map<string, { toolName: string; count: number }>();
+      const exactCounts = new Map<string, { toolName: string; count: number }>();
+      const pathCounts = new Map<string, { toolName: string; count: number }>();
       const startIdx = Math.max(0, messages.length - LOOP_WINDOW);
       for (let i = startIdx; i < messages.length; i++) {
         const m = messages[i];
@@ -395,21 +409,37 @@ function buildForgePrepareStep(
           if (typeof part !== "object" || part === null || !("type" in part)) continue;
           const p = part as { type: string; toolName?: string; input?: unknown };
           if (p.type !== "tool-call" || !p.toolName) continue;
+          // Exact args match
           let argStr: string;
           try {
             argStr = JSON.stringify(p.input ?? {});
           } catch {
             argStr = "{}";
           }
-          const sig = `${p.toolName}::${argStr}`;
-          const entry = callCounts.get(sig);
-          if (entry) entry.count++;
-          else callCounts.set(sig, { toolName: p.toolName, count: 1 });
+          const exactSig = `${p.toolName}::${argStr}`;
+          const exactEntry = exactCounts.get(exactSig);
+          if (exactEntry) exactEntry.count++;
+          else exactCounts.set(exactSig, { toolName: p.toolName, count: 1 });
+          // Path-based match (same tool + same file path, different args)
+          const input = p.input as Record<string, unknown> | null;
+          const filePath = input?.path ?? input?.file ?? input?.query;
+          if (typeof filePath === "string") {
+            const pathSig = `${p.toolName}::path=${filePath}`;
+            const pathEntry = pathCounts.get(pathSig);
+            if (pathEntry) pathEntry.count++;
+            else pathCounts.set(pathSig, { toolName: p.toolName, count: 1 });
+          }
         }
       }
       const loopingTools = new Set<string>();
-      for (const [, entry] of callCounts) {
+      for (const [, entry] of exactCounts) {
         if (entry.count >= LOOP_THRESHOLD) {
+          loopingTools.add(entry.toolName);
+        }
+      }
+      // Path-based loops need a higher threshold (5) since different args are expected
+      for (const [, entry] of pathCounts) {
+        if (entry.count >= 5) {
           loopingTools.add(entry.toolName);
         }
       }

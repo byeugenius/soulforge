@@ -94,9 +94,10 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
   const completedTimeRef = useRef<string | null>(null);
   const elapsedSecRef = useRef(0);
   const scanPosRef = useRef(0);
+  const scanDirRef = useRef(1);
   const propsRef = useRef({ isLoading, isCompacting, queueCount });
   propsRef.current = { isLoading, isCompacting, queueCount };
-  const scanWidth = Math.max(10, (termWidth ?? 80) - 4);
+  const scanWidth = Math.max(10, Math.floor((termWidth ?? 80) * 0.3));
 
   const showBusy = isLoading || isCompacting;
 
@@ -138,11 +139,15 @@ export function LoadingStatus({ isLoading, isCompacting, queueCount }: LoadingSt
   useEffect(() => {
     if (!showBusy) {
       scanPosRef.current = 0;
+      scanDirRef.current = 1;
       return;
     }
     const w = scanWidth;
     const timer = setInterval(() => {
-      scanPosRef.current = (scanPosRef.current + 1) % (w + 6);
+      const next = scanPosRef.current + scanDirRef.current;
+      if (next >= w - 1) scanDirRef.current = -1;
+      else if (next <= 0) scanDirRef.current = 1;
+      scanPosRef.current = next;
       try {
         if (scanRef.current) {
           scanRef.current.content = buildScanContent(scanPosRef.current, w);

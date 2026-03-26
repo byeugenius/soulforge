@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
-import { reloadBuffer } from "../editor/instance.js";
+import { markToolWrite, reloadBuffer } from "../editor/instance.js";
 import { isForbidden } from "../security/forbidden.js";
 import { emitFileEdited } from "./file-events.js";
 
@@ -124,6 +124,7 @@ export const undoEditTool = {
       }
 
       await writeFile(filePath, restored, "utf-8");
+      markToolWrite(filePath);
       emitFileEdited(filePath, restored);
 
       await reloadBuffer(filePath);

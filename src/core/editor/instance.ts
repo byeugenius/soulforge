@@ -49,7 +49,22 @@ export async function reloadBuffer(filePath: string, line?: number): Promise<boo
   }
 }
 
+// Files recently written by tools — skip nvim buffer, read from disk directly
+const recentToolWrites = new Map<string, number>();
+const TOOL_WRITE_FRESHNESS_MS = 2000;
+
+export function markToolWrite(filePath: string): void {
+  recentToolWrites.set(filePath, Date.now());
+}
+
 export async function readBufferContent(filePath: string): Promise<string> {
+  // If this file was just written by a tool, read from disk to avoid stale nvim buffer
+  const toolWriteTime = recentToolWrites.get(filePath);
+  if (toolWriteTime && Date.now() - toolWriteTime < TOOL_WRITE_FRESHNESS_MS) {
+    recentToolWrites.delete(filePath);
+    return readFileSync(filePath, "utf-8");
+  }
+
   const nvim = instance as
     | (NvimInstance & {
         api: { executeLua: (code: string, args: unknown[]) => Promise<unknown> };

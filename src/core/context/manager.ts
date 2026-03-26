@@ -70,6 +70,9 @@ export class ContextManager {
   private conversationTokens = 0;
   private contextWindowTokens = DEFAULT_CONTEXT_WINDOW;
   private repoMapCache: { content: string; at: number } | null = null;
+  private soulMapMessagesCache:
+    | [{ role: "user"; content: string }, { role: "assistant"; content: string }]
+    | null = null;
   private taskRouter: TaskRouter | undefined;
   private semanticSummaryLimit = 300;
   private semanticAutoRegen = false;
@@ -320,6 +323,7 @@ export class ContextManager {
     }
     this.editedFiles.add(absPath);
     this.repoMapCache = null;
+    this.soulMapMessagesCache = null;
     this.gitContextStale = true;
   }
 
@@ -350,6 +354,7 @@ export class ContextManager {
 
     this.conversationTokens = 0;
     this.repoMapCache = null;
+    this.soulMapMessagesCache = null;
   }
 
   /** Render repo map with full tracked context (cached within TTL) */
@@ -860,15 +865,18 @@ export class ContextManager {
     | [{ role: "user"; content: string }, { role: "assistant"; content: string }]
     | null {
     if (!this.repoMapEnabled || !this.repoMapReady) return null;
+    if (this.soulMapMessagesCache) return this.soulMapMessagesCache;
+
     const rendered = this.renderRepoMap();
     if (!rendered) return null;
 
     const isMinimal = this.contextWindowTokens <= MINIMAL_CONTEXT_THRESHOLD;
     const dirTree = buildDirectoryTree(this.cwd);
-    return [
+    this.soulMapMessagesCache = [
       { role: "user" as const, content: buildSoulMapContent(rendered, isMinimal, dirTree) },
       { role: "assistant" as const, content: buildSoulMapAck() },
     ];
+    return this.soulMapMessagesCache;
   }
 
   /**

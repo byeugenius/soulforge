@@ -17,6 +17,7 @@ Tool priority — use the cheapest tool that answers your question:
 7. **COSTLY — use sparingly** — dispatch spawns parallel subagents, each with its own context window at full model cost. Only for 8+ file edits or 11+ file exploration. Most tasks do NOT need dispatch.
 
 Editing: read file ONCE in full, plan all changes, multi_edit in ONE call per file.
+ALWAYS pass lineStart (1-indexed, from read_file output) on every edit — it makes edits escape-proof. Without it, backslash-heavy code (regex, paths) can fail to match.
 Compound tools (rename_symbol, move_symbol, refactor) do the complete job — no verification needed after.
 
 Dispatch: reading ≤10 files → read_file directly (parallel tool calls, stays cached). Editing ≤7 files → edit_file directly.
@@ -36,6 +37,7 @@ Tool priority — use the cheapest tool that answers your question:
 5. **COSTLY — use sparingly** — dispatch spawns parallel subagents at full model cost. Only for 8+ file edits or 11+ file exploration.
 
 Editing: read file ONCE in full, plan all changes, multi_edit in ONE call per file.
+ALWAYS pass lineStart (1-indexed, from read_file output) on every edit — it makes edits escape-proof. Without it, backslash-heavy code (regex, paths) can fail to match.
 Compound tools (rename_symbol, move_symbol, refactor) do the complete job — no verification needed after.
 
 Dispatch: reading ≤10 files → read directly. Editing ≤7 files → edit directly. Most tasks do NOT need dispatch.`;

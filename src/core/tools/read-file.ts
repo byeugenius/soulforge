@@ -39,7 +39,7 @@ const CODE_EXTENSIONS = new Set([
   ".zig",
 ]);
 
-type ReadTarget = "function" | "class" | "type" | "interface" | "variable" | "enum" | "scope";
+type ReadTarget = string;
 
 interface ReadFileArgs {
   path: string;
@@ -131,16 +131,18 @@ export const readFileTool = {
         };
       }
 
+      const isFullRead = args.startLine == null && args.endLine == null;
+      const isCodeFile = CODE_EXTENSIONS.has(extname(filePath));
+
+      // Kick off outline generation in parallel with buffer read for full reads of code files
+      const outlinePromise =
+        isFullRead && isCodeFile ? getCompactOutline(filePath) : Promise.resolve(null);
+
       const content = await readBufferContent(filePath);
       const lines = content.split("\n");
-      const isFullRead = args.startLine == null && args.endLine == null;
 
-      if (
-        isFullRead &&
-        lines.length > OUTLINE_THRESHOLD &&
-        CODE_EXTENSIONS.has(extname(filePath))
-      ) {
-        const outline = await getCompactOutline(filePath);
+      if (isFullRead && lines.length > OUTLINE_THRESHOLD && isCodeFile) {
+        const outline = await outlinePromise;
         if (outline) {
           const sizeKB = Math.round(stat.size / 1024);
           emitFileRead(filePath);
@@ -166,8 +168,8 @@ export const readFileTool = {
 
       emitFileRead(filePath);
 
-      if (isFullRead && lines.length > 100 && CODE_EXTENSIONS.has(extname(filePath))) {
-        const outline = await getCompactOutline(filePath);
+      if (isFullRead && lines.length > 100 && isCodeFile) {
+        const outline = await outlinePromise;
         if (outline) return { success: true, output: `${outline}\n${numbered}` };
       }
 

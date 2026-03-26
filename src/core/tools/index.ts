@@ -276,7 +276,7 @@ export function buildTools(
         startLine: z.number().optional().describe("Start line (1-indexed)"),
         endLine: z.number().optional().describe("End line (1-indexed)"),
         target: z
-          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
+          .string()
           .optional()
           .describe("Symbol type to extract (AST-based). Omit for raw file read."),
         name: z
@@ -340,13 +340,15 @@ export function buildTools(
       description: editFileTool.description,
       inputSchema: z.object({
         path: z.string().describe("File path to edit"),
-        oldString: z.string().describe("Exact string to replace (empty = create new file)"),
-        newString: z.string().describe("Replacement string"),
+        oldString: z.string().describe("Content to replace (empty = create new file)"),
+        newString: z.string().describe("Replacement content"),
         lineStart: z
           .number()
           .optional()
           .describe(
-            "1-indexed line hint from your last read. When paired with lineEnd, enables line-range replacement as fallback when oldString match fails.",
+            "RECOMMENDED: 1-indexed line number from your last read_file output. " +
+              "Makes edits escape-proof — if oldString fails to match (e.g. backslash-heavy code), " +
+              "the edit falls back to line-based replacement using this anchor. Always provide when available.",
           ),
         lineEnd: z
           .number()
@@ -417,9 +419,12 @@ export function buildTools(
         edits: z
           .array(
             z.object({
-              oldString: z.string().describe("Exact string to replace"),
-              newString: z.string().describe("Replacement string"),
-              lineStart: z.number().optional().describe("Line hint (1-indexed)"),
+              oldString: z.string().describe("Content to replace"),
+              newString: z.string().describe("Replacement content"),
+              lineStart: z
+                .number()
+                .optional()
+                .describe("RECOMMENDED: 1-indexed line number from read_file output"),
               lineEnd: z
                 .number()
                 .optional()
@@ -1158,7 +1163,7 @@ export function buildSubagentExploreTools(opts?: {
         startLine: z.number().optional().describe("Start line (1-indexed)"),
         endLine: z.number().optional().describe("End line (1-indexed)"),
         target: z
-          .enum(["function", "class", "type", "interface", "variable", "enum", "scope"])
+          .string()
           .optional()
           .describe("Symbol type to extract (AST-based). Omit for raw file read."),
         name: z
@@ -1469,13 +1474,15 @@ export function buildSubagentCodeTools(opts?: {
       description: editFileTool.description,
       inputSchema: z.object({
         path: z.string().describe("File path to edit"),
-        oldString: z.string().describe("Exact string to replace (empty = create new file)"),
-        newString: z.string().describe("Replacement string"),
+        oldString: z.string().describe("Content to replace (empty = create new file)"),
+        newString: z.string().describe("Replacement content"),
         lineStart: z
           .number()
           .optional()
           .describe(
-            "1-indexed line hint from your last read. When paired with lineEnd, enables line-range replacement as fallback when oldString match fails.",
+            "RECOMMENDED: 1-indexed line number from your last read_file output. " +
+              "Makes edits escape-proof — if oldString fails to match (e.g. backslash-heavy code), " +
+              "the edit falls back to line-based replacement using this anchor. Always provide when available.",
           ),
         lineEnd: z
           .number()
@@ -1505,9 +1512,12 @@ export function buildSubagentCodeTools(opts?: {
         edits: z
           .array(
             z.object({
-              oldString: z.string().describe("Exact string to replace"),
-              newString: z.string().describe("Replacement string"),
-              lineStart: z.number().optional().describe("Line hint (1-indexed)"),
+              oldString: z.string().describe("Content to replace"),
+              newString: z.string().describe("Replacement content"),
+              lineStart: z
+                .number()
+                .optional()
+                .describe("RECOMMENDED: 1-indexed line number from read_file output"),
               lineEnd: z
                 .number()
                 .optional()

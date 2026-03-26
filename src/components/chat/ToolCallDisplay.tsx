@@ -691,6 +691,51 @@ interface Props {
   diffStyle?: "default" | "sidebyside" | "compact";
 }
 
+/** Render a single tool call row with optional tree connector prefix. */
+function renderToolCall(
+  tc: LiveToolCall,
+  seconds: number | undefined,
+  diffStyle: "default" | "sidebyside" | "compact",
+  connector?: { isLast: boolean },
+) {
+  if ((tc.toolName === "write_plan" || tc.toolName === "plan") && tc.args) {
+    try {
+      const plan = JSON.parse(tc.args) as PlanOutput;
+      if (plan.title && Array.isArray(plan.steps) && Array.isArray(plan.files)) {
+        return (
+          <box key={tc.id} flexDirection="column">
+            <StructuredPlanView plan={plan} result={tc.result} />
+            {tc.state === "running" && (
+              <box height={1} flexShrink={0} marginTop={1}>
+                <text>
+                  <span fg="#555">◎ </span>
+                  <span fg="#b87333"> Awaiting review</span>
+                  <span fg="#555"> — select below</span>
+                </text>
+              </box>
+            )}
+          </box>
+        );
+      }
+    } catch {}
+  }
+  if (connector) {
+    return (
+      <box key={tc.id} flexDirection="row">
+        <box width={2} flexShrink={0}>
+          <text>
+            <span fg="#333">{connector.isLast ? "└ " : "├ "}</span>
+          </text>
+        </box>
+        <box flexGrow={1} flexDirection="column">
+          <ToolRow tc={tc} seconds={seconds} diffStyle={diffStyle} />
+        </box>
+      </box>
+    );
+  }
+  return <ToolRow key={tc.id} tc={tc} seconds={seconds} diffStyle={diffStyle} />;
+}
+
 export const ToolCallDisplay = memo(function ToolCallDisplay({
   calls,
   verbose = false,
@@ -715,33 +760,49 @@ export const ToolCallDisplay = memo(function ToolCallDisplay({
     return true;
   });
 
+  // Single call — no tree needed
+  if (visible.length <= 1) {
+    return (
+      <box flexDirection="column">
+        {visible.map((tc) => renderToolCall(tc, elapsed.get(tc.id), diffStyle))}
+      </box>
+    );
+  }
+
+  // Multiple parallel calls — render with tree grouping
+  const anyRunning = visible.some((tc) => tc.state === "running");
+  const allDone = visible.every((tc) => tc.state !== "running");
+  const anyError = visible.some((tc) => tc.state === "error");
+  const headerColor = anyRunning ? "#9B30FF" : anyError ? "#f44" : "#4a7";
+  const headerIcon = anyRunning ? null : anyError ? "✗" : "✓";
+
   return (
     <box flexDirection="column">
-      {visible.map((tc) => {
-        const seconds = elapsed.get(tc.id);
-        if ((tc.toolName === "write_plan" || tc.toolName === "plan") && tc.args) {
-          try {
-            const plan = JSON.parse(tc.args) as PlanOutput;
-            if (plan.title && Array.isArray(plan.steps) && Array.isArray(plan.files)) {
-              return (
-                <box key={tc.id} flexDirection="column">
-                  <StructuredPlanView plan={plan} result={tc.result} />
-                  {tc.state === "running" && (
-                    <box height={1} flexShrink={0} marginTop={1}>
-                      <text>
-                        <span fg="#555">◎ </span>
-                        <span fg="#b87333"> Awaiting review</span>
-                        <span fg="#555"> — select below</span>
-                      </text>
-                    </box>
-                  )}
-                </box>
-              );
-            }
-          } catch {}
-        }
-        return <ToolRow key={tc.id} tc={tc} seconds={seconds} diffStyle={diffStyle} />;
-      })}
+      <box height={1} flexShrink={0}>
+        <text truncate>
+          {headerIcon ? (
+            <span fg={headerColor}>{headerIcon} </span>
+          ) : (
+            <>
+              <Spinner color={headerColor} />
+              <span> </span>
+            </>
+          )}
+          <span fg={allDone ? "#555" : "#999"}>parallel ×{String(visible.length)}</span>
+          {allDone ? null : (
+            <span fg="#555">
+              {" "}
+              · {String(visible.filter((tc) => tc.state !== "running").length)}/
+              {String(visible.length)} done
+            </span>
+          )}
+        </text>
+      </box>
+      {visible.map((tc, i) =>
+        renderToolCall(tc, elapsed.get(tc.id), diffStyle, {
+          isLast: i === visible.length - 1,
+        }),
+      )}
     </box>
   );
 });

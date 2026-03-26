@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { analyzeFile } from "../analysis/complexity.js";
-import { readBufferContent, reloadBuffer } from "../editor/instance.js";
+import { markToolWrite, readBufferContent, reloadBuffer } from "../editor/instance.js";
 import { isForbidden } from "../security/forbidden.js";
 import { buildRichEditError, fuzzyWhitespaceMatch } from "./edit-file.js";
 import { pushEdit } from "./edit-stack.js";
@@ -54,54 +54,75 @@ export const multiEditTool = {
 
       // Phase 1: Validate and apply edits sequentially against evolving content.
       // Each edit sees the result of all prior edits — overlapping edits fail explicitly.
+      // lineOffset tracks cumulative line count changes from prior edits so that
+      // lineStart values (which reference the ORIGINAL file) stay accurate.
+      let lineOffset = 0;
 
       for (let i = 0; i < args.edits.length; i++) {
         const edit = args.edits[i];
         if (!edit) continue;
-        let resolvedOld = edit.oldString;
-        let resolvedNew = edit.newString;
+        const label = `Edit ${String(i + 1)}/${String(args.edits.length)}`;
+        const adjustedLineStart = edit.lineStart != null ? edit.lineStart + lineOffset : undefined;
+        const adjustedLineEnd = edit.lineEnd != null ? edit.lineEnd + lineOffset : undefined;
+        const oldLineCount = edit.oldString.split("\n").length;
+        const newLineCount = edit.newString.split("\n").length;
 
-        if (!content.includes(resolvedOld)) {
-          const fixed = fuzzyWhitespaceMatch(content, resolvedOld, resolvedNew);
-          if (fixed) {
-            resolvedOld = fixed.oldStr;
-            resolvedNew = fixed.newStr;
-          } else if (edit.lineStart != null && edit.lineEnd != null) {
-            // Line-range fallback for escape-heavy code
-            const lines = content.split("\n");
-            const start = edit.lineStart - 1;
-            const end = edit.lineEnd;
-            if (start >= 0 && end <= lines.length && start < end) {
-              const before = lines.slice(0, start);
-              const after = lines.slice(end);
-              const newLines = resolvedNew.split("\n");
-              content = [...before, ...newLines, ...after].join("\n");
-              continue; // skip the normal replace below
+        // Helper: apply line-based replacement at a given range
+        const applyLineReplace = (start: number, end: number): boolean => {
+          const lines = content.split("\n");
+          if (start < 0 || end > lines.length || start >= end) return false;
+          const before = lines.slice(0, start);
+          const after = lines.slice(end);
+          content = [...before, ...edit.newString.split("\n"), ...after].join("\n");
+          return true;
+        };
+
+        // Try exact string match first
+        if (content.includes(edit.oldString)) {
+          const occurrences = content.split(edit.oldString).length - 1;
+          if (occurrences > 1) {
+            if (adjustedLineStart != null) {
+              const start = adjustedLineStart - 1;
+              const end = adjustedLineEnd != null ? adjustedLineEnd : start + oldLineCount;
+              if (applyLineReplace(start, end)) {
+                lineOffset += newLineCount - oldLineCount;
+                continue;
+              }
             }
-            const err = buildRichEditError(content, resolvedOld, edit.lineStart);
-            return {
-              success: false,
-              output: `Edit ${String(i + 1)}/${String(args.edits.length)} failed: ${err.output}`,
-              error: `edit ${String(i + 1)} failed`,
-            };
-          } else {
-            const err = buildRichEditError(content, resolvedOld, edit.lineStart);
-            return {
-              success: false,
-              output: `Edit ${String(i + 1)}/${String(args.edits.length)} failed: ${err.output}`,
-              error: `edit ${String(i + 1)} failed`,
-            };
+            const msg = `${label}: found ${String(occurrences)} matches. Provide lineStart to disambiguate.`;
+            return { success: false, output: msg, error: msg };
+          }
+          content = content.replace(edit.oldString, edit.newString);
+          lineOffset += newLineCount - oldLineCount;
+          continue;
+        }
+
+        // Fuzzy match (whitespace + escape normalization)
+        const fixed = fuzzyWhitespaceMatch(content, edit.oldString, edit.newString);
+        if (fixed && content.includes(fixed.oldStr)) {
+          const fixedOldLines = fixed.oldStr.split("\n").length;
+          const fixedNewLines = fixed.newStr.split("\n").length;
+          content = content.replace(fixed.oldStr, fixed.newStr);
+          lineOffset += fixedNewLines - fixedOldLines;
+          continue;
+        }
+
+        // Line-based fallback (when lineStart provided)
+        if (adjustedLineStart != null) {
+          const start = adjustedLineStart - 1;
+          const end = adjustedLineEnd != null ? adjustedLineEnd : start + oldLineCount;
+          if (applyLineReplace(start, end)) {
+            lineOffset += newLineCount - oldLineCount;
+            continue;
           }
         }
 
-        const occurrences = content.split(resolvedOld).length - 1;
-        if (occurrences > 1) {
-          const msg = `Edit ${String(i + 1)}/${String(args.edits.length)}: found ${String(occurrences)} matches for oldString. Provide more context to make it unique.`;
-          return { success: false, output: msg, error: msg };
-        }
-
-        // Apply this edit so subsequent edits validate against the updated state
-        content = content.replace(resolvedOld, resolvedNew);
+        const err = buildRichEditError(content, edit.oldString, adjustedLineStart);
+        return {
+          success: false,
+          output: `${label} failed: ${err.output}`,
+          error: `edit ${String(i + 1)} failed`,
+        };
       }
 
       // Phase 2: All edits validated — compute metrics and apply
@@ -128,6 +149,7 @@ export const multiEditTool = {
       pushEdit(filePath, originalContent, args.tabId);
 
       await writeFile(filePath, content, "utf-8");
+      markToolWrite(filePath);
       emitFileEdited(filePath, content);
 
       await reloadBuffer(filePath);
