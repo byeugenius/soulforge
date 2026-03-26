@@ -265,7 +265,7 @@ export interface AppConfig {
   coAuthorCommits?: boolean;
   /** Default forge mode for new sessions. Default: "default" */
   defaultForgeMode?: ForgeMode;
-  /** @deprecated Repo map is always enabled. Use SOULFORGE_NO_REPOMAP=1 env var to disable. Kept for config file compat. */
+  /** Enable/disable soul map (AST index). Disabling saves ~4-8k prompt tokens. Default: true. Toggle via /repo-map → 'e'. */
   repoMap?: boolean;
   /** Semantic summary mode: "off", "ast" (docstrings only), "synthetic" (ast + name-derived, free), "llm" (ast + AI-generated), "full" (ast + llm + synthetic). Boolean compat: true → "synthetic", false → "off". "on" is legacy alias for "full". */
   semanticSummaries?: "off" | "ast" | "synthetic" | "llm" | "full" | "on" | boolean;

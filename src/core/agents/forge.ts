@@ -13,6 +13,7 @@ import { detectModelFamily, EPHEMERAL_CACHE, isAnthropicNative } from "../llm/pr
 import {
   buildInteractiveTools,
   buildTools,
+  SCHEMAS,
   PLAN_EXECUTION_TOOL_NAMES,
   RESTRICTED_TOOL_NAMES,
 } from "../tools/index.js";
@@ -735,11 +736,7 @@ function wrapReadFileWithDispatchCache(
 
   return tool({
     description: readFileTool.description,
-    inputSchema: z.object({
-      path: z.string().describe("File path to read"),
-      startLine: z.number().optional().describe("Start line (1-indexed)"),
-      endLine: z.number().optional().describe("End line (1-indexed)"),
-    }),
+    inputSchema: SCHEMAS.readFile.pick({ path: true, startLine: true, endLine: true }),
     execute: async (args) => {
       const cache = cacheRef.current;
       if (cache) {

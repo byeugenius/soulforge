@@ -230,6 +230,10 @@ export function RepoMapStatusPopup({
       setSelectedAutoRegen((v) => !v);
       return;
     }
+    if (evt.sequence === "e" && onToggle) {
+      onToggle(!enabled, selectedScope);
+      return;
+    }
   });
 
   if (!visible) return null;
@@ -371,10 +375,23 @@ export function RepoMapStatusPopup({
             <PopupRow w={innerW}>
               <text bg={POPUP_BG}>
                 {"  "}
-                <span fg="#5CBBF6">{"r refresh"}</span>
-                <span fg="#FF8C00">{"   x clear index"}</span>
+                {onToggle && (
+                  <span fg={enabled ? "#FF0040" : "#2d5"}>
+                    {enabled ? "e disable" : "e enable"}
+                    {"   "}
+                  </span>
+                )}
+                {enabled && <span fg="#5CBBF6">{"r refresh"}</span>}
+                {enabled && <span fg="#FF8C00">{"   x clear index"}</span>}
               </text>
             </PopupRow>
+            {!enabled && (
+              <PopupRow w={innerW}>
+                <text bg={POPUP_BG} fg="#FF8C00">
+                  {"  Soul map disabled — soul tools inactive, saves ~4-8k prompt tokens"}
+                </text>
+              </PopupRow>
+            )}
           </>
         )}
 
@@ -521,7 +538,7 @@ export function RepoMapStatusPopup({
         {!hasConfig && (
           <PopupRow w={innerW}>
             <text bg={POPUP_BG} fg="#555">
-              {"  e toggle | r refresh | x clear | tab scope | esc close"}
+              {`  e ${enabled ? "disable" : "enable"} | r refresh | x clear | tab scope | esc close`}
             </text>
           </PopupRow>
         )}

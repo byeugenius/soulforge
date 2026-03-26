@@ -161,7 +161,9 @@ export const TabInstance = memo(function TabInstance({
     contextManager,
   ]);
 
-  // repoMap config is deprecated — always enabled (SOULFORGE_NO_REPOMAP=1 env var for debug)
+  useEffect(() => {
+    contextManager.setRepoMapEnabled(effectiveConfig.repoMap !== false);
+  }, [effectiveConfig.repoMap, contextManager]);
 
   useEffect(() => {
     contextManager.setTaskRouter(effectiveConfig.taskRouter);

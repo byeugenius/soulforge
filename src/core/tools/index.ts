@@ -79,6 +79,58 @@ function deferExecute<T, R>(fn: (args: T) => Promise<R>): (args: T) => Promise<R
 
 const coerceInt = (v: unknown) => (typeof v === "string" ? Number(v) : v);
 
+const lineNum = () => z.preprocess(coerceInt, z.number()).optional();
+const optStr = () => z.string().optional();
+const optBool = () => z.boolean().optional();
+const freshField = () => optBool().describe("Set true to bypass cache and re-execute");
+const forceField = () =>
+  optBool().describe(
+    "Skip soul map fast-path. Only use after confirming the soul map result was incomplete or stale.",
+  );
+
+export const SCHEMAS = {
+  readFile: z.object({
+    path: z.string().describe("File path to read"),
+    startLine: lineNum().describe("Start line (1-indexed)"),
+    endLine: lineNum().describe("End line (1-indexed)"),
+    target: optStr().describe("Symbol type to extract (AST-based). Omit for raw file read."),
+    name: optStr().describe("Symbol name (required when target is set, except scope)"),
+  }),
+  grep: z.object({
+    pattern: z.string().describe("Regex search pattern"),
+    path: optStr().describe("Directory to search"),
+    glob: optStr().describe("File glob filter"),
+    force: forceField(),
+  }),
+  glob: z.object({
+    pattern: z.string().describe("Glob pattern"),
+    path: optStr().describe("Base directory"),
+    force: forceField(),
+  }),
+  soulGrep: z.object({
+    pattern: z.string().describe("Regex or literal search pattern"),
+    path: optStr().describe("Directory to search"),
+    glob: optStr().describe("File glob filter (e.g. '*.ts')"),
+    count: optBool().describe(
+      "Aggregate count mode — returns per-file match counts and total. " +
+        "Use for frequency analysis, variable counting, pattern prevalence.",
+    ),
+    wordBoundary: optBool().describe(
+      "Whole-word matching (\\bpattern\\b). Prevents substring false positives. " +
+        "Essential for counting variable/identifier occurrences.",
+    ),
+    dep: optStr().describe(
+      "Search dependency/vendor directories (bypasses .gitignore). " +
+        "Pass package name (e.g. 'react') to auto-locate, or 'true' to search all with --no-ignore.",
+    ),
+  }),
+  soulFind: z.object({
+    query: z.string().describe("Fuzzy search query"),
+    type: optStr().describe("File type filter"),
+    limit: z.preprocess(coerceInt, z.number()).optional().describe("Max results (default 20)"),
+  }),
+} as const;
+
 /**
 /** @internal — exported for testing */
 const GIT_MUTATING_ACTIONS = /\b(commit|stash|restore|switch|merge|rebase|cherry-pick|reset)\b/;
@@ -273,20 +325,7 @@ export function buildTools(
   return {
     read_file: tool({
       description: readFileTool.description,
-      inputSchema: z.object({
-        path: z.string().describe("File path to read"),
-        startLine: z.preprocess(coerceInt, z.number()).optional().describe("Start line (1-indexed)"),
-        endLine: z.preprocess(coerceInt, z.number()).optional().describe("End line (1-indexed)"),
-        target: z
-          .string()
-          .optional()
-          .describe("Symbol type to extract (AST-based). Omit for raw file read."),
-        name: z
-          .string()
-          .optional()
-          .describe("Symbol name (required when target is set, except scope)"),
-        fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
-      }),
+      inputSchema: SCHEMAS.readFile.extend({ fresh: freshField() }),
       execute: deferExecute(async (args) => {
         const normPath = resolve(args.path);
         const isFullRead = args.startLine == null && args.endLine == null && !args.target;
@@ -501,33 +540,7 @@ export function buildTools(
       description:
         soulGrepTool.description +
         " Use dep to search inside dependency/vendor directories (bypasses .gitignore).",
-      inputSchema: z.object({
-        pattern: z.string().describe("Regex or literal search pattern"),
-        path: z.string().optional().describe("Directory to search"),
-        glob: z.string().optional().describe("File glob filter (e.g. '*.ts')"),
-        count: z
-          .boolean()
-          .optional()
-          .describe(
-            "Aggregate count mode — returns per-file match counts and total. " +
-              "Use for frequency analysis, variable counting, pattern prevalence.",
-          ),
-        wordBoundary: z
-          .boolean()
-          .optional()
-          .describe(
-            "Whole-word matching (\\bpattern\\b). Prevents substring false positives. " +
-              "Essential for counting variable/identifier occurrences.",
-          ),
-        dep: z
-          .string()
-          .optional()
-          .describe(
-            "Search dependency/vendor directories (bypasses .gitignore). " +
-              "Pass package name (e.g. 'react') to auto-locate, or 'true' to search all with --no-ignore.",
-          ),
-        fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
-      }),
+      inputSchema: SCHEMAS.soulGrep.extend({ fresh: freshField() }),
       execute: deferExecute((args) => {
         resetReadCounter();
         return soulGrepTool.createExecute(opts?.repoMap)(args);
@@ -667,18 +680,7 @@ export function buildTools(
 
     grep: tool({
       description: grepTool.description,
-      inputSchema: z.object({
-        pattern: z.string().describe("Regex search pattern"),
-        path: z.string().optional().describe("Directory to search"),
-        glob: z.string().optional().describe("File glob filter"),
-        force: z
-          .boolean()
-          .optional()
-          .describe(
-            "Skip soul map fast-path. Only use after confirming the soul map result was incomplete or stale.",
-          ),
-        fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
-      }),
+      inputSchema: SCHEMAS.grep.extend({ fresh: freshField() }),
       execute: deferExecute((args) => {
         resetReadCounter();
         if (!args.force) {
@@ -691,17 +693,7 @@ export function buildTools(
 
     glob: tool({
       description: globTool.description,
-      inputSchema: z.object({
-        pattern: z.string().describe("Glob pattern"),
-        path: z.string().optional().describe("Base directory"),
-        force: z
-          .boolean()
-          .optional()
-          .describe(
-            "Skip soul map fast-path. Only use after confirming the soul map result was incomplete or stale.",
-          ),
-        fresh: z.boolean().optional().describe("Set true to bypass cache and re-execute"),
-      }),
+      inputSchema: SCHEMAS.glob.extend({ fresh: freshField() }),
       execute: deferExecute((args) => {
         resetReadCounter();
         if (!args.force) {
@@ -1160,19 +1152,7 @@ export function buildSubagentExploreTools(opts?: {
   return {
     read_file: tool({
       description: `${readFileTool.description} Output capped at 750 lines.`,
-      inputSchema: z.object({
-        path: z.string().describe("File path to read"),
-        startLine: z.preprocess(coerceInt, z.number()).optional().describe("Start line (1-indexed)"),
-        endLine: z.preprocess(coerceInt, z.number()).optional().describe("End line (1-indexed)"),
-        target: z
-          .string()
-          .optional()
-          .describe("Symbol type to extract (AST-based). Omit for raw file read."),
-        name: z
-          .string()
-          .optional()
-          .describe("Symbol name (required when target is set, except scope)"),
-      }),
+      inputSchema: SCHEMAS.readFile,
       execute: deferExecute(async (args) => {
         const result = await readFileTool.execute(args);
         if (!result.success) return result;
@@ -1183,17 +1163,7 @@ export function buildSubagentExploreTools(opts?: {
 
     grep: tool({
       description: grepTool.description,
-      inputSchema: z.object({
-        pattern: z.string().describe("Regex search pattern"),
-        path: z.string().optional().describe("Directory to search"),
-        glob: z.string().optional().describe("File glob filter"),
-        force: z
-          .boolean()
-          .optional()
-          .describe(
-            "Skip soul map fast-path. Only use after confirming the soul map result was incomplete or stale.",
-          ),
-      }),
+      inputSchema: SCHEMAS.grep,
       execute: deferExecute(async (args) => {
         if (!args.force) {
           const hit = tryInterceptGrep(args, opts?.repoMap, subagentCwd);
@@ -1207,16 +1177,7 @@ export function buildSubagentExploreTools(opts?: {
 
     glob: tool({
       description: globTool.description,
-      inputSchema: z.object({
-        pattern: z.string().describe("Glob pattern"),
-        path: z.string().optional().describe("Base directory"),
-        force: z
-          .boolean()
-          .optional()
-          .describe(
-            "Skip soul map fast-path. Only use after confirming the soul map result was incomplete or stale.",
-          ),
-      }),
+      inputSchema: SCHEMAS.glob,
       execute: deferExecute((args) => {
         if (!args.force) {
           const hit = tryInterceptGlob(args, opts?.repoMap, subagentCwd);
@@ -1361,12 +1322,7 @@ export function buildSubagentExploreTools(opts?: {
       ? {
           soul_grep: tool({
             description: soulGrepTool.description,
-            inputSchema: z.object({
-              pattern: z.string().describe("Search pattern"),
-              path: z.string().optional().describe("Directory to search"),
-              count: z.boolean().optional().describe("Count mode — returns match counts per file"),
-              wordBoundary: z.boolean().optional().describe("Match whole words only"),
-            }),
+            inputSchema: SCHEMAS.soulGrep,
             execute: deferExecute((args) => {
               const exec = soulGrepTool.createExecute(opts.repoMap);
               return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));
@@ -1374,11 +1330,7 @@ export function buildSubagentExploreTools(opts?: {
           }),
           soul_find: tool({
             description: soulFindTool.description,
-            inputSchema: z.object({
-              query: z.string().describe("Fuzzy search query"),
-              type: z.string().optional().describe("File type filter"),
-              limit: z.number().optional().describe("Max results (default 20)"),
-            }),
+            inputSchema: SCHEMAS.soulFind,
             execute: deferExecute((args) => {
               const exec = soulFindTool.createExecute(opts.repoMap);
               return exec(args).then((r) => ({ ...r, output: truncateBytes(r.output) }));

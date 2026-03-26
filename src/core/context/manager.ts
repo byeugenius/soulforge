@@ -125,8 +125,10 @@ export class ContextManager {
     onStep?.("Wiring up the forge…");
     const cm = new ContextManager(cwd, { repoMap, memoryManager });
     cm.isChild = false;
-    cm.wireRepoMapCallbacks();
-    cm.startRepoMapScan();
+    if (cm.repoMapEnabled) {
+      cm.wireRepoMapCallbacks();
+      cm.startRepoMapScan();
+    }
     return cm;
   }
 
@@ -383,14 +385,16 @@ export class ContextManager {
   }
 
   isRepoMapReady(): boolean {
+    if (!this.repoMapEnabled) return false;
     if (this.isChild) return this.repoMap.getStats().files > 0;
     return this.repoMapReady;
   }
 
-  /** @deprecated Repo map is always enabled. Use SOULFORGE_NO_REPOMAP=1 env var to disable (debug only). */
-  setRepoMapEnabled(_enabled: boolean): void {
-    // No-op — repo map is always enabled at runtime.
-    // Kept for backward compat with callers that haven't been updated yet.
+  setRepoMapEnabled(enabled: boolean): void {
+    if (this.repoMapEnabled === enabled) return;
+    this.repoMapEnabled = enabled;
+    this.repoMapCache = null;
+    this.soulMapMessagesCache = null;
   }
 
   setSemanticSummaries(
@@ -808,8 +812,8 @@ export class ContextManager {
     const opts: PromptBuilderOptions = {
       modelId: modelIdOverride || this.lastActiveModel,
       cwd: this.cwd,
-      hasRepoMap: this.repoMapReady,
-      hasSymbols: this.repoMapReady && this.repoMap.getStats().symbols > 0,
+      hasRepoMap: this.repoMapEnabled && this.repoMapReady,
+      hasSymbols: this.repoMapEnabled && this.repoMapReady && this.repoMap.getStats().symbols > 0,
       forgeMode: this.forgeMode,
       contextPercent: this.getContextPercent(),
       isMinimalContext: this.contextWindowTokens <= MINIMAL_CONTEXT_THRESHOLD,
