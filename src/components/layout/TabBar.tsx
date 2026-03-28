@@ -114,10 +114,13 @@ export function TabBar({
               </>
             )}
             {(activity?.editedFileCount ?? 0) > 0 && (
-              <text fg="#4a7">
-                {" "}
-                {icon("pencil")} {String(activity?.editedFileCount ?? 0)}
-              </text>
+              <>
+                <text fg={isActive ? "#3a6" : "#2a4"}>[</text>
+                <text fg="#4a7">
+                  {icon("pencil")} {String(activity?.editedFileCount ?? 0)}
+                </text>
+                <text fg={isActive ? "#3a6" : "#2a4"}>]</text>
+              </>
             )}
             {(() => {
               const modelLabel = getModelLabel(tab.id);
@@ -136,8 +139,8 @@ export function TabBar({
                 {label}
               </text>
             )}
-            {hasUnread && !isLoading && !needsAttention && <text fg="#b87333"> ●</text>}
-            {hasError && !isLoading && !needsAttention && <text fg="#a55"> ✗</text>}
+            {hasUnread && !isLoading && !needsAttention && <text fg="#b87333">[●]</text>}
+            {hasError && !isLoading && !needsAttention && <text fg="#a55">[✗]</text>}
           </box>
         );
       })}
