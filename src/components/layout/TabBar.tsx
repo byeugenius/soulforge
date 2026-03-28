@@ -113,17 +113,24 @@ export function TabBar({
                 <text fg={isActive ? tabModeColor : "#555"}>]</text>
               </>
             )}
-            {(() => {
-              const modelLabel = getModelLabel(tab.id);
-              if (!modelLabel) return null;
-              return <text fg={isActive ? "#777" : "#444"}> {truncateLabel(modelLabel, 16)}</text>;
-            })()}
             {(activity?.editedFileCount ?? 0) > 0 && (
               <text fg="#4a7">
                 {" "}
                 {icon("pencil")} {String(activity?.editedFileCount ?? 0)}
               </text>
             )}
+            {(() => {
+              const modelLabel = getModelLabel(tab.id);
+              if (!modelLabel) return null;
+              const c = isActive ? "#666" : "#444";
+              return (
+                <>
+                  <text fg={c}> [</text>
+                  <text fg={isActive ? "#888" : "#555"}>{truncateLabel(modelLabel, 16)}</text>
+                  <text fg={c}>]</text>
+                </>
+              );
+            })()}
             {label && (
               <text fg={labelColor} attributes={isActive ? TextAttributes.BOLD : undefined}>
                 {label}

@@ -989,7 +989,7 @@ export function App({
                 id === tabMgr.activeTabId
                   ? activeModelForHeader
                   : (tabMgr.getChat(id)?.activeModel ?? null);
-              if (!model || model === "none") return null;
+              if (!model || model === "none" || model === effectiveConfig.defaultModel) return null;
               return getShortModelLabel(model);
             }}
           />

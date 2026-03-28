@@ -194,7 +194,7 @@ export function createAgent(
     ? models.providerOptions
     : stripContextManagement(models.providerOptions);
 
-  if (useExplore && subagentProviderOptions) {
+  if (useExplore && !useMiniForge && subagentProviderOptions) {
     const patched: Record<string, unknown> = {};
     for (const [provider, val] of Object.entries(subagentProviderOptions)) {
       if (val && typeof val === "object" && "effort" in val) {
