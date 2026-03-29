@@ -222,6 +222,12 @@ set -euo pipefail
 SOULFORGE_DIR="${HOME}/.soulforge"
 BIN_DIR="${SOULFORGE_DIR}/bin"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+QUIET="${SOULFORGE_QUIET:-}"
+
+# --quiet flag for non-interactive installs (Homebrew, CI)
+for arg in "$@"; do
+  [[ "$arg" == "--quiet" ]] && QUIET=1
+done
 
 P='\033[38;2;155;48;255m'
 R='\033[38;2;255;0;64m'
@@ -236,6 +242,11 @@ SPINNER=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 
 spin() {
   local msg="$1" pid="$2" i=0
+  if [[ -n "$QUIET" ]]; then
+    wait "$pid" 2>/dev/null
+    echo "  ✓ $msg"
+    return
+  fi
   while kill -0 "$pid" 2>/dev/null; do
     printf "\r  ${P}${SPINNER[$((i % 10))]}${RST} ${M}%s${RST}  " "$msg"
     i=$((i + 1))
@@ -245,67 +256,75 @@ spin() {
   printf "\r  ${G}✓${RST} ${W}%s${RST}  \n" "$msg"
 }
 
-step() { printf "  ${G}✓${RST} ${W}%s${RST}\n" "$1"; }
-dim()  { printf "  ${M}%s${RST}\n" "$1"; }
-
-clear
-printf "\033[?25l"
-sleep 0.1
-
-printf "\n"
-printf "  ${P}${B}░${RST}\n"
-sleep 0.04
-printf "\033[1A\r  ${P}${B}▒${RST}\n"
-sleep 0.04
-printf "\033[1A\r  ${P}${B}▓${RST}\n"
-sleep 0.04
-printf "\033[1A\r  ${P}${B}◆${RST}\n"
-sleep 0.08
-
-printf "  ${D}${P}~∿~${RST}\n"
-
-WORDMARK_1="┌─┐┌─┐┬ ┬┬  ┌─┐┌─┐┬─┐┌─┐┌─┐"
-WORDMARK_2="└─┐│ ││ ││  ├┤ │ │├┬┘│ ┬├┤ "
-WORDMARK_3="└─┘└─┘└─┘┴─┘└  └─┘┴└─└─┘└─┘"
-
-GLITCH="░▒▓█▄▀▐▌┤├┼─│┌┐└┘"
-garble() {
-  local text="$1" out="" i ch
-  for ((i=0; i<${#text}; i++)); do
-    ch="${text:$i:1}"
-    if [[ "$ch" == " " ]]; then out+=" "; else out+="${GLITCH:$((RANDOM % ${#GLITCH})):1}"; fi
-  done
-  printf "%s" "$out"
+step() {
+  if [[ -n "$QUIET" ]]; then echo "  ✓ $1"; else printf "  ${G}✓${RST} ${W}%s${RST}\n" "$1"; fi
+}
+dim() {
+  if [[ -n "$QUIET" ]]; then echo "  $1"; else printf "  ${M}%s${RST}\n" "$1"; fi
 }
 
-printf "\n"
-printf "  ${M}$(garble "$WORDMARK_1")${RST}\n"
-sleep 0.02
-printf "\033[1A\r  ${P}${B}${WORDMARK_1}${RST}\n"
-printf "  ${M}$(garble "$WORDMARK_2")${RST}\n"
-sleep 0.02
-printf "\033[1A\r  ${P}${B}${WORDMARK_2}${RST}\n"
-printf "  ${M}$(garble "$WORDMARK_3")${RST}\n"
-sleep 0.02
-printf "\033[1A\r  ${P}${B}${WORDMARK_3}${RST}\n"
+if [[ -z "$QUIET" ]]; then
+  clear
+  printf "\033[?25l"
+  sleep 0.1
 
-printf "\n"
-printf "  ${M}── ${D}Graph-Powered Code Intelligence${RST}${M} ──${RST}\n"
+  printf "\n"
+  printf "  ${P}${B}░${RST}\n"
+  sleep 0.04
+  printf "\033[1A\r  ${P}${B}▒${RST}\n"
+  sleep 0.04
+  printf "\033[1A\r  ${P}${B}▓${RST}\n"
+  sleep 0.04
+  printf "\033[1A\r  ${P}${B}◆${RST}\n"
+  sleep 0.08
 
-BRAND="by "
-printf "\n  "
-for ((i=0; i<${#BRAND}; i++)); do printf "${M}${BRAND:$i:1}${RST}"; sleep 0.015; done
-PROXY="Proxy"
-for ((i=0; i<${#PROXY}; i++)); do printf "${P}${PROXY:$i:1}${RST}"; sleep 0.015; done
-SOUL="Soul"
-for ((i=0; i<${#SOUL}; i++)); do printf "${R}${SOUL:$i:1}${RST}"; sleep 0.015; done
-printf "${M}.com${RST}"
+  printf "  ${D}${P}~∿~${RST}\n"
 
-printf "\n\n"
-printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
-printf "  ${P}${B}INSTALLING${RST}  ${M}→ ~/.soulforge/${RST}\n"
-printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
-printf "\n"
+  WORDMARK_1="┌─┐┌─┐┬ ┬┬  ┌─┐┌─┐┬─┐┌─┐┌─┐"
+  WORDMARK_2="└─┐│ ││ ││  ├┤ │ │├┬┘│ ┬├┤ "
+  WORDMARK_3="└─┘└─┘└─┘┴─┘└  └─┘┴└─└─┘└─┘"
+
+  GLITCH="░▒▓█▄▀▐▌┤├┼─│┌┐└┘"
+  garble() {
+    local text="$1" out="" i ch
+    for ((i=0; i<${#text}; i++)); do
+      ch="${text:$i:1}"
+      if [[ "$ch" == " " ]]; then out+=" "; else out+="${GLITCH:$((RANDOM % ${#GLITCH})):1}"; fi
+    done
+    printf "%s" "$out"
+  }
+
+  printf "\n"
+  printf "  ${M}$(garble "$WORDMARK_1")${RST}\n"
+  sleep 0.02
+  printf "\033[1A\r  ${P}${B}${WORDMARK_1}${RST}\n"
+  printf "  ${M}$(garble "$WORDMARK_2")${RST}\n"
+  sleep 0.02
+  printf "\033[1A\r  ${P}${B}${WORDMARK_2}${RST}\n"
+  printf "  ${M}$(garble "$WORDMARK_3")${RST}\n"
+  sleep 0.02
+  printf "\033[1A\r  ${P}${B}${WORDMARK_3}${RST}\n"
+
+  printf "\n"
+  printf "  ${M}── ${D}Graph-Powered Code Intelligence${RST}${M} ──${RST}\n"
+
+  BRAND="by "
+  printf "\n  "
+  for ((i=0; i<${#BRAND}; i++)); do printf "${M}${BRAND:$i:1}${RST}"; sleep 0.015; done
+  PROXY="Proxy"
+  for ((i=0; i<${#PROXY}; i++)); do printf "${P}${PROXY:$i:1}${RST}"; sleep 0.015; done
+  SOUL="Soul"
+  for ((i=0; i<${#SOUL}; i++)); do printf "${R}${SOUL:$i:1}${RST}"; sleep 0.015; done
+  printf "${M}.com${RST}"
+
+  printf "\n\n"
+  printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+  printf "  ${P}${B}INSTALLING${RST}  ${M}→ ~/.soulforge/${RST}\n"
+  printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+  printf "\n"
+else
+  echo "Installing SoulForge to ~/.soulforge/ ..."
+fi
 
 # Clean previous install (preserve config + sessions)
 if [[ -d "$SOULFORGE_DIR" ]]; then
@@ -368,35 +387,40 @@ elif ! grep -q '"nerdFont"' "$CONFIG_FILE" 2>/dev/null; then
   rm -f "${CONFIG_FILE}.bak"
 fi
 
-SHELL_RC=""
-if [[ -f "${HOME}/.zshrc" ]]; then
-  SHELL_RC="${HOME}/.zshrc"
-elif [[ -f "${HOME}/.bashrc" ]]; then
-  SHELL_RC="${HOME}/.bashrc"
-elif [[ -f "${HOME}/.bash_profile" ]]; then
-  SHELL_RC="${HOME}/.bash_profile"
-fi
+# Skip shell RC modification in quiet mode (Homebrew manages PATH via symlinks)
+if [[ -z "$QUIET" ]]; then
+  SHELL_RC=""
+  if [[ -f "${HOME}/.zshrc" ]]; then
+    SHELL_RC="${HOME}/.zshrc"
+  elif [[ -f "${HOME}/.bashrc" ]]; then
+    SHELL_RC="${HOME}/.bashrc"
+  elif [[ -f "${HOME}/.bash_profile" ]]; then
+    SHELL_RC="${HOME}/.bash_profile"
+  fi
 
-if [[ -n "$SHELL_RC" ]] && ! grep -q '.soulforge/bin' "$SHELL_RC" 2>/dev/null; then
-  echo '' >> "$SHELL_RC"
-  echo '# SoulForge' >> "$SHELL_RC"
-  echo 'export PATH="$HOME/.soulforge/bin:$PATH"' >> "$SHELL_RC"
-  step "Added to PATH in $(basename "$SHELL_RC")"
+  if [[ -n "$SHELL_RC" ]] && ! grep -q '.soulforge/bin' "$SHELL_RC" 2>/dev/null; then
+    echo '' >> "$SHELL_RC"
+    echo '# SoulForge' >> "$SHELL_RC"
+    echo 'export PATH="$HOME/.soulforge/bin:$PATH"' >> "$SHELL_RC"
+    step "Added to PATH in $(basename "$SHELL_RC")"
+  else
+    step "PATH already configured"
+  fi
+
+  printf "\n"
+  printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+  printf "  ${G}${B}◆ INSTALLED${RST}\n"
+  printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+  printf "\n"
+  printf "  ${W}Commands:${RST}  ${P}soulforge${RST}  ${M}or${RST}  ${P}sf${RST}\n"
+  printf "  ${W}Location:${RST}  ${M}~/.soulforge/bin/${RST}\n"
+  printf "\n"
+  printf "  ${Y}→${RST} ${W}Run${RST} ${P}source ${SHELL_RC:-~/.zshrc}${RST} ${W}then${RST} ${P}soulforge${RST}\n"
+  printf "\n"
+  printf "\033[?25h"
 else
-  step "PATH already configured"
+  echo "Done. SoulForge installed to ~/.soulforge/"
 fi
-
-printf "\n"
-printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
-printf "  ${G}${B}◆ INSTALLED${RST}\n"
-printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
-printf "\n"
-printf "  ${W}Commands:${RST}  ${P}soulforge${RST}  ${M}or${RST}  ${P}sf${RST}\n"
-printf "  ${W}Location:${RST}  ${M}~/.soulforge/bin/${RST}\n"
-printf "\n"
-printf "  ${Y}→${RST} ${W}Run${RST} ${P}source ${SHELL_RC:-~/.zshrc}${RST} ${W}then${RST} ${P}soulforge${RST}\n"
-printf "\n"
-printf "\033[?25h"
 INSTALL_EOF
 chmod +x "${STAGE_DIR}/install.sh"
 

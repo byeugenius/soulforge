@@ -168,8 +168,7 @@ jobs:
             end
 
             def install
-              system "./install.sh"
-              # Symlink into Homebrew's bin so it's on PATH
+              system "./install.sh", "--quiet"
               bin.install_symlink "#{Dir.home}/.soulforge/bin/soulforge"
               bin.install_symlink "#{Dir.home}/.soulforge/bin/soulforge" => "sf"
             end
