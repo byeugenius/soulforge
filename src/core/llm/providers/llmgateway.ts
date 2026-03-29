@@ -15,7 +15,7 @@ export const llmgateway: ProviderDefinition = {
       throw new Error("LLM_GATEWAY_API_KEY is not set");
     }
 
-    const provider = createLLMGateway({ apiKey });
+    const provider = createLLMGateway({ apiKey, headers: { "X-Source": "soulforge" } });
 
     // LLMGatewayChatModelId is a union of literal model IDs, not exported.
     // We accept arbitrary model IDs at runtime so cast is needed.
