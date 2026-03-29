@@ -1,7 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "../../../core/theme/index.js";
-import { Overlay, POPUP_BG } from "../../layout/shared.js";
+import { Overlay, usePopupColors } from "../../layout/shared.js";
 import { MAX_W, STEPS } from "./data.js";
 import { FooterNav } from "./FooterNav.js";
 import { ProgressBar } from "./ProgressBar.js";
@@ -94,6 +94,7 @@ export const FirstRunWizard = memo(function FirstRunWizard({
   );
 
   const t = useTheme();
+  const { bg } = usePopupColors();
 
   if (!visible) return null;
 
@@ -106,7 +107,7 @@ export const FirstRunWizard = memo(function FirstRunWizard({
         borderStyle="rounded"
         border={true}
         borderColor={t.brandAlt}
-        backgroundColor={POPUP_BG}
+        backgroundColor={bg}
         width={pw}
         height={maxH}
       >
@@ -129,7 +130,7 @@ export const FirstRunWizard = memo(function FirstRunWizard({
         {step === "theme" && <ThemeStep iw={iw} active={setupActive} setActive={setSetupActive} />}
         {step === "ready" && <ReadyStep iw={iw} />}
 
-        <box flexGrow={1} backgroundColor={POPUP_BG} />
+        <box flexGrow={1} backgroundColor={bg} />
         <Hr iw={iw} />
         <FooterNav iw={iw} stepIdx={stepIdx} step={step} />
       </box>

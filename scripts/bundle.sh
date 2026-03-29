@@ -213,6 +213,10 @@ echo "==> Dependencies ready"
 # ── 3. Create install script ──
 cat > "${STAGE_DIR}/install.sh" << 'INSTALL_EOF'
 #!/usr/bin/env bash
+# Re-exec under bash if invoked via sh/dash (dash lacks pipefail)
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 set -euo pipefail
 
 SOULFORGE_DIR="${HOME}/.soulforge"
@@ -399,6 +403,10 @@ chmod +x "${STAGE_DIR}/install.sh"
 # ── 4. Create uninstall script ──
 cat > "${STAGE_DIR}/uninstall.sh" << 'UNINSTALL_EOF'
 #!/usr/bin/env bash
+# Re-exec under bash if invoked via sh/dash (dash lacks pipefail)
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 set -euo pipefail
 
 SOULFORGE_DIR="${HOME}/.soulforge"

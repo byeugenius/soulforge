@@ -8,7 +8,7 @@ import {
   setSecret,
 } from "../../../../core/secrets.js";
 import { useTheme } from "../../../../core/theme/index.js";
-import { POPUP_BG, POPUP_HL, PopupRow } from "../../../layout/shared.js";
+import { PopupRow, usePopupColors } from "../../../layout/shared.js";
 import { Gap, StepHeader } from "../primitives.js";
 import { BOLD } from "../theme.js";
 
@@ -85,6 +85,7 @@ interface SetupStepProps {
 
 export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive }: SetupStepProps) {
   const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
   const renderer = useRenderer();
   const [cursor, setCursor] = useState(0);
   const [phase, setPhase] = useState<Phase>("provider");
@@ -193,10 +194,10 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
         <Gap iw={iw} />
 
         <PopupRow w={iw}>
-          <text fg={t.textSecondary} bg={POPUP_BG}>
+          <text fg={t.textSecondary} bg={popupBg}>
             {"  Get your key at "}
           </text>
-          <text bg={POPUP_BG}>
+          <text bg={popupBg}>
             <a href={selectedProvider.url}>
               <span fg={t.info} attributes={TextAttributes.UNDERLINE}>
                 {selectedProvider.url.replace("https://", "")}
@@ -208,17 +209,17 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
         <Gap iw={iw} />
 
         <PopupRow w={iw}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
+          <text fg={t.textMuted} bg={popupBg}>
             {"  Paste your key:"}
           </text>
         </PopupRow>
 
         <PopupRow w={iw}>
-          <text bg={POPUP_HL} fg={t.info}>
+          <text bg={popupHl} fg={t.info}>
             {"  "}
             {masked || " "}
           </text>
-          <text bg={POPUP_HL} fg={t.brandSecondary}>
+          <text bg={popupHl} fg={t.brandSecondary}>
             _
           </text>
         </PopupRow>
@@ -226,7 +227,7 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
         <Gap iw={iw} />
 
         <PopupRow w={iw}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
+          <text fg={t.textFaint} bg={popupBg}>
             {"  ⏎ save · esc cancel · "}
             {selectedProvider.envVar}
           </text>
@@ -243,22 +244,22 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           {"  Select a provider and press ⏎ to set a key."}
         </text>
       </PopupRow>
       <PopupRow w={iw}>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           {"  "}
         </text>
-        <text bg={POPUP_BG}>
+        <text bg={popupBg}>
           <a href="https://llmgateway.io/dashboard">
             <span fg={t.info} attributes={TextAttributes.UNDERLINE}>
               llmgateway.io
             </span>
           </a>
         </text>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           {" gives you one key for all models."}
         </text>
       </PopupRow>
@@ -267,7 +268,7 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
 
       {PROVIDERS.map((p, i) => {
         const isSelected = i === cursor;
-        const bg = isSelected ? POPUP_HL : POPUP_BG;
+        const bg = isSelected ? popupHl : popupBg;
         const configured = hasKey(p.id);
         const status = configured ? getStatusLabel(p.id) : "not set";
         const isGateway = i === 0;
@@ -294,12 +295,12 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
         <>
           <Gap iw={iw} />
           <PopupRow w={iw}>
-            <text fg={t.textFaint} bg={POPUP_BG}>
+            <text fg={t.textFaint} bg={popupBg}>
               {"  "}
               {selected.envVar}
               {"  ·  "}
             </text>
-            <text bg={POPUP_BG}>
+            <text bg={popupBg}>
               <a href={selected.url}>
                 <span fg={t.info} attributes={TextAttributes.UNDERLINE}>
                   {selected.url.replace("https://", "")}
@@ -314,10 +315,10 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
         <>
           <Gap iw={iw} />
           <PopupRow w={iw}>
-            <text fg={t.success} attributes={BOLD} bg={POPUP_BG}>
+            <text fg={t.success} attributes={BOLD} bg={popupBg}>
               {"  ✓ "}
             </text>
-            <text fg={t.textPrimary} attributes={BOLD} bg={POPUP_BG}>
+            <text fg={t.textPrimary} attributes={BOLD} bg={popupBg}>
               {activeModel}
             </text>
           </PopupRow>
@@ -326,7 +327,7 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
 
       {flash && (
         <PopupRow w={iw}>
-          <text fg={t.success} attributes={BOLD} bg={POPUP_BG}>
+          <text fg={t.success} attributes={BOLD} bg={popupBg}>
             {"  "}
             {flash}
           </text>
@@ -335,7 +336,7 @@ export function SetupStep({ iw, hasModel, activeModel, onSelectModel, setActive 
 
       <Gap iw={iw} />
       <PopupRow w={iw}>
-        <text fg={t.textFaint} bg={POPUP_BG}>
+        <text fg={t.textFaint} bg={popupBg}>
           {"  ↑↓ select · ⏎ set key · → next step"}
         </text>
       </PopupRow>

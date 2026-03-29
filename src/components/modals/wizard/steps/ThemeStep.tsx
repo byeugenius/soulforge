@@ -3,7 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import { saveGlobalConfig } from "../../../../config/index.js";
 import { applyTheme, listThemes, useTheme, useThemeStore } from "../../../../core/theme/index.js";
-import { POPUP_BG, POPUP_HL, PopupRow } from "../../../layout/shared.js";
+import { PopupRow, usePopupColors } from "../../../layout/shared.js";
 import { Gap, StepHeader } from "../primitives.js";
 import { BOLD } from "../theme.js";
 
@@ -15,6 +15,7 @@ interface ThemeStepProps {
 
 export function ThemeStep({ iw, setActive }: ThemeStepProps) {
   const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
   const themes = listThemes();
   const currentName = useThemeStore((s) => s.name);
   const currentIdx = themes.findIndex((th) => th.id === currentName);
@@ -67,7 +68,7 @@ export function ThemeStep({ iw, setActive }: ThemeStepProps) {
 
       {themes.map((th, i) => {
         const isSelected = i === cursor;
-        const bg = isSelected ? POPUP_HL : POPUP_BG;
+        const bg = isSelected ? popupHl : popupBg;
         const isCurrent = th.id === currentName;
         const variantIcon = th.variant === "light" ? "☀" : "☾";
 
@@ -94,20 +95,20 @@ export function ThemeStep({ iw, setActive }: ThemeStepProps) {
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           {"  Transparent "}
         </text>
-        <text fg={transparent ? t.success : t.textDim} attributes={BOLD} bg={POPUP_BG}>
+        <text fg={transparent ? t.success : t.textDim} attributes={BOLD} bg={popupBg}>
           {transparent ? "[on]" : "[off]"}
         </text>
-        <text fg={t.textDim} bg={POPUP_BG}>
+        <text fg={t.textDim} bg={popupBg}>
           {"  tab to toggle"}
         </text>
       </PopupRow>
 
       <Gap iw={iw} />
       <PopupRow w={iw}>
-        <text fg={t.textDim} bg={POPUP_BG}>
+        <text fg={t.textDim} bg={popupBg}>
           {"  ↑↓ preview · ⏎ apply · tab transparent · → next"}
         </text>
       </PopupRow>

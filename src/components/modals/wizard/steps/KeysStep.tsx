@@ -8,7 +8,7 @@ import {
   setSecret,
 } from "../../../../core/secrets.js";
 import { useTheme } from "../../../../core/theme/index.js";
-import { POPUP_BG, POPUP_HL, PopupRow } from "../../../layout/shared.js";
+import { PopupRow, usePopupColors } from "../../../layout/shared.js";
 import { Gap, StepHeader } from "../primitives.js";
 import { BOLD } from "../theme.js";
 
@@ -71,6 +71,7 @@ interface KeysStepProps {
 
 export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
   const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
   const renderer = useRenderer();
   const [cursor, setCursor] = useState(0);
   const [inputValue, setInputValue] = useState("");
@@ -152,17 +153,17 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           Get a key from{" "}
         </text>
-        <text bg={POPUP_BG}>
+        <text bg={popupBg}>
           <a href="https://llmgateway.io/dashboard">
             <span fg={t.info} attributes={TextAttributes.UNDERLINE}>
               llmgateway.io
             </span>
           </a>
         </text>
-        <text fg={t.textSecondary} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={popupBg}>
           {" "}
           for all models with one key, or set keys below.
         </text>
@@ -172,7 +173,7 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
 
       {PROVIDERS.map((p, i) => {
         const isSelected = i === cursor;
-        const bg = isSelected ? POPUP_HL : POPUP_BG;
+        const bg = isSelected ? popupHl : popupBg;
         const status = statuses[i] ?? "not set";
         const hasKey = status !== "not set";
         const isGateway = i === 0;
@@ -199,21 +200,21 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
         <>
           <Gap iw={iw} />
           <PopupRow w={iw}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
+            <text fg={t.textMuted} bg={popupBg}>
               Paste {selected.label} key:
             </text>
           </PopupRow>
           <PopupRow w={iw}>
-            <text bg={POPUP_HL} fg={t.info}>
+            <text bg={popupHl} fg={t.info}>
               {"  "}
               {masked || " "}
             </text>
-            <text bg={POPUP_HL} fg={t.brandSecondary}>
+            <text bg={popupHl} fg={t.brandSecondary}>
               _
             </text>
           </PopupRow>
           <PopupRow w={iw}>
-            <text fg={t.textFaint} bg={POPUP_BG}>
+            <text fg={t.textFaint} bg={popupBg}>
               ⏎ save · esc cancel · {selected.envVar}
             </text>
           </PopupRow>
@@ -222,12 +223,12 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
         <>
           <Gap iw={iw} />
           <PopupRow w={iw}>
-            <text fg={t.textFaint} bg={POPUP_BG}>
+            <text fg={t.textFaint} bg={popupBg}>
               {"  "}
               {selected.envVar}
               {"  ·  "}
             </text>
-            <text bg={POPUP_BG}>
+            <text bg={popupBg}>
               <a href={selected.url}>
                 <span fg={t.info} attributes={TextAttributes.UNDERLINE}>
                   {selected.url.replace("https://", "")}
@@ -242,7 +243,7 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
         <>
           <Gap iw={iw} />
           <PopupRow w={iw}>
-            <text fg={t.success} attributes={BOLD} bg={POPUP_BG}>
+            <text fg={t.success} attributes={BOLD} bg={popupBg}>
               {"  ✓ "}
               {flash}
             </text>
@@ -253,7 +254,7 @@ export function KeysStep({ iw, inputMode, setInputMode }: KeysStepProps) {
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={t.textFaint} bg={POPUP_BG}>
+        <text fg={t.textFaint} bg={popupBg}>
           ↑↓ select · ⏎ set key · → next step · esc skip
         </text>
       </PopupRow>

@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { icon } from "../../../../core/icons.js";
 import { useTheme } from "../../../../core/theme/index.js";
-import { POPUP_BG, PopupRow } from "../../../layout/shared.js";
+import { PopupRow, usePopupColors } from "../../../layout/shared.js";
 import {
   BLINK_COUNT,
   BLINK_INITIAL_MS,
@@ -50,6 +50,7 @@ function useTypewriter(text: string, ms: number) {
 
 export const WelcomeStep = memo(function WelcomeStep({ iw }: { iw: number }) {
   const t = useTheme();
+  const { bg } = usePopupColors();
   const { typed, cursorOn } = useTypewriter(WELCOME_TITLE, TYPEWRITER_MS);
   const ghostIc = icon("ghost");
 
@@ -57,37 +58,37 @@ export const WelcomeStep = memo(function WelcomeStep({ iw }: { iw: number }) {
     <>
       <Gap iw={iw} n={2} />
       <PopupRow w={iw}>
-        <text fg={t.brand} attributes={BOLD} bg={POPUP_BG}>
+        <text fg={t.brand} attributes={BOLD} bg={bg}>
           {"   "}
           {ghostIc}{" "}
         </text>
-        <text fg={t.textPrimary} attributes={BOLD} bg={POPUP_BG}>
+        <text fg={t.textPrimary} attributes={BOLD} bg={bg}>
           {typed}
         </text>
-        <text fg={t.brand} bg={POPUP_BG}>
+        <text fg={t.brand} bg={bg}>
           {cursorOn ? "▌" : " "}
         </text>
       </PopupRow>
       <Gap iw={iw} />
       <PopupRow w={iw}>
-        <text fg={t.textSecondary} attributes={ITALIC} bg={POPUP_BG}>
+        <text fg={t.textSecondary} attributes={ITALIC} bg={bg}>
           {"   Graph-Powered Code Intelligence"}
         </text>
       </PopupRow>
       <Gap iw={iw} n={2} />
       {WELCOME_BULLETS.map((b) => (
         <PopupRow key={b} w={iw}>
-          <text fg={t.brand} bg={POPUP_BG}>
+          <text fg={t.brand} bg={bg}>
             {"   ◆ "}
           </text>
-          <text fg={t.textSecondary} bg={POPUP_BG}>
+          <text fg={t.textSecondary} bg={bg}>
             {b}
           </text>
         </PopupRow>
       ))}
       <Gap iw={iw} n={2} />
       <PopupRow w={iw}>
-        <text fg={t.textMuted} attributes={ITALIC} bg={POPUP_BG}>
+        <text fg={t.textMuted} attributes={ITALIC} bg={bg}>
           {"   Press → or Enter to begin setup"}
         </text>
       </PopupRow>
