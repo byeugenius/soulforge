@@ -8,7 +8,7 @@ interface ToolsState {
 }
 
 export const useToolsStore = create<ToolsState>()((set) => ({
-  disabledTools: new Set<string>(),
+  disabledTools: new Set<string>(["request_tools", "release_tools"]),
   agentManaged: false,
   toggleTool: (name) =>
     set((s) => {
@@ -17,5 +17,17 @@ export const useToolsStore = create<ToolsState>()((set) => ({
       else next.add(name);
       return { disabledTools: next };
     }),
-  toggleAgentManaged: () => set((s) => ({ agentManaged: !s.agentManaged })),
+  toggleAgentManaged: () =>
+    set((s) => {
+      const next = !s.agentManaged;
+      const tools = new Set(s.disabledTools);
+      if (next) {
+        tools.delete("request_tools");
+        tools.delete("release_tools");
+      } else {
+        tools.add("request_tools");
+        tools.add("release_tools");
+      }
+      return { agentManaged: next, disabledTools: tools };
+    }),
 }));

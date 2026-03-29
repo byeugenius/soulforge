@@ -13,6 +13,7 @@ import { detectModelFamily, EPHEMERAL_CACHE, isAnthropicNative } from "../llm/pr
 import {
   buildInteractiveTools,
   buildTools,
+  CORE_TOOL_NAMES,
   PLAN_EXECUTION_TOOL_NAMES,
   RESTRICTED_TOOL_NAMES,
   SCHEMAS,
@@ -459,13 +460,25 @@ export function createForgeAgent({
   const restrictedSet = new Set(RESTRICTED_TOOL_NAMES);
   const planExecSet = new Set(PLAN_EXECUTION_TOOL_NAMES);
 
+  const coreSet = activeDeferredTools ? new Set(CORE_TOOL_NAMES) : undefined;
+
   const computeActiveTools = (): (keyof typeof allTools)[] | undefined => {
     if (isRestricted) return allToolNames.filter((name) => restrictedSet.has(name));
     if (planExecution) return allToolNames.filter((name) => planExecSet.has(name));
-    if (disabledTools && disabledTools.size > 0) {
-      return allToolNames.filter((name) => !disabledTools.has(name));
+
+    let names = allToolNames;
+
+    // Agent-managed mode: only expose core tools + explicitly requested deferred tools
+    if (activeDeferredTools && coreSet) {
+      names = names.filter((name) => coreSet.has(name) || activeDeferredTools.has(name));
     }
-    return undefined;
+
+    // User-disabled tools via /tools popup
+    if (disabledTools && disabledTools.size > 0) {
+      names = names.filter((name) => !disabledTools.has(name));
+    }
+
+    return names.length < allToolNames.length ? names : undefined;
   };
 
   const wrappedProviderOptions = {

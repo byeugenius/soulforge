@@ -98,11 +98,8 @@ brew install soulforge
 Requires [Bun](https://bun.sh) >= 1.0.
 
 ```bash
-# Configure GitHub Packages (one-time)
-echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
-
-# Install
 bun install -g @proxysoul/soulforge
+# or: npm install -g @proxysoul/soulforge
 ```
 
 ### Option 4: Build from source

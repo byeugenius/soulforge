@@ -1633,7 +1633,10 @@ export function useChat({
           cwd,
           sessionId: sessionIdRef.current,
           sharedCacheRef: sharedCacheRef.current,
-          agentFeatures: effectiveConfig.agentFeatures,
+          agentFeatures: {
+            ...effectiveConfig.agentFeatures,
+            onDemandTools: useToolsStore.getState().agentManaged,
+          },
           planExecution: planExecutionRef.current,
           drainSteering,
           disablePruning: !["subagents", "both"].includes(
@@ -1677,7 +1680,10 @@ export function useChat({
                           cwd,
                           sessionId: sessionIdRef.current,
                           sharedCacheRef: sharedCacheRef.current,
-                          agentFeatures: effectiveConfig.agentFeatures,
+                          agentFeatures: {
+                            ...effectiveConfig.agentFeatures,
+                            onDemandTools: useToolsStore.getState().agentManaged,
+                          },
                           planExecution: planExecutionRef.current,
                           drainSteering,
                           disablePruning: !["subagents", "both"].includes(

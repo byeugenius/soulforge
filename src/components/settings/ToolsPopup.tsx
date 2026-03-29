@@ -2,7 +2,7 @@ import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { memo, useState } from "react";
 import { useTheme } from "../../core/theme/index.js";
-import { CORE_TOOL_NAMES, DEFERRED_TOOL_CATALOG } from "../../core/tools/constants.js";
+import { CORE_TOOL_NAMES, TOOL_CATALOG } from "../../core/tools/constants.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
 
@@ -18,10 +18,10 @@ interface ToolEntry {
 const ALL_TOOLS: ToolEntry[] = [
   ...CORE_TOOL_NAMES.map((name) => ({
     name,
-    desc: DEFERRED_TOOL_CATALOG[name] ?? "Core tool",
+    desc: TOOL_CATALOG[name] ?? "Core tool",
     core: true,
   })),
-  ...Object.entries(DEFERRED_TOOL_CATALOG)
+  ...Object.entries(TOOL_CATALOG)
     .filter(([name]) => !CORE_TOOL_NAMES.includes(name))
     .map(([name, desc]) => ({ name, desc, core: false })),
 ];

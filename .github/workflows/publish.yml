@@ -170,7 +170,7 @@ jobs:
           git commit -m "soulforge ${{ steps.version.outputs.version }}"
           git push
 
-  github-packages:
+  npm-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

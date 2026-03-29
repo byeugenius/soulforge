@@ -18,12 +18,7 @@ import {
 import { needsOutsideConfirm } from "../security/outside-cwd.js";
 import type { IntelligenceClient } from "../workers/intelligence-client.js";
 import { analyzeTool } from "./analyze.js";
-import {
-  CORE_TOOL_NAMES,
-  DEFERRED_TOOL_CATALOG,
-  truncateBytes,
-  truncateLines,
-} from "./constants.js";
+import { CORE_TOOL_NAMES, TOOL_CATALOG, truncateBytes, truncateLines } from "./constants.js";
 import { discoverPatternTool } from "./discover-pattern.js";
 import { editFileTool } from "./edit-file";
 import { undoEditTool } from "./edit-stack.js";
@@ -62,10 +57,10 @@ import { buildWebSearchTool } from "./web-search";
 export { wrapWithBusCache } from "./bus-cache.js";
 export {
   CORE_TOOL_NAMES,
-  DEFERRED_TOOL_CATALOG,
   PLAN_EXECUTION_TOOL_NAMES,
   planFileName,
   RESTRICTED_TOOL_NAMES,
+  TOOL_CATALOG,
   truncateBytes,
   truncateLines,
 } from "./constants.js";
@@ -1498,7 +1493,7 @@ export function buildTools(
       ...TEXT_OUTPUT,
       description:
         "Load additional tools by name. Available tools:\n" +
-        Object.entries(DEFERRED_TOOL_CATALOG)
+        Object.entries(TOOL_CATALOG)
           .map(([name, desc]) => `  ${name} — ${desc}`)
           .join("\n"),
       inputSchema: z.object({
@@ -1507,7 +1502,7 @@ export function buildTools(
       execute: async (args) => {
         const deferred = opts?.activeDeferredTools;
         if (!deferred) return { success: true, output: "On-demand tools not enabled" };
-        const catalog = DEFERRED_TOOL_CATALOG;
+        const catalog = TOOL_CATALOG;
         const coreNames = new Set(CORE_TOOL_NAMES);
         const activated: string[] = [];
         const unknown: string[] = [];

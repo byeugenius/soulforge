@@ -8,18 +8,25 @@ export const CORE_TOOL_NAMES: string[] = [
   "glob",
   "shell",
   "project",
-  // "request_tools",
-  // "release_tools",
+  "request_tools",
+  "release_tools",
 ];
 
-/** Deferred tools — name + one-liner visible in request_tools description,
- *  full schema hidden until requested. Keeps per-call schema cost low. */
-export const DEFERRED_TOOL_CATALOG: Record<string, string> = {
-  request_tools: "Load additional tools by name",
-  release_tools: "Deactivate tools you no longer need",
-  dispatch: "Spawn parallel subagents for large tasks (8+ file edits or 11+ file exploration)",
+/** Tool catalog — name + one-liner for all tools. Used by /tools popup and request_tools listing. */
+export const TOOL_CATALOG: Record<string, string> = {
+  read_file: "Read file contents with optional line range or symbol target",
+  edit_file: "Edit, create, or write files with line-anchored matching",
+  multi_edit: "Apply multiple edits to one or more files atomically",
+  undo_edit: "Undo recent edits to a file",
+  grep: "Search file contents with regex patterns",
+  glob: "Find files by glob pattern",
+  shell: "Execute shell commands",
+  project: "Auto-detected lint, format, test, build, typecheck across 23 ecosystems",
+  request_tools: "Load additional tools by name (agent-managed mode)",
+  release_tools: "Deactivate tools you no longer need (agent-managed mode)",
+  dispatch: "Spawn parallel subagents for multi-file tasks",
   plan: "Create an implementation plan for large changes (7+ files)",
-  write_plan: "Write/update a plan file with structured steps",
+  update_plan_step: "Update a plan step's status during execution",
   ask_user: "Ask the user a question and wait for their response",
   navigate: "LSP symbol lookup: definitions, references, callers, type hierarchies",
   soul_find: "Fuzzy file and symbol search ranked by importance",
@@ -37,7 +44,6 @@ export const DEFERRED_TOOL_CATALOG: Record<string, string> = {
   rename_file: "Rename/move a file with import path updates",
   refactor: "LSP code transforms: extract function/variable, format, organize imports",
   test_scaffold: "Generate test skeleton for a file",
-  undo_edit: "Undo recent edits to a file",
   memory: "Read/write persistent memories across sessions",
   editor: "Open file in embedded Neovim editor",
   skills: "Search, add, or remove agent skills",

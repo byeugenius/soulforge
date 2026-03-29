@@ -19,6 +19,34 @@
 
 ---
 
+## Table of Contents
+
+- [What is SoulForge?](#what-is-soulforge)
+- [Highlights](#highlights)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [CLI Flags](#cli-flags)
+  - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Slash Commands](#slash-commands)
+  - [Forge Modes](#forge-modes)
+- [Tool Suite](#tool-suite)
+- [LLM Providers](#llm-providers)
+  - [Custom Providers](#custom-providers)
+  - [Task Router](#task-router)
+- [Repo Map](#repo-map)
+- [Context Management](#context-management)
+- [Project Toolchain Detection](#project-toolchain-detection)
+- [Project Instructions](#project-instructions)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [Documentation](#documentation)
+- [Roadmap](#roadmap)
+- [Inspirations](#inspirations)
+- [License](#license)
+
+---
+
 ## What is SoulForge?
 
 Your real Neovim — config, plugins, LSP — embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 10 providers. Works over SSH.
@@ -262,15 +290,11 @@ brew install soulforge
 </details>
 
 <details>
-<summary><strong>npm / Bun (from GitHub Packages)</strong></summary>
+<summary><strong>npm / Bun</strong></summary>
 
 Requires [Bun](https://bun.sh) >= 1.0 as the runtime.
 
 ```bash
-# Configure GitHub Packages registry (one-time)
-echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
-
-# Install globally
 bun install -g @proxysoul/soulforge
 # or: npm install -g @proxysoul/soulforge
 
