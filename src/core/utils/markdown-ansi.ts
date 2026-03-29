@@ -9,13 +9,19 @@ const ITALIC = "\x1b[3m";
 const UNDERLINE = "\x1b[4m";
 const STRIKETHROUGH = "\x1b[9m";
 
+function expandHex(hex: string): string {
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  return h;
+}
+
 function hexToAnsiFg(hex: string): string {
-  const n = Number.parseInt(hex.slice(1), 16);
+  const n = Number.parseInt(expandHex(hex), 16);
   return `\x1b[38;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 
 function hexToAnsiBg(hex: string): string {
-  const n = Number.parseInt(hex.slice(1), 16);
+  const n = Number.parseInt(expandHex(hex), 16);
   return `\x1b[48;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 

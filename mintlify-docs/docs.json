@@ -60,7 +60,9 @@
             "group": "Tools",
             "pages": [
               "tools/project",
-              "tools/headless"
+              "tools/headless",
+              "tools/themes",
+              "tools/terminals"
             ]
           },
           {

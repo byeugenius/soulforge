@@ -93,7 +93,7 @@ async function handleExport(input: string, ctx: CommandContext): Promise<void> {
     if (newState) {
       sysMsg(
         ctx,
-        "API export **ON** — each agent step will dump full request data (messages, tools, usage) to `~/.local/share/soulforge/tee/`. Run `/export api` again to disable.",
+        "API export **ON** — each agent step will dump full request data (messages, tools, usage) to `.soulforge/api-export/`. Run `/export api` again to disable.",
       );
     } else {
       sysMsg(ctx, "API export **OFF**.");
@@ -165,7 +165,7 @@ function handleClear(_input: string, ctx: CommandContext): void {
     modelBreakdown: {},
   });
   ctx.chat.setMessageQueue([]);
-  clearTasks();
+  clearTasks(ctx.tabMgr.activeTabId);
   emitCacheReset();
   ctx.tabMgr.resetTabLabel(ctx.tabMgr.activeTabId);
 }

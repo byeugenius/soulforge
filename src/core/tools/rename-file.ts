@@ -9,6 +9,7 @@ import { emitFileEdited } from "./file-events.js";
 interface RenameFileArgs {
   from: string;
   to: string;
+  tabId?: string;
 }
 
 export const renameFileTool = {
@@ -87,7 +88,7 @@ export const renameFileTool = {
       try {
         const forbidden = isForbidden(edit.file);
         if (forbidden) continue;
-        pushEdit(edit.file, edit.oldContent);
+        pushEdit(edit.file, edit.oldContent, edit.newContent, args.tabId);
         await writeFile(edit.file, edit.newContent, "utf-8");
         emitFileEdited(edit.file, edit.newContent);
         router.fileCache.invalidate(edit.file);
@@ -102,7 +103,7 @@ export const renameFileTool = {
     await mkdir(toDir, { recursive: true });
 
     const originalContent = await readFile(from, "utf-8");
-    pushEdit(from, originalContent);
+    pushEdit(from, originalContent, originalContent, args.tabId);
 
     try {
       await rename(from, to);

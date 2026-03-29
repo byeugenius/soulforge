@@ -1,12 +1,12 @@
 ---
 title: "SoulForge"
-description: "AI-powered terminal IDE with embedded Neovim, multi-agent dispatch, and graph-powered code intelligence."
+description: "Graph-powered code intelligence — multi-agent coding with codebase-aware AI."
 icon: "terminal"
 ---
 
-<img src="/images/soulforge-hero.png" alt="SoulForge" />
+<img src="/images/dark-forge.png" alt="SoulForge" />
 
-Your real Neovim -- config, plugins, LSP -- embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 10 providers. Works over SSH.
+Your real Neovim -- config, plugins, LSP -- embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 9 providers. Works over SSH.
 
 ## How it compares
 
@@ -14,16 +14,16 @@ Your real Neovim -- config, plugins, LSP -- embedded in an AI agent that underst
 |---|---|---|---|---|---|
 | **Editor** | Embedded Neovim (your config) | No editor | No editor | No editor | No editor |
 | **Code graph** | SQLite graph -- PageRank, blast radius, cochange, clone detection, FTS5 | None (file reads + grep) | None | None (MCP plugins) | Tree-sitter repo map + PageRank |
-| **Code intelligence** | 4-tier fallback: LSP, ts-morph, tree-sitter, regex. Dual LSP. 12 operations. 30 languages | LSP via plugin marketplace (rename via cclsp, no auto-install) | No agent LSP access | MCP-based LSP via plugins | Tree-sitter AST |
+| **Code intelligence** | 4-tier fallback: LSP, ts-morph, tree-sitter, regex. Dual LSP. 12 operations. 33+ languages | LSP via plugin marketplace (rename via cclsp, no auto-install) | No agent LSP access | MCP-based LSP via plugins | Tree-sitter AST |
 | **Compound tools** | `rename_symbol`, `move_symbol`, `refactor` -- compiler-guaranteed, atomic | Rename via LSP | -- | -- | -- |
 | **Semantic context** | AST summaries for top 500 symbols, dispatch auto-enrichment | -- | -- | -- | Tree-sitter tag summaries |
 | **Multi-agent** | Parallel dispatch (8 agents, 3 concurrent, shared cache, edit ownership) | Subagents + Agent Teams | Subagents + Fleet | Multi-agent v2 + subagents | Single agent |
-| **Providers** | 10 (LLM Gateway, Anthropic, OpenAI, Google, xAI, Ollama, +4) | Anthropic (API, Bedrock, Vertex) | Multi-model | OpenAI models | 100+ LLMs |
+| **Providers** | 9 (LLM Gateway, Anthropic, OpenAI, Google, xAI, Ollama, +3) + custom | Anthropic (API, Bedrock, Vertex) | Multi-model | OpenAI models | 100+ LLMs |
 | **Task routing** | Per-task model assignment (plan, code, explore, search, trivial, cleanup, compact) | Single model | Single model | Per-agent model | Single model |
 | **Context management** | 2-layer: per-step pruning + V1/V2 compaction | Auto-compaction | Context window management | Server-side compaction | -- |
 | **License** | BSL 1.1 (source-available) | Proprietary | Proprietary | Apache 2.0 | Apache 2.0 |
 
-<Note>Competitor capabilities verified as of March 28, 2026.</Note>
+<Note>Competitor capabilities verified as of March 29, 2026.</Note>
 
 ## Highlights
 
@@ -42,7 +42,7 @@ Your real Neovim -- config, plugins, LSP -- embedded in an AI agent that underst
 </Card>
 
 <Card title="4-tier code intelligence" icon="brain">
-  LSP, ts-morph, tree-sitter, regex fallback chain across 30 languages with dual LSP backend.
+  LSP, ts-morph, tree-sitter, regex fallback chain across 33+ languages with dual LSP backend.
 </Card>
 
 <Card title="Compound tools" icon="wrench">
@@ -61,7 +61,15 @@ Your real Neovim -- config, plugins, LSP -- embedded in an AI agent that underst
   Type messages while the agent works -- they queue and inject into the next step.
 </Card>
 
-<Card title="10 providers" icon="plug">
+<Card title="Floating terminals" icon="terminal">
+  Spawn, resize, and manage terminal sessions alongside the chat. Powered by Ghostty's terminal emulator.
+</Card>
+
+<Card title="22 themes" icon="palette">
+  Catppuccin, Dracula, Gruvbox, Nord, Tokyo Night, Rose Pine, and more. Create custom themes with hot reload.
+</Card>
+
+<Card title="9 providers" icon="plug">
   LLM Gateway, Anthropic, OpenAI, Google, xAI, Ollama, OpenRouter, Vercel AI Gateway, Proxy, and custom OpenAI-compatible APIs.
 </Card>
 

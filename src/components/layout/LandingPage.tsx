@@ -16,7 +16,9 @@ const WORDMARK = [
 ];
 
 function hexToRgb(hex: string): [number, number, number] {
-  const n = Number.parseInt(hex.slice(1), 16);
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  const n = Number.parseInt(h, 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
@@ -193,7 +195,7 @@ export function LandingPage({ bootProviders, bootPrereqs }: LandingPageProps) {
           <box flexDirection="row" gap={0}>
             <text fg={tk.textDim}>{"── "}</text>
             <text fg={tk.textMuted} attributes={TextAttributes.ITALIC}>
-              AI-Powered Terminal IDE
+              Graph-Powered Code Intelligence
             </text>
             <text fg={tk.textDim}>{" ──"}</text>
           </box>

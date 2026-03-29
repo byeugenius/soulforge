@@ -148,7 +148,7 @@ async function applyEdit(
     .catch((): null => null);
 
   // Write file immediately — don't wait for diagnostics
-  pushEdit(filePath, content, tabId);
+  pushEdit(filePath, content, updated, tabId);
   await writeFile(filePath, updated, "utf-8");
   markToolWrite(filePath);
   emitFileEdited(filePath, updated);
@@ -206,7 +206,7 @@ export const editFileTool = {
   name: "edit_file",
   description:
     "[TIER-1] Edit a file by replacing content. Read first, then provide path, oldString, newString. " +
-    "ALWAYS provide lineStart (1-indexed from read_file output) — makes edits escape-proof. " +
+    "Prefer line-based editing: always provide lineStart and lineEnd (1-indexed from read_file output) for the most reliable edits. " +
     "Empty oldString creates a new file. Use multi_edit for multiple changes to the same file. " +
     "Edits are applied immediately.",
   execute: async (args: EditFileArgs): Promise<ToolResult> => {
@@ -259,55 +259,79 @@ export const editFileTool = {
 
       // ═══════════════════════════════════════════════════════════════
       // PRIMARY PATH: line-based editing (when lineStart is provided)
-      // No string matching — uses line numbers from the agent's last read.
-      // oldString serves as verification hint, not match key.
+      // Line numbers are AUTHORITATIVE — oldString is verification only.
+      // This prevents edits landing at the wrong location when oldString
+      // matches multiple places in the file.
       // ═══════════════════════════════════════════════════════════════
       if (args.lineStart != null) {
-        // First try exact string match at the hinted region for safety verification
-        if (content.includes(oldStr)) {
-          const matchIdx = content.indexOf(oldStr);
-          const matchLine = content.slice(0, matchIdx).split("\n").length;
-          const updated = content.replace(oldStr, newStr);
-          return applyEdit(filePath, content, updated, matchLine, "", args.tabId);
-        }
-
-        // Fuzzy match (whitespace/escape normalization)
-        const fixed = fuzzyWhitespaceMatch(content, oldStr, newStr);
-        if (fixed && content.includes(fixed.oldStr)) {
-          const matchIdx = content.indexOf(fixed.oldStr);
-          const matchLine = content.slice(0, matchIdx).split("\n").length;
-          const updated = content.replace(fixed.oldStr, fixed.newStr);
-          return applyEdit(filePath, content, updated, matchLine, "", args.tabId);
-        }
-
-        // String matching failed — fall back to pure line-based replacement.
-        // This is the escape-proof path: no string matching at all.
         const range = resolveLineRange(content, oldStr, args.lineStart, args.lineEnd);
-        if (!range) {
-          return {
-            success: false,
-            output: `Invalid line range: ${String(args.lineStart)} (file has ${String(lines.length)} lines)`,
-            error: "invalid line range",
-          };
+        if (range) {
+          const replacedLines = lines.slice(range.start, range.end);
+          const newLines = newStr.split("\n");
+
+          // Safety: don't delete large blocks with empty replacement
+          if (replacedLines.length > 10 && newLines.length === 0) {
+            return {
+              success: false,
+              output: `Refusing to delete ${String(replacedLines.length)} lines with empty replacement.`,
+              error: "safety: empty replacement for large range",
+            };
+          }
+
+          // Verify oldString matches the line range content (warn if mismatch)
+          const rangeContent = replacedLines.join("\n");
+          let label = ` (lines ${String(args.lineStart)}-${String(range.end)})`;
+
+          // If oldString exactly matches the range, great — high confidence edit
+          if (rangeContent === oldStr) {
+            const before = lines.slice(0, range.start);
+            const after = lines.slice(range.end);
+            const updated = [...before, ...newLines, ...after].join("\n");
+            return applyEdit(filePath, content, updated, args.lineStart, label, args.tabId);
+          }
+
+          // Try fuzzy match against the range content
+          const rangeFixed = fuzzyWhitespaceMatch(rangeContent, oldStr, newStr);
+          if (rangeFixed) {
+            const before = lines.slice(0, range.start);
+            const after = lines.slice(range.end);
+            const updated = [...before, ...rangeFixed.newStr.split("\n"), ...after].join("\n");
+            return applyEdit(filePath, content, updated, args.lineStart, label, args.tabId);
+          }
+
+          // oldString doesn't match the range — apply anyway (line numbers are authoritative)
+          // but add a note so the agent knows the verification failed
+          label += " [oldString did not match range — applied by line numbers]";
+          const before = lines.slice(0, range.start);
+          const after = lines.slice(range.end);
+          const updated = [...before, ...newLines, ...after].join("\n");
+          return applyEdit(filePath, content, updated, args.lineStart, label, args.tabId);
         }
 
-        const replacedLines = lines.slice(range.start, range.end);
-        const newLines = newStr.split("\n");
-
-        // Safety: don't delete large blocks with empty replacement
-        if (replacedLines.length > 10 && newLines.length === 0) {
-          return {
-            success: false,
-            output: `Refusing to delete ${String(replacedLines.length)} lines with empty replacement.`,
-            error: "safety: empty replacement for large range",
-          };
+        // Line range invalid — fall back to string match as last resort
+        if (content.includes(oldStr)) {
+          const occurrences = content.split(oldStr).length - 1;
+          if (occurrences === 1) {
+            const matchIdx = content.indexOf(oldStr);
+            const matchLine = content.slice(0, matchIdx).split("\n").length;
+            const updated =
+              content.slice(0, matchIdx) + newStr + content.slice(matchIdx + oldStr.length);
+            return applyEdit(
+              filePath,
+              content,
+              updated,
+              matchLine,
+              " [line range invalid, used string match]",
+              args.tabId,
+            );
+          }
         }
 
-        const before = lines.slice(0, range.start);
-        const after = lines.slice(range.end);
-        const updated = [...before, ...newLines, ...after].join("\n");
-        const label = ` (lines ${String(args.lineStart)}-${String(range.end)})`;
-        return applyEdit(filePath, content, updated, args.lineStart, label, args.tabId);
+        return {
+          success: false,
+          output: `Invalid line range: ${String(args.lineStart)} (file has ${String(lines.length)} lines)`,
+          error: "invalid line range",
+        };
       }
 
       // ═══════════════════════════════════════════════════════════════
@@ -336,7 +360,8 @@ export const editFileTool = {
 
       const matchIdx = content.indexOf(resolvedOld);
       const editLine = matchIdx >= 0 ? content.slice(0, matchIdx).split("\n").length : 1;
-      const updated = content.replace(resolvedOld, resolvedNew);
+      const updated =
+        content.slice(0, matchIdx) + resolvedNew + content.slice(matchIdx + resolvedOld.length);
       const result = await applyEdit(filePath, content, updated, editLine, "", args.tabId);
       if (result.success) {
         result.output +=

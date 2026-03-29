@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { access, stat as statAsync } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { isBinaryFile } from "isbinaryfile";
@@ -132,21 +131,13 @@ async function readSymbolFromFile(filePath: string, args: ReadFileArgs): Promise
     };
   }
 
-  if (!existsSync(filePath)) {
-    return {
-      success: false,
-      output: `File not found: ${filePath}`,
-      error: "not_found",
-    };
-  }
-
   try {
     await access(filePath);
   } catch {
     return {
       success: false,
       output: `File not found: ${filePath}`,
-      error: `File not found: ${filePath}`,
+      error: "not_found",
     };
   }
 

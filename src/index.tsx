@@ -52,7 +52,9 @@ function runCleanup(): void {
 let bannerPrinted = false;
 
 function hexToAnsi(hex: string): string {
-  const n = Number.parseInt(hex.slice(1), 16);
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  const n = Number.parseInt(h, 16);
   return `\x1b[38;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 
@@ -173,11 +175,11 @@ function RestartSplash({ onComplete }: { onComplete: () => void }) {
       </text>
       <box height={1} />
       <text>
-        <span fg={t.textMuted}>{visibleLabel}</span>
+        <span fg={t.textSecondary}>{visibleLabel}</span>
         <span fg={t.brandSecondary}>{cursor}</span>
       </text>
       <box height={1} />
-      <text fg={t.textFaint}>{"─".repeat(30)}</text>
+      <text fg={t.textDim}>{"─".repeat(30)}</text>
       <box height={1} />
       {RESTART_STEPS.map((step, i) => {
         if (i > anim.phase) return null;
@@ -185,7 +187,7 @@ function RestartSplash({ onComplete }: { onComplete: () => void }) {
         return (
           <box key={step} gap={1} flexDirection="row">
             <text fg={done ? t.success : t.brand}>{done ? "✓" : spin}</text>
-            <text fg={done ? t.textMuted : t.textPrimary}>{step}</text>
+            <text fg={done ? t.textSecondary : t.textPrimary}>{step}</text>
           </box>
         );
       })}

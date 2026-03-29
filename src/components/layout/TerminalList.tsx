@@ -10,7 +10,15 @@ function shortenCwd(cwd: string): string {
   return `${parts[0]}/.../${parts.slice(-2).join("/")}`;
 }
 
-function TerminalRow({ entry, isSelected }: { entry: TerminalEntry; isSelected: boolean }) {
+function TerminalRow({
+  entry,
+  index,
+  isSelected,
+}: {
+  entry: TerminalEntry;
+  index: number;
+  isSelected: boolean;
+}) {
   const t = useTheme();
   const statusColor = entry.active ? t.success : t.textDim;
   const statusDot = entry.active ? "●" : "○";
@@ -27,7 +35,7 @@ function TerminalRow({ entry, isSelected }: { entry: TerminalEntry; isSelected: 
           <span fg={statusColor}>{statusDot} </span>
           <span fg={isSelected ? t.brand : t.textMuted}>{icon("terminal")} </span>
           <span fg={isSelected ? t.textPrimary : t.textSecondary}>
-            #{String(entry.id)} {entry.label}
+            {String(index + 1)} {entry.label}
           </span>
           {entry.pid && <span fg={t.textFaint}> [{String(entry.pid)}]</span>}
         </text>
@@ -91,8 +99,13 @@ function TerminalList() {
         </box>
       ) : (
         <scrollbox flexGrow={1} flexShrink={1} minHeight={0}>
-          {terminals.map((entry) => (
-            <TerminalRow key={entry.id} entry={entry} isSelected={entry.id === selectedId} />
+          {terminals.map((entry, i) => (
+            <TerminalRow
+              key={entry.id}
+              entry={entry}
+              index={i}
+              isSelected={entry.id === selectedId}
+            />
           ))}
         </scrollbox>
       )}

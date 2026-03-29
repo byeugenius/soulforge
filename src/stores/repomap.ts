@@ -18,6 +18,9 @@ interface RepoMapState {
   semanticModel: string;
   semanticTokensIn: number;
   semanticTokensOut: number;
+  semanticTokensCache: number;
+  lspStatus: SemanticStatus;
+  lspProgress: string;
 
   setStatus: (status: RepoMapStatus) => void;
   setStats: (files: number, symbols: number, edges: number, dbSizeBytes: number) => void;
@@ -27,8 +30,10 @@ interface RepoMapState {
   setSemanticCount: (count: number) => void;
   setSemanticProgress: (msg: string) => void;
   setSemanticModel: (model: string) => void;
-  addSemanticTokens: (input: number, output: number) => void;
+  addSemanticTokens: (input: number, output: number, cache?: number) => void;
   resetSemanticTokens: () => void;
+  setLspStatus: (status: SemanticStatus) => void;
+  setLspProgress: (msg: string) => void;
 }
 
 let _pendingScanProgress = "";
@@ -61,6 +66,9 @@ export const useRepoMapStore = create<RepoMapState>()(
     semanticModel: "",
     semanticTokensIn: 0,
     semanticTokensOut: 0,
+    semanticTokensCache: 0,
+    lspStatus: "off",
+    lspProgress: "",
 
     setStatus: (status) => {
       if (_scanThrottleTimer) {
@@ -86,11 +94,15 @@ export const useRepoMapStore = create<RepoMapState>()(
     setSemanticCount: (semanticCount) => set({ semanticCount }),
     setSemanticProgress: (semanticProgress) => set({ semanticProgress }),
     setSemanticModel: (semanticModel) => set({ semanticModel }),
-    addSemanticTokens: (input, output) =>
+    addSemanticTokens: (input, output, cache) =>
       set((s) => ({
         semanticTokensIn: s.semanticTokensIn + input,
         semanticTokensOut: s.semanticTokensOut + output,
+        semanticTokensCache: s.semanticTokensCache + (cache ?? 0),
       })),
-    resetSemanticTokens: () => set({ semanticTokensIn: 0, semanticTokensOut: 0 }),
+    resetSemanticTokens: () =>
+      set({ semanticTokensIn: 0, semanticTokensOut: 0, semanticTokensCache: 0 }),
+    setLspStatus: (lspStatus) => set({ lspStatus }),
+    setLspProgress: (lspProgress) => set({ lspProgress }),
   })),
 );

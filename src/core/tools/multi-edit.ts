@@ -73,31 +73,62 @@ export const multiEditTool = {
         const newLineCount = edit.newString.split("\n").length;
 
         // Helper: apply line-based replacement at a given range
-        const applyLineReplace = (start: number, end: number): boolean => {
+        const applyLineReplace = (start: number, end: number, replacement?: string): boolean => {
           const lines = content.split("\n");
           if (start < 0 || end > lines.length || start >= end) return false;
           const before = lines.slice(0, start);
           const after = lines.slice(end);
-          content = [...before, ...edit.newString.split("\n"), ...after].join("\n");
+          content = [...before, ...(replacement ?? edit.newString).split("\n"), ...after].join(
+            "\n",
+          );
           return true;
         };
 
-        // Try exact string match first
+        // ── PRIMARY: line-based editing (when lineStart is provided) ──
+        // Line numbers are AUTHORITATIVE — oldString is verification only.
+        if (adjustedLineStart != null) {
+          const start = adjustedLineStart - 1;
+          const end = adjustedLineEnd != null ? adjustedLineEnd : start + oldLineCount;
+          const lines = content.split("\n");
+
+          if (start >= 0 && end <= lines.length && start < end) {
+            const rangeContent = lines.slice(start, end).join("\n");
+
+            // Exact match at range — high confidence
+            if (rangeContent === edit.oldString) {
+              applyLineReplace(start, end);
+              lineOffset += newLineCount - oldLineCount;
+              continue;
+            }
+
+            // Fuzzy match at range (whitespace/escape normalization)
+            const rangeFixed = fuzzyWhitespaceMatch(rangeContent, edit.oldString, edit.newString);
+            if (rangeFixed) {
+              applyLineReplace(start, end, rangeFixed.newStr);
+              lineOffset += rangeFixed.newStr.split("\n").length - (end - start);
+              continue;
+            }
+
+            // oldString doesn't match range — apply by line numbers anyway
+            // (line numbers are authoritative, oldString may be stale)
+            applyLineReplace(start, end);
+            lineOffset += newLineCount - oldLineCount;
+            continue;
+          }
+          // Line range invalid — fall through to string-based matching
+        }
+
+        // ── FALLBACK: string-based editing (no lineStart or invalid range) ──
         if (content.includes(edit.oldString)) {
           const occurrences = content.split(edit.oldString).length - 1;
           if (occurrences > 1) {
-            if (adjustedLineStart != null) {
-              const start = adjustedLineStart - 1;
-              const end = adjustedLineEnd != null ? adjustedLineEnd : start + oldLineCount;
-              if (applyLineReplace(start, end)) {
-                lineOffset += newLineCount - oldLineCount;
-                continue;
-              }
-            }
-            const msg = `${label}: found ${String(occurrences)} matches. Provide lineStart to disambiguate.`;
+            const msg = `${label}: found ${String(occurrences)} matches. Provide lineStart+lineEnd to disambiguate.`;
             return { success: false, output: msg, error: msg };
           }
-          content = content.replace(edit.oldString, edit.newString);
+          // Single occurrence — safe to replace
+          const idx = content.indexOf(edit.oldString);
+          content =
+            content.slice(0, idx) + edit.newString + content.slice(idx + edit.oldString.length);
           lineOffset += newLineCount - oldLineCount;
           continue;
         }
@@ -105,19 +136,14 @@ export const multiEditTool = {
         // Fuzzy match (whitespace + escape normalization)
         const fixed = fuzzyWhitespaceMatch(content, edit.oldString, edit.newString);
         if (fixed && content.includes(fixed.oldStr)) {
-          const fixedOldLines = fixed.oldStr.split("\n").length;
-          const fixedNewLines = fixed.newStr.split("\n").length;
-          content = content.replace(fixed.oldStr, fixed.newStr);
-          lineOffset += fixedNewLines - fixedOldLines;
-          continue;
-        }
-
-        // Line-based fallback (when lineStart provided)
-        if (adjustedLineStart != null) {
-          const start = adjustedLineStart - 1;
-          const end = adjustedLineEnd != null ? adjustedLineEnd : start + oldLineCount;
-          if (applyLineReplace(start, end)) {
-            lineOffset += newLineCount - oldLineCount;
+          const fixedOccurrences = content.split(fixed.oldStr).length - 1;
+          if (fixedOccurrences === 1) {
+            const fixedOldLines = fixed.oldStr.split("\n").length;
+            const fixedNewLines = fixed.newStr.split("\n").length;
+            const idx = content.indexOf(fixed.oldStr);
+            content =
+              content.slice(0, idx) + fixed.newStr + content.slice(idx + fixed.oldStr.length);
+            lineOffset += fixedNewLines - fixedOldLines;
             continue;
           }
         }
@@ -134,24 +160,28 @@ export const multiEditTool = {
       const beforeMetrics = analyzeFile(originalContent);
       const afterMetrics = analyzeFile(content);
 
-      // Snapshot diagnostics BEFORE writing
-      let beforeDiags: import("../intelligence/types.js").Diagnostic[] = [];
-      let router: import("../intelligence/router.js").CodeIntelligenceRouter | null = null;
-      let language: import("../intelligence/types.js").Language = "unknown";
-      try {
-        const intel = await import("../intelligence/index.js");
-        router = intel.getIntelligenceRouter(process.cwd());
-        language = router.detectLanguage(filePath);
-        const diags = await router.executeWithFallback(language, "getDiagnostics", (b) =>
-          b.getDiagnostics ? b.getDiagnostics(filePath) : Promise.resolve(null),
-        );
-        if (diags) beforeDiags = diags;
-      } catch {
-        // Intelligence not available
-      }
+      // Kick off pre-edit diagnostics in parallel — don't block the file write
+      const diagsPromise = import("../intelligence/index.js")
+        .then(async (intel) => {
+          const r = intel.getIntelligenceRouter(process.cwd());
+          const lang = r.detectLanguage(filePath);
+          const diags = await r.executeWithFallback(lang, "getDiagnostics", (b) =>
+            b.getDiagnostics ? b.getDiagnostics(filePath) : Promise.resolve(null),
+          );
+          return {
+            beforeDiags: diags ?? [],
+            router: r,
+            language: lang,
+          } as {
+            beforeDiags: import("../intelligence/types.js").Diagnostic[];
+            router: import("../intelligence/router.js").CodeIntelligenceRouter;
+            language: import("../intelligence/types.js").Language;
+          };
+        })
+        .catch((): null => null);
 
-      // Push single undo entry for the entire batch
-      pushEdit(filePath, originalContent, args.tabId);
+      // Push single undo entry for the entire batch — write immediately
+      pushEdit(filePath, originalContent, content, args.tabId);
 
       await writeFile(filePath, content, "utf-8");
       markToolWrite(filePath);
@@ -179,19 +209,26 @@ export const multiEditTool = {
       let output = `Applied ${String(args.edits.length)} edits to ${args.path}`;
       if (deltas.length > 0) output += ` (${deltas.join(", ")})`;
 
-      // Single diagnostic pass
-      if (router) {
-        try {
+      // Post-edit diagnostics with timeout (matching edit_file behavior)
+      try {
+        const diagCtx = await Promise.race([
+          diagsPromise,
+          new Promise<null>((r) => setTimeout(() => r(null), 500)),
+        ]);
+        if (diagCtx) {
           const { formatPostEditResult, postEditDiagnostics } = await import(
             "../intelligence/post-edit.js"
           );
-          const diffResult = await postEditDiagnostics(router, filePath, language, beforeDiags);
-          const diffOutput = formatPostEditResult(diffResult);
-          if (diffOutput) output += `\n${diffOutput}`;
-        } catch {
-          // Post-edit analysis unavailable
+          const diffResult = await Promise.race([
+            postEditDiagnostics(diagCtx.router, filePath, diagCtx.language, diagCtx.beforeDiags),
+            new Promise<null>((r) => setTimeout(() => r(null), 2000)),
+          ]);
+          if (diffResult) {
+            const diffOutput = formatPostEditResult(diffResult);
+            if (diffOutput) output += `\n${diffOutput}`;
+          }
         }
-      }
+      } catch {}
 
       return { success: true, output };
     } catch (err: unknown) {

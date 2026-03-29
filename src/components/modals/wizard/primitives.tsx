@@ -1,8 +1,10 @@
 import { memo } from "react";
+import { useTheme } from "../../../core/theme/index.js";
 import { POPUP_BG, PopupRow } from "../../layout/shared.js";
-import { BOLD, C } from "./theme.js";
+import { BOLD } from "./theme.js";
 
 export const Gap = memo(function Gap({ iw, n = 1 }: { iw: number; n?: number }) {
+  useTheme();
   const rows = [];
   for (let i = 0; i < n; i++)
     rows.push(
@@ -14,9 +16,10 @@ export const Gap = memo(function Gap({ iw, n = 1 }: { iw: number; n?: number }) 
 });
 
 export const Hr = memo(function Hr({ iw }: { iw: number }) {
+  const t = useTheme();
   return (
     <PopupRow w={iw}>
-      <text fg={C.faint} bg={POPUP_BG}>
+      <text fg={t.textFaint} bg={POPUP_BG}>
         {"─".repeat(iw - 4)}
       </text>
     </PopupRow>
@@ -32,12 +35,13 @@ export const StepHeader = memo(function StepHeader({
   ic: string;
   title: string;
 }) {
+  const t = useTheme();
   return (
     <PopupRow w={iw}>
-      <text fg={C.purple} attributes={BOLD} bg={POPUP_BG}>
+      <text fg={t.brand} attributes={BOLD} bg={POPUP_BG}>
         {ic}
       </text>
-      <text fg={C.white} attributes={BOLD} bg={POPUP_BG}>
+      <text fg={t.textPrimary} attributes={BOLD} bg={POPUP_BG}>
         {" "}
         {title}
       </text>
@@ -52,9 +56,10 @@ export const SectionLabel = memo(function SectionLabel({
   iw: number;
   label: string;
 }) {
+  const t = useTheme();
   return (
     <PopupRow w={iw}>
-      <text fg={C.muted} attributes={BOLD} bg={POPUP_BG}>
+      <text fg={t.textMuted} attributes={BOLD} bg={POPUP_BG}>
         {label}
       </text>
     </PopupRow>
@@ -70,13 +75,14 @@ export const KV = memo(function KV({
   label: string;
   desc: string;
 }) {
+  const t = useTheme();
   return (
     <PopupRow w={iw}>
-      <text fg={C.cyan} attributes={BOLD} bg={POPUP_BG}>
+      <text fg={t.info} attributes={BOLD} bg={POPUP_BG}>
         {"  "}
         {label.padEnd(30)}
       </text>
-      <text fg={C.text} bg={POPUP_BG}>
+      <text fg={t.textPrimary} bg={POPUP_BG}>
         {desc}
       </text>
     </PopupRow>
@@ -96,20 +102,21 @@ export const Feat = memo(function Feat({
   keys: string;
   desc: string;
 }) {
+  const t = useTheme();
   return (
     <PopupRow w={iw}>
-      <text fg={C.purple} bg={POPUP_BG}>
+      <text fg={t.brand} bg={POPUP_BG}>
         {"  "}
         {ic}{" "}
       </text>
-      <text fg={C.white} attributes={BOLD} bg={POPUP_BG}>
+      <text fg={t.textPrimary} attributes={BOLD} bg={POPUP_BG}>
         {title}
       </text>
-      <text fg={C.cyan} bg={POPUP_BG}>
+      <text fg={t.info} bg={POPUP_BG}>
         {" "}
         ({keys})
       </text>
-      <text fg={C.subtle} bg={POPUP_BG}>
+      <text fg={t.textDim} bg={POPUP_BG}>
         {" — "}
         {desc}
       </text>

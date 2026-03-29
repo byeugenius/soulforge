@@ -63,6 +63,7 @@ export interface AgentStatsEvent {
   stepCount: number;
   tokenUsage: { input: number; output: number; total: number };
   cacheHits: number;
+  cacheWrite: number;
 }
 
 type StepListener = (step: SubagentStep) => void;

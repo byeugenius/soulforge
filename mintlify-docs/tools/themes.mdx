@@ -1,0 +1,116 @@
+---
+title: "Themes"
+description: "22 builtin themes, custom themes with hot reload — pick your flavor or add yours."
+icon: "palette"
+---
+
+## Quick start
+
+Press `/theme` or `Ctrl+K` → search "theme" to open the theme picker. Themes preview live as you navigate.
+
+## Builtin themes
+
+### Dark
+
+| Theme | Description |
+|-------|-------------|
+| `dark` | SoulForge default |
+| `solarized-dark` | Ethan Schoonover's classic |
+| `catppuccin` | Catppuccin Mocha |
+| `catppuccin-frappe` | Catppuccin Frappe |
+| `catppuccin-macchiato` | Catppuccin Macchiato |
+| `gruvbox-dark` | Retro groove |
+| `tokyo-night` | Tokyo Night |
+| `tokyonight-storm` | Tokyo Night Storm |
+| `dracula` | Dracula |
+| `nord` | Arctic, north-bluish |
+| `one-dark` | Atom One Dark |
+| `rose-pine` | All natural pine |
+| `kanagawa` | Inspired by Katsushika Hokusai |
+| `github-dark` | GitHub Dark |
+| `everforest-dark` | Comfortable green |
+| `ayu-dark` | Ayu Dark |
+| `nightfox` | Nightfox |
+
+### Light
+
+| Theme | Description |
+|-------|-------------|
+| `light` | Clean light theme |
+| `catppuccin-latte` | Catppuccin Latte |
+| `one-light` | Atom One Light |
+| `github-light` | GitHub Light |
+
+## Config
+
+Theme is saved globally in `~/.soulforge/config.json`:
+
+```json
+{
+  "theme": {
+    "name": "catppuccin",
+    "transparent": true
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Theme ID (builtin or custom) |
+| `transparent` | Make background transparent (terminal background bleed-through) |
+
+Toggle transparency with `Tab` in the theme picker.
+
+## Custom themes
+
+Create your own theme by adding a JSON file to `~/.soulforge/themes/`:
+
+```bash
+mkdir -p ~/.soulforge/themes
+```
+
+### Example
+
+`~/.soulforge/themes/my-theme.json`:
+
+```json
+{
+  "_extends": "dark",
+  "_label": "My Theme",
+  "_description": "A custom dark theme",
+  "_variant": "dark",
+  "brand": "#ff6600",
+  "brand-secondary": "#ff0040",
+  "bg-primary": "#1a1a2e",
+  "bg-elevated": "#16213e",
+  "text-primary": "#e0e0e0",
+  "success": "#00ff88",
+  "error": "#ff4444"
+}
+```
+
+The file name (minus `.json`) becomes the theme ID.
+
+### Metadata fields
+
+| Field | Description |
+|-------|-------------|
+| `_extends` | Inherit from a builtin theme (default: `dark`). Only override the tokens you want to change. |
+| `_label` | Display name in the theme picker |
+| `_description` | Description shown in the picker |
+| `_variant` | `"dark"` or `"light"` — controls the indicator in the picker |
+
+### Token reference
+
+Tokens use kebab-case in JSON files (auto-converted to camelCase internally):
+
+- **Brand**: `brand`, `brand-secondary`, `brand-dim`, `brand-alt`
+- **Backgrounds**: `bg-primary`, `bg-elevated`, `bg-sunken`
+- **Text**: `text-primary`, `text-secondary`, `text-muted`, `text-dim`, `text-faint`
+- **Borders**: `border`, `border-dim`
+- **Status**: `success`, `error`, `warning`, `info`
+- **Diff**: `diff-add`, `diff-remove`, `diff-change`
+
+## Hot reload
+
+Theme files are watched for changes. Edit a custom theme file and the UI updates instantly — no restart needed.

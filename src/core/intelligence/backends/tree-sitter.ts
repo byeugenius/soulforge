@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -1071,7 +1072,7 @@ export class TreeSitterBackend implements IntelligenceBackend {
 
     // CommonJS: extract exports from module.exports = { ... } for JS files
     if ((language === "javascript" || language === "typescript") && exports.length === 0) {
-      const content = this.readFileContent(file);
+      const content = await this.readFileContent(file);
       if (content) {
         const cjsMatch = content.match(/module\.exports\s*=\s*\{([^}]+)\}/);
         if (cjsMatch?.[1]) {
@@ -1100,7 +1101,7 @@ export class TreeSitterBackend implements IntelligenceBackend {
 
     // Infer exports from visibility conventions for non-TS/JS languages
     if (exports.length === 0 && language !== "typescript" && language !== "javascript") {
-      const content = this.readFileContent(file);
+      const content = await this.readFileContent(file);
       if (content) {
         const lines = content.split("\n");
         for (const sym of symbols) {
@@ -1176,7 +1177,7 @@ export class TreeSitterBackend implements IntelligenceBackend {
   }
 
   async readScope(file: string, startLine: number, endLine?: number): Promise<CodeBlock | null> {
-    const content = this.readFileContent(file);
+    const content = await this.readFileContent(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -1412,7 +1413,7 @@ export class TreeSitterBackend implements IntelligenceBackend {
     if (!this.parser) return null;
 
     const absPath = resolve(file);
-    const content = this.readFileContent(absPath);
+    const content = await this.readFileContent(absPath);
     if (!content) return null;
 
     // Check tree cache — reuse if content hasn't changed
@@ -1472,13 +1473,13 @@ export class TreeSitterBackend implements IntelligenceBackend {
     }
   }
 
-  private readFileContent(file: string): string | null {
+  private async readFileContent(file: string): Promise<string | null> {
     const absPath = resolve(file);
     if (this.cache) {
       return this.cache.get(absPath);
     }
     try {
-      return readFileSync(absPath, "utf-8");
+      return await readFile(absPath, "utf-8");
     } catch {
       return null;
     }

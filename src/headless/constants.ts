@@ -6,7 +6,9 @@ export const BOLD = "\x1b[1m";
 export const DIM = "\x1b[2m";
 
 function hexToAnsi(hex: string): string {
-  const n = Number.parseInt(hex.slice(1), 16);
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  const n = Number.parseInt(h, 16);
   return `\x1b[38;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 

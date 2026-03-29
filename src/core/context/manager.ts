@@ -7,6 +7,7 @@ import { toErrorMessage } from "../../utils/errors.js";
 import { setNeovimFileWrittenHandler } from "../editor/neovim.js";
 import type { SymbolForSummary } from "../intelligence/repo-map.js";
 import { resolveModel } from "../llm/provider.js";
+import { EPHEMERAL_CACHE } from "../llm/provider-options.js";
 import { MemoryManager } from "../memory/manager.js";
 import {
   buildDirectoryTree,
@@ -64,7 +65,7 @@ export class ContextManager {
   private repoMapCache: { content: string; at: number } | null = null;
   private soulMapDiffChangedFiles = new Set<string>();
   private taskRouter: TaskRouter | undefined;
-  private semanticSummaryLimit = 300;
+  private semanticSummaryLimit = 500;
   private semanticAutoRegen = false;
   private repoMapTokenBudget: number | undefined = undefined;
   private lastActiveModel = "";
@@ -496,35 +497,17 @@ export class ContextManager {
 
     const bd = await this.repoMap.getSummaryBreakdown();
     store.setSemanticCount(bd.total);
+    store.setLspStatus(bd.lsp > 0 ? "ready" : "off");
+    store.setLspProgress(bd.lsp > 0 ? `${String(bd.lsp)} symbols enriched` : "");
 
     if (mode === "llm" || mode === "full") {
       const modelId = this.getSemanticModelId(this.lastActiveModel);
       if (modelId && modelId !== "none") {
-        const genId = ++this.semanticGenId;
         store.setSemanticModel(modelId);
-        store.setSemanticStatus("generating");
-        store.setSemanticProgress(
-          bd.total > 0
-            ? `${this.formatBreakdown(bd)} (generating LLM...)`
-            : "generating LLM summaries...",
-        );
-        this.generateSemanticSummaries(modelId).catch(async () => {
-          if (this.semanticGenId !== genId) return;
-          const current = await this.repoMap.getSummaryBreakdown();
-          store.setSemanticCount(current.total);
-          store.setSemanticStatus(current.total > 0 ? "ready" : "off");
-          store.setSemanticProgress(
-            current.total > 0 ? this.formatBreakdown(current) : "LLM generation failed",
-          );
-        });
-      } else {
-        store.setSemanticStatus(bd.total > 0 ? "ready" : "off");
-        store.setSemanticProgress(bd.total > 0 ? this.formatBreakdown(bd) : "waiting for model...");
       }
-    } else {
-      store.setSemanticStatus(bd.total > 0 ? "ready" : "off");
-      store.setSemanticProgress(bd.total > 0 ? this.formatBreakdown(bd) : "no summaries");
     }
+    store.setSemanticStatus(bd.total > 0 ? "ready" : "off");
+    store.setSemanticProgress(bd.total > 0 ? this.formatBreakdown(bd) : "no summaries");
   }
 
   async clearFreeSummaries(): Promise<void> {
@@ -550,15 +533,15 @@ export class ContextManager {
 
   async enrichWithLsp(maxFiles = 50): Promise<number> {
     const store = useRepoMapStore.getState();
-    store.setSemanticStatus("generating");
-    store.setSemanticProgress("LSP enriching symbols...");
+    store.setLspStatus("generating");
+    store.setLspProgress("LSP enriching symbols...");
     try {
       const { isNvimAvailable, documentSymbols } = await import(
         "../intelligence/backends/lsp/nvim-bridge.js"
       );
       if (!isNvimAvailable()) {
-        store.setSemanticProgress("LSP not available — open editor first");
-        store.setSemanticStatus("ready");
+        store.setLspProgress("not available — open editor first");
+        store.setLspStatus("error");
         return 0;
       }
 
@@ -582,9 +565,8 @@ export class ContextManager {
       for (let fi = 0; fi < files.length; fi++) {
         const file = files[fi];
         if (!file) continue;
-        store.setSemanticProgress(
-          `LSP enrich ${String(fi + 1)}/${String(files.length)}: ${file.path}`,
-        );
+        const pathLabel = file.path.length > 30 ? `...${file.path.slice(-27)}` : file.path;
+        store.setLspProgress(`${String(fi + 1)}/${String(files.length)}: ${pathLabel}`);
         const absPath = join(this.cwd, file.path);
         let raw: unknown[] | null;
         try {
@@ -643,12 +625,15 @@ export class ContextManager {
 
       db.close();
       this.repoMapCache = null;
-      store.setSemanticProgress(`LSP enriched ${String(enriched)} symbols`);
-      store.setSemanticStatus("ready");
+      const bd = await this.repoMap.getSummaryBreakdown();
+      store.setSemanticCount(bd.total);
+      store.setSemanticProgress(this.formatBreakdown(bd));
+      store.setLspProgress(`${String(bd.lsp)} symbols enriched`);
+      store.setLspStatus(bd.lsp > 0 ? "ready" : "off");
       return enriched;
     } catch {
-      store.setSemanticStatus("error");
-      store.setSemanticProgress("LSP enrich failed");
+      store.setLspStatus("error");
+      store.setLspProgress("enrich failed");
       return 0;
     }
   }
@@ -662,7 +647,7 @@ export class ContextManager {
   }
 
   setSemanticSummaryLimit(limit: number | undefined): void {
-    this.semanticSummaryLimit = limit ?? 300;
+    this.semanticSummaryLimit = limit ?? 500;
   }
 
   setSemanticAutoRegen(enabled: boolean | undefined): void {
@@ -693,19 +678,19 @@ export class ContextManager {
 
   private formatBreakdown(bd: {
     ast: number;
-    llm: number;
+    llm: number | string;
     synthetic: number;
-    total: number;
-    eligible: number;
+    lsp?: number;
+    total?: number;
+    eligible?: number;
   }): string {
-    const parts: string[] = [];
-    if (bd.ast > 0) parts.push(`${String(bd.ast)} ast`);
-    if (bd.llm > 0) {
-      const pct = bd.eligible > 0 ? Math.round((bd.llm / bd.eligible) * 100) : 0;
-      parts.push(`${String(bd.llm)} llm (${String(pct)}%)`);
-    }
-    if (bd.synthetic > 0) parts.push(`${String(bd.synthetic)} syn`);
-    return `${parts.join(" + ")} — ${String(bd.total)} symbols`;
+    const fmtVal = (v: number | string): string =>
+      typeof v === "string" ? v : v > 0 ? String(v) : "off";
+    return [
+      `ast: ${fmtVal(bd.ast)}`,
+      `syn: ${fmtVal(bd.synthetic)}`,
+      `llm: ${fmtVal(bd.llm)}`,
+    ].join(" | ");
   }
 
   getSemanticModelId(fallback: string): string {
@@ -715,7 +700,7 @@ export class ContextManager {
   async generateSemanticSummaries(modelId: string): Promise<number> {
     if (!this.repoMapReady) return 0;
     this.lastActiveModel = modelId;
-    const myGenId = this.semanticGenId;
+    const myGenId = ++this.semanticGenId;
 
     const store = useRepoMapStore.getState();
     store.setSemanticStatus("generating");
@@ -723,66 +708,74 @@ export class ContextManager {
     store.setSemanticModel(modelId);
     store.resetSemanticTokens();
 
+    const baseBd = await this.repoMap.getSummaryBreakdown();
     const model = resolveModel(modelId);
-    const CHUNK = 10;
-    let processed = 0;
+    let cumProcessed = 0;
+    let totalKnown = 0;
 
-    const generator = async (batch: SymbolForSummary[]) => {
+    const generator = async (batch: SymbolForSummary[], batchTotal?: number) => {
+      if (batchTotal !== undefined) totalKnown = batchTotal;
       const all: Array<{ name: string; summary: string }> = [];
 
-      for (let i = 0; i < batch.length; i += CHUNK) {
-        const chunk = batch.slice(i, i + CHUNK);
-        const prompt = chunk
-          .map((s, j) => {
-            const meta: string[] = [];
-            if (s.lineSpan) meta.push(`${String(s.lineSpan)}L`);
-            if (s.dependents) meta.push(`${String(s.dependents)} dependents`);
-            const metaStr = meta.length > 0 ? ` (${meta.join(", ")})` : "";
-            return `[${String(j + 1)}] ${s.kind} \`${s.name}\` in ${s.filePath}${metaStr}:\n${s.signature ? `${s.signature}\n` : ""}${s.code}`;
-          })
-          .join("\n\n");
+      if (this.semanticGenId !== myGenId) return all;
 
-        if (this.semanticGenId === myGenId) {
-          store.setSemanticProgress(
-            `${String(processed + 1)}-${String(Math.min(processed + CHUNK, batch.length))}/${String(batch.length)}`,
-          );
-        }
-
-        const { text, usage } = await generateText({
-          model,
-          temperature: 0,
-          system: [
-            "Summarize each code symbol in ONE line (max 80 chars). Focus on BEHAVIOR: what it does, key side effects, non-obvious logic.",
-            "BAD: 'Checks if Neovim is available' (restates name)",
-            "GOOD: 'Pings nvim RPC, returns false on timeout or socket error'",
-            "BAD: 'Renders a widget component' (generic)",
-            "GOOD: 'Memoized tree-view with virtual scroll, collapses on blur'",
-            "Output ONLY lines: SymbolName: summary",
-            "No numbering, no backticks, no extra text.",
-          ].join("\n"),
-          prompt,
-        });
-
-        store.addSemanticTokens(usage.inputTokens ?? 0, usage.outputTokens ?? 0);
-
-        for (const line of text.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const colonIdx = trimmed.indexOf(":");
-          if (colonIdx < 1) continue;
-          const name = trimmed
-            .slice(0, colonIdx)
-            .replace(/^[`*\d.)\]]+\s*/, "")
-            .trim();
-          const summary = trimmed.slice(colonIdx + 1).trim();
-          if (name && summary && /^\w+$/.test(name)) {
-            all.push({ name, summary });
-          }
-        }
-
-        processed += chunk.length;
+      if (this.semanticGenId === myGenId) {
+        const end = cumProcessed + batch.length;
+        const total = totalKnown > 0 ? totalKnown : end;
+        const llmProgress = `${String(cumProcessed + 1)}-${String(end)}/${String(total)}`;
+        store.setSemanticProgress(
+          this.formatBreakdown({ ast: baseBd.ast, synthetic: baseBd.synthetic, llm: llmProgress }),
+        );
       }
 
+      const prompt = batch
+        .map((s, j) => {
+          const meta: string[] = [];
+          if (s.lineSpan) meta.push(`${String(s.lineSpan)}L`);
+          if (s.dependents) meta.push(`${String(s.dependents)} dependents`);
+          const metaStr = meta.length > 0 ? ` (${meta.join(", ")})` : "";
+          return `[${String(j + 1)}] ${s.kind} \`${s.name}\` in ${s.filePath}${metaStr}:\n${s.signature ? `${s.signature}\n` : ""}${s.code}`;
+        })
+        .join("\n\n");
+
+      const { text, usage } = await generateText({
+        model,
+        temperature: 0,
+        providerOptions: EPHEMERAL_CACHE,
+        system: [
+          "Summarize each code symbol in ONE line (max 80 chars). Focus on BEHAVIOR: what it does, key side effects, non-obvious logic.",
+          "BAD: 'Checks if Neovim is available' (restates name)",
+          "GOOD: 'Pings nvim RPC, returns false on timeout or socket error'",
+          "BAD: 'Renders a widget component' (generic)",
+          "GOOD: 'Memoized tree-view with virtual scroll, collapses on blur'",
+          "Output ONLY lines: SymbolName: summary",
+          "No numbering, no backticks, no extra text.",
+        ].join("\n"),
+        prompt,
+      });
+
+      const cacheRead =
+        (usage as { inputTokenDetails?: { cacheReadTokens?: number } }).inputTokenDetails
+          ?.cacheReadTokens ?? 0;
+      store.addSemanticTokens(usage.inputTokens ?? 0, usage.outputTokens ?? 0, cacheRead);
+
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const colonIdx = trimmed.indexOf(":");
+        if (colonIdx < 1) continue;
+        const name = trimmed
+          .slice(0, colonIdx)
+          .replace(/^[`*\d.)\]\s]+/, "")
+          .replace(/[`*([\s]+$/, "")
+          .trim();
+        const summary = trimmed.slice(colonIdx + 1).trim();
+        if (name && summary && /^\w+$/.test(name)) {
+          all.push({ name, summary });
+        }
+      }
+
+      cumProcessed += batch.length;
       return all;
     };
 

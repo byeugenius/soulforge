@@ -76,21 +76,15 @@ Or use the built-in **Proxy provider** to relay through a local CLIProxyAPI inst
 
 ### Option 1: Prebuilt binary (recommended)
 
-Download the standalone binary — no runtime dependencies:
+Download the latest release from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run the installer:
 
 ```bash
-# macOS (Apple Silicon)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
-sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
-
-# macOS (Intel)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
-sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
-
-# Linux (x64)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
-sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
+tar xzf soulforge-*.tar.gz
+cd soulforge-*/
+./install.sh
 ```
+
+Installs to `~/.soulforge/` and adds it to your PATH.
 
 ### Option 2: Homebrew
 

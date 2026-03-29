@@ -43,10 +43,18 @@ function getFlashColor(pct: number): string {
 
 const COMPACT_FRAMES = ["◐", "◓", "◑", "◒"];
 
+function humanizeTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(Math.round(n));
+}
+
 interface BarTarget {
   pct: number;
   live: boolean;
   flash: boolean;
+  usedTokens: number;
+  windowTokens: number;
 }
 
 interface WorkerIndicator {
@@ -58,6 +66,8 @@ function buildContent(
   pct: number,
   live: boolean,
   flash: boolean,
+  usedTokens: number,
+  windowTokens: number,
   compacting?: { active: boolean; frame: number },
   workers?: WorkerIndicator,
 ): StyledText {
@@ -68,6 +78,8 @@ function buildContent(
 
   const pctColor = flash ? getFlashColor(pct) : getPctColor(pct);
   const t = getThemeTokens();
+  const tokenLabel =
+    usedTokens > 0 ? ` ${humanizeTokens(usedTokens)}/${humanizeTokens(windowTokens)}` : "";
   const chunks = [
     fgStyle(live ? t.success : t.textDim)("● "),
     fgStyle(t.textFaint)("["),
@@ -75,6 +87,7 @@ function buildContent(
     fgStyle(t.textSubtle)("▱".repeat(empty)),
     fgStyle(t.textFaint)("]"),
     fgStyle(pctColor)(live ? `${String(pct)}%` : `~${String(pct)}%`),
+    fgStyle(t.textDim)(tokenLabel),
   ];
   if (compacting?.active) {
     const spinner = COMPACT_FRAMES[compacting.frame % COMPACT_FRAMES.length] ?? "◐";
@@ -105,7 +118,13 @@ interface Props {
 export function ContextBar({ contextManager, suppressCompacting }: Props) {
   const textRef = useRef<TextRenderable>(null);
 
-  const targetRef = useRef<BarTarget>({ pct: 0, live: false, flash: false });
+  const targetRef = useRef<BarTarget>({
+    pct: 0,
+    live: false,
+    flash: false,
+    usedTokens: 0,
+    windowTokens: 200_000,
+  });
   const prevTotalRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPctRef = useRef(0);
@@ -114,7 +133,7 @@ export function ContextBar({ contextManager, suppressCompacting }: Props) {
   const workerRef = useRef<WorkerIndicator>({ intel: "idle", io: "idle" });
   const suppressCompactingRef = useRef(suppressCompacting);
   suppressCompactingRef.current = suppressCompacting;
-  const renderedContentRef = useRef(buildContent(0, false, false));
+  const renderedContentRef = useRef(buildContent(0, false, false, 0, 200_000));
 
   const computeTarget = useCallback(
     (state: {
@@ -147,7 +166,13 @@ export function ContextBar({ contextManager, suppressCompacting }: Props) {
         }, 500);
       }
       prevTotalRef.current = totalTokens;
-      targetRef.current = { pct, live: isApi, flash };
+      targetRef.current = {
+        pct,
+        live: isApi,
+        flash,
+        usedTokens: totalTokens,
+        windowTokens: ctxWindow,
+      };
     },
     [contextManager],
   );
@@ -204,6 +229,8 @@ export function ContextBar({ contextManager, suppressCompacting }: Props) {
           pct,
           target.live,
           target.flash,
+          target.usedTokens,
+          target.windowTokens,
           isCompacting ? { active: true, frame: compactFrameRef.current } : undefined,
           wk,
         );

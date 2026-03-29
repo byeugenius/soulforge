@@ -7,10 +7,10 @@ import { FooterNav } from "./FooterNav.js";
 import { ProgressBar } from "./ProgressBar.js";
 import { Hr } from "./primitives.js";
 import { FeaturesStep } from "./steps/FeaturesStep.js";
-import { KeysStep } from "./steps/KeysStep.js";
-import { ModelStep } from "./steps/ModelStep.js";
 import { ReadyStep } from "./steps/ReadyStep.js";
+import { SetupStep } from "./steps/SetupStep.js";
 import { ShortcutsStep } from "./steps/ShortcutsStep.js";
+import { ThemeStep } from "./steps/ThemeStep.js";
 import { WelcomeStep } from "./steps/WelcomeStep.js";
 
 interface Props {
@@ -34,46 +34,50 @@ export const FirstRunWizard = memo(function FirstRunWizard({
 
   const [stepIdx, setStepIdx] = useState(0);
   const step = STEPS[stepIdx] ?? "welcome";
-  const navigatedBack = useRef(false);
+  const [setupActive, setSetupActive] = useState(false);
 
-  // Reset on open
+  const hasOpened = useRef(false);
+
+  // Reset only on first open, not on reopen from model picker
   useEffect(() => {
     if (!visible) return;
-    setStepIdx(0);
-    navigatedBack.current = false;
-  }, [visible]);
-
-  // Auto-advance past model step (forward flow only)
-  useEffect(() => {
-    if (visible && step === "model" && hasModel && !navigatedBack.current) {
-      setStepIdx((i) => i + 1);
+    if (!hasOpened.current) {
+      hasOpened.current = true;
+      setStepIdx(0);
     }
-  }, [visible, step, hasModel]);
+    setSetupActive(false);
+  }, [visible]);
 
   // Navigation
   const goForward = useCallback(() => {
-    navigatedBack.current = false;
-    if (step === "model" && !hasModel) {
-      onSelectModel();
-      return;
-    }
     if (stepIdx < STEPS.length - 1) setStepIdx((i) => i + 1);
     else onClose();
-  }, [step, hasModel, stepIdx, onSelectModel, onClose]);
+  }, [stepIdx, onClose]);
 
   const goBack = useCallback(() => {
-    if (stepIdx > 0) {
-      navigatedBack.current = true;
-      setStepIdx((i) => i - 1);
-    }
+    if (stepIdx > 0) setStepIdx((i) => i - 1);
   }, [stepIdx]);
 
   useKeyboard(
     useCallback(
       (evt) => {
         if (!visible) return;
+        // Don't intercept when setup step is handling its own input
+        if (setupActive) return;
         if (evt.name === "escape") {
           onClose();
+          return;
+        }
+        if (step === "setup" || step === "theme") {
+          // These steps handle their own ↑↓/⏎/tab — only →/← for navigation
+          if (evt.name === "right" || evt.name === "l") {
+            goForward();
+            return;
+          }
+          if (evt.name === "left" || evt.name === "h") {
+            goBack();
+            return;
+          }
           return;
         }
         if (evt.name === "return" || evt.name === "right" || evt.name === "l") {
@@ -85,7 +89,7 @@ export const FirstRunWizard = memo(function FirstRunWizard({
           return;
         }
       },
-      [visible, onClose, goForward, goBack],
+      [visible, onClose, goForward, goBack, setupActive, step],
     ),
   );
 
@@ -110,15 +114,24 @@ export const FirstRunWizard = memo(function FirstRunWizard({
         <Hr iw={iw} />
 
         {step === "welcome" && <WelcomeStep iw={iw} />}
-        {step === "model" && <ModelStep iw={iw} hasModel={hasModel} activeModel={activeModel} />}
-        {step === "keys" && <KeysStep iw={iw} />}
+        {step === "setup" && (
+          <SetupStep
+            iw={iw}
+            hasModel={hasModel}
+            activeModel={activeModel}
+            onSelectModel={onSelectModel}
+            active={setupActive}
+            setActive={setSetupActive}
+          />
+        )}
         {step === "features" && <FeaturesStep iw={iw} />}
         {step === "shortcuts" && <ShortcutsStep iw={iw} />}
+        {step === "theme" && <ThemeStep iw={iw} active={setupActive} setActive={setSetupActive} />}
         {step === "ready" && <ReadyStep iw={iw} />}
 
         <box flexGrow={1} backgroundColor={POPUP_BG} />
         <Hr iw={iw} />
-        <FooterNav iw={iw} stepIdx={stepIdx} step={step} hasModel={hasModel} />
+        <FooterNav iw={iw} stepIdx={stepIdx} step={step} />
       </box>
     </Overlay>
   );

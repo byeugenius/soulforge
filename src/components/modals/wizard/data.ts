@@ -1,28 +1,28 @@
 /* ── Step definitions ──────────────────────────────────────────── */
 
-export const STEPS = ["welcome", "model", "keys", "features", "shortcuts", "ready"] as const;
+export const STEPS = ["welcome", "setup", "features", "shortcuts", "theme", "ready"] as const;
 export type Step = (typeof STEPS)[number];
 
 export const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
-  model: "Model",
-  keys: "API Keys",
+  setup: "Provider & Key",
   features: "Features",
   shortcuts: "Shortcuts",
+  theme: "Theme",
   ready: "Ready",
 };
 
 /* ── Provider & key data ──────────────────────────────────────── */
 
 export const PROVIDERS = [
-  { name: "LLM Gateway", desc: "Multi-provider gateway — one key, all models" },
-  { name: "Anthropic", desc: "Claude Sonnet 4, Claude Opus 4, Haiku" },
-  { name: "OpenAI", desc: "GPT-4.1, o3, o4-mini" },
-  { name: "Google", desc: "Gemini 2.5 Pro, Flash" },
-  { name: "xAI", desc: "Grok" },
-  { name: "Ollama", desc: "Local models — no API key needed" },
-  { name: "OpenRouter", desc: "Aggregator — hundreds of models" },
-  { name: "CLIProxyAPI", desc: "Managed access — no keys needed" },
+  { name: "LLM Gateway", desc: "One key, all models — llmgateway.io/dashboard", highlight: true },
+  { name: "Anthropic", desc: "Claude Sonnet 4, Claude Opus 4, Haiku", highlight: false },
+  { name: "OpenAI", desc: "GPT-4.1, o3, o4-mini", highlight: false },
+  { name: "Google", desc: "Gemini 2.5 Pro, Flash", highlight: false },
+  { name: "xAI", desc: "Grok", highlight: false },
+  { name: "Ollama", desc: "Local models — no API key needed", highlight: false },
+  { name: "OpenRouter", desc: "Aggregator — hundreds of models", highlight: false },
+  { name: "CLIProxyAPI", desc: "Managed access — no keys needed", highlight: false },
 ] as const;
 
 export const ENV_VARS = [

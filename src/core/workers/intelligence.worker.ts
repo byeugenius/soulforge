@@ -114,11 +114,11 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
 
   generateSemanticSummaries: async (maxSymbols: unknown) => {
     const rm = requireRepoMap();
-    rm.setSummaryGenerator(async (batch) => {
-      return ctx.requestCallback<Array<{ name: string; summary: string }>>(
-        "summaryGenerator",
+    rm.setSummaryGenerator(async (batch, batchTotal) => {
+      return ctx.requestCallback<Array<{ name: string; summary: string }>>("summaryGenerator", {
         batch,
-      );
+        batchTotal,
+      });
     });
     const count = await rm.generateSemanticSummaries(maxSymbols as number | undefined);
     rm.setSummaryGenerator(null);
@@ -138,6 +138,8 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
   findSymbol: (name: unknown) => requireRepoMap().findSymbol(name as string),
   searchSymbolsSubstring: (query: unknown, limit: unknown) =>
     requireRepoMap().searchSymbolsSubstring(query as string, limit as number | undefined),
+  searchSymbolsFts: (query: unknown, limit: unknown) =>
+    requireRepoMap().searchSymbolsFts(query as string, limit as number | undefined),
   getFileSymbols: (relPath: unknown) => requireRepoMap().getFileSymbols(relPath as string),
   getFileSymbolRanges: (relPath: unknown) =>
     requireRepoMap().getFileSymbolRanges(relPath as string),
@@ -175,6 +177,11 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
     ),
   getFileDuplicates: (relPath: unknown) => requireRepoMap().getFileDuplicates(relPath as string),
   getCallees: (symbolId: unknown) => requireRepoMap().getCallees(symbolId as number),
+  getCallers: (name: unknown, filePath: unknown) =>
+    requireRepoMap().getCallers(name as string, filePath as string | undefined),
+  getClassMembers: (className: unknown) => requireRepoMap().getClassMembers(className as string),
+  getSymbolSummaries: (file: unknown, name: unknown) =>
+    requireRepoMap().getSymbolSummaries(file as string | undefined, name as string | undefined),
 
   // ── Stats ──
   getStats: () => requireRepoMap().getStats(),

@@ -2,7 +2,7 @@
 
 All notable changes to SoulForge are documented here.
 
-## [1.0.0] — 2026-03-25
+## [1.0.0] — 2026-03-29
 
 Initial public release.
 
@@ -35,6 +35,8 @@ Initial public release.
 - 86 slash commands, 17 keyboard shortcuts
 - 6 forge modes: default, auto, architect, socratic, challenge, plan
 - Multi-tab chat with cross-tab file coordination and advisory claims
+- **Floating terminals** — spawn, resize, and manage terminal sessions alongside the chat
+- **22 builtin themes** — Catppuccin, Dracula, Gruvbox, Nord, Tokyo Night, Rose Pine, and more. Custom themes via `~/.soulforge/themes/` with hot reload.
 - User steering — type while the agent works, messages inject at the next step
 - Installable skill system for domain-specific capabilities
 - Destructive action approval gates — individually prompted for `rm -rf`, `git push --force`, sensitive file edits

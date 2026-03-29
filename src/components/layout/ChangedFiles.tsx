@@ -189,7 +189,7 @@ function ChangesSection({ messages, cwd }: PanelProps) {
   const modified = files.length - created;
 
   return (
-    <box flexDirection="column" flexShrink={0}>
+    <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
       <box height={1} flexShrink={0} paddingX={1} marginTop={-1}>
         <text bg={t.bgApp}>
           <span fg={t.brandAlt}>{icon("changes")}</span>
@@ -246,7 +246,9 @@ export function ChangesPanel({ messages, cwd }: PanelProps) {
   return (
     <box
       flexDirection="column"
-      flexShrink={0}
+      flexGrow={1}
+      flexShrink={1}
+      minHeight={3}
       borderStyle="rounded"
       border={true}
       borderColor={t.textFaint}

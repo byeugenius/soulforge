@@ -1,5 +1,4 @@
-import { existsSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat as statAsync, writeFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
@@ -8,11 +7,11 @@ import { isForbidden } from "../security/forbidden.js";
 import { pushEdit } from "./edit-stack.js";
 import { emitFileEdited } from "./file-events.js";
 
-async function applyEdits(edits: FileEdit[]): Promise<void> {
+async function applyEdits(edits: FileEdit[], tabId?: string): Promise<void> {
   for (const edit of edits) {
     const blocked = isForbidden(edit.file);
     if (blocked) throw new Error(`Cannot edit forbidden file: ${edit.file} (${blocked})`);
-    pushEdit(edit.file, edit.oldContent);
+    pushEdit(edit.file, edit.oldContent, edit.newContent, tabId);
     await writeFile(edit.file, edit.newContent, "utf-8");
     emitFileEdited(edit.file, edit.newContent);
   }
@@ -362,9 +361,10 @@ async function locateSymbol(
     const match = exact ?? results[0];
     if (match) {
       const resolved = resolve(match.location.file);
-      if (existsSync(resolved) && statSync(resolved).isFile()) {
-        return { file: resolved };
-      }
+      try {
+        const st = await statAsync(resolved);
+        if (st.isFile()) return { file: resolved };
+      } catch {}
     }
   }
 
@@ -399,7 +399,7 @@ async function locateSymbol(
   return null;
 }
 
-function findProjectRoot(file: string): string {
+async function findProjectRoot(file: string): Promise<string> {
   const { dirname, join } = require("node:path") as typeof import("node:path");
   let dir = dirname(file);
   const cwd = process.cwd();
@@ -411,7 +411,10 @@ function findProjectRoot(file: string): string {
       "go.mod",
       "pyproject.toml",
     ]) {
-      if (existsSync(join(dir, marker))) return dir;
+      try {
+        await statAsync(join(dir, marker));
+        return dir;
+      } catch {}
     }
     const parent = dirname(dir);
     if (parent === dir) break;
@@ -422,7 +425,7 @@ function findProjectRoot(file: string): string {
 
 async function findRemainingReferences(symbol: string, definitionFile: string): Promise<string[]> {
   try {
-    const projectRoot = findProjectRoot(definitionFile);
+    const projectRoot = await findProjectRoot(definitionFile);
     const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const proc = Bun.spawn(
       [
@@ -452,6 +455,7 @@ interface RenameSymbolArgs {
   symbol: string;
   newName: string;
   file?: string;
+  tabId?: string;
 }
 
 export const renameSymbolTool = {
@@ -487,7 +491,7 @@ export const renameSymbolTool = {
       }
 
       if (tracked) {
-        await applyEdits(tracked.value.edits);
+        await applyEdits(tracked.value.edits, args.tabId);
       }
 
       // Always grep for remaining references — catches LSP misses AND handles the
@@ -503,7 +507,7 @@ export const renameSymbolTool = {
             if (refBlocked) continue;
             const updated = replaceInCode(content, escaped, args.newName, ref);
             if (updated !== content) {
-              pushEdit(ref, content);
+              pushEdit(ref, content, updated, args.tabId);
               await writeFile(ref, updated, "utf-8");
               emitFileEdited(ref, updated);
               textFixed.push(ref);

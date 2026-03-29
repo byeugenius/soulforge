@@ -1,6 +1,6 @@
 # SoulForge
 
-AI-Powered Terminal IDE by proxySoul.
+Graph-powered code intelligence — multi-agent coding with codebase-aware AI.
 
 ## Stack
 

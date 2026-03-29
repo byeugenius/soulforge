@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { logBackgroundError } from "../../../../stores/errors.js";
 import {
   decode,
@@ -178,12 +178,12 @@ export class StandaloneLspClient {
   }
 
   /** Ensure a document is open in the server */
-  ensureDocumentOpen(filePath: string): void {
+  async ensureDocumentOpen(filePath: string): Promise<void> {
     const uri = filePathToUri(filePath);
 
     let text: string;
     try {
-      text = readFileSync(filePath, "utf-8");
+      text = await readFile(filePath, "utf-8");
     } catch {
       return;
     }
@@ -237,7 +237,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspLocation[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/definition", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -251,7 +251,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspLocation[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/references", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -264,7 +264,7 @@ export class StandaloneLspClient {
   async textDocumentDocumentSymbol(
     filePath: string,
   ): Promise<Array<LspDocumentSymbol | LspSymbolInformation>> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/documentSymbol", {
       textDocument: { uri: filePathToUri(filePath) },
     })) as Array<LspDocumentSymbol | LspSymbolInformation> | null;
@@ -277,7 +277,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspHover | null> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/hover", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -292,7 +292,7 @@ export class StandaloneLspClient {
     character: number,
     newName: string,
   ): Promise<LspWorkspaceEdit | null> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/rename", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -303,7 +303,7 @@ export class StandaloneLspClient {
 
   /** Get diagnostics for a file, waiting up to 2s for them to arrive */
   async getDiagnostics(filePath: string): Promise<LspDiagnostic[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const uri = filePathToUri(filePath);
 
     // Check if we already have diagnostics
@@ -343,7 +343,7 @@ export class StandaloneLspClient {
     endChar: number,
     only?: string[],
   ): Promise<LspCodeAction[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/codeAction", {
       textDocument: { uri: filePathToUri(filePath) },
       range: {
@@ -365,7 +365,7 @@ export class StandaloneLspClient {
 
   /** Format a document */
   async textDocumentFormatting(filePath: string): Promise<LspTextEdit[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/formatting", {
       textDocument: { uri: filePathToUri(filePath) },
       options: { tabSize: 2, insertSpaces: true },
@@ -381,7 +381,7 @@ export class StandaloneLspClient {
     endLine: number,
     endChar: number,
   ): Promise<LspTextEdit[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/rangeFormatting", {
       textDocument: { uri: filePathToUri(filePath) },
       range: {
@@ -399,7 +399,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspLocation[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/implementation", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -413,7 +413,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspCallHierarchyItem[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/prepareCallHierarchy", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },
@@ -443,7 +443,7 @@ export class StandaloneLspClient {
     line: number,
     character: number,
   ): Promise<LspTypeHierarchyItem[]> {
-    this.ensureDocumentOpen(filePath);
+    await this.ensureDocumentOpen(filePath);
     const result = (await this.request("textDocument/prepareTypeHierarchy", {
       textDocument: { uri: filePathToUri(filePath) },
       position: { line, character },

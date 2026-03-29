@@ -1,30 +1,28 @@
 import { memo } from "react";
+import { useTheme } from "../../../core/theme/index.js";
 import { POPUP_BG, PopupRow } from "../../layout/shared.js";
 import { STEPS, type Step } from "./data.js";
-import { C } from "./theme.js";
 
 export const FooterNav = memo(function FooterNav({
   iw,
   stepIdx,
   step,
-  hasModel,
 }: {
   iw: number;
   stepIdx: number;
   step: Step;
-  hasModel: boolean;
 }) {
+  const t = useTheme();
   const isFirst = stepIdx === 0;
   const isLast = stepIdx === STEPS.length - 1;
-  const actionLabel =
-    step === "model" && !hasModel ? "⏎ open model picker" : isLast ? "⏎ start forging" : "⏎/→ next";
+  const actionLabel = step === "setup" ? "→ next step" : isLast ? "⏎ start forging" : "⏎/→ next";
 
   return (
     <PopupRow w={iw}>
-      <text fg={C.muted} bg={POPUP_BG}>
+      <text fg={t.textMuted} bg={POPUP_BG}>
         {isFirst ? "" : "← back │ "}
         {actionLabel}
-        <span fg={C.faint}>{" │ esc skip"}</span>
+        <span fg={t.textDim}>{" │ esc skip"}</span>
       </text>
     </PopupRow>
   );

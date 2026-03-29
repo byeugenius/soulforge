@@ -37,27 +37,15 @@ Or use a single [AI Gateway](https://sdk.vercel.ai/docs/ai-sdk-core/provider-man
 
 <Tabs>
   <Tab title="Prebuilt binary (recommended)">
-    Download the standalone binary -- no runtime dependencies:
+    Download the latest release from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run the installer:
 
     ```bash
-    # macOS (Apple Silicon)
-    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
-    sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
-
-    # macOS (Intel)
-    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
-    sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
-
-    # Linux (x64)
-    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
-    sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
-
-    # Linux (ARM64)
-    curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-arm64.tar.gz | tar xz
-    sudo mv soulforge-linux-arm64 /usr/local/bin/soulforge
+    tar xzf soulforge-*.tar.gz
+    cd soulforge-*/
+    ./install.sh
     ```
 
-    Then run `soulforge` (or `sf`).
+    Installs to `~/.soulforge/` and adds it to your PATH. Then run `soulforge` (or `sf`).
   </Tab>
   <Tab title="Homebrew">
     ```bash
@@ -65,18 +53,19 @@ Or use a single [AI Gateway](https://sdk.vercel.ai/docs/ai-sdk-core/provider-man
     brew install soulforge
     ```
   </Tab>
-  <Tab title="npm / Bun">
-    Requires [Bun](https://bun.sh) >= 1.0 as the runtime.
-
+  <Tab title="npm / pnpm / Bun">
     ```bash
-    # Install Bun (if needed)
-    curl -fsSL https://bun.sh/install | bash
+    # npm
+    npm install -g @proxysoul/soulforge
 
-    # Configure GitHub Packages registry (one-time)
-    echo "@proxysoul:registry=https://npm.pkg.github.com" >> ~/.npmrc
+    # pnpm
+    pnpm add -g @proxysoul/soulforge
 
-    # Install globally
+    # bun
     bun install -g @proxysoul/soulforge
+
+    # Or run without installing
+    npx @proxysoul/soulforge
     ```
   </Tab>
   <Tab title="Build from source">

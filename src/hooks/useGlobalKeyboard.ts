@@ -41,7 +41,8 @@ export function useGlobalKeyboard({
         uiModals.errorLog ||
         uiModals.compactionLog ||
         uiModals.llmSelector ||
-        uiModals.floatingTerminal;
+        uiModals.floatingTerminal ||
+        uiModals.firstRunWizard;
       if (evt.ctrl && evt.name === "c" && !hasOwnInput) {
         handleExit();
       }

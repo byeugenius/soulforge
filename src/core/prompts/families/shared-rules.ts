@@ -8,6 +8,8 @@
  * 3. Add the family detection case in provider-options.ts detectModelFamily()
  */
 
+export const CURRENT_YEAR = new Date().getFullYear();
+
 export const SHARED_RULES = `
 # Tool usage policy
 - When searching for keywords or files and not confident of finding the right match quickly, use the Task tool
@@ -21,5 +23,13 @@ export const SHARED_RULES = `
 - Add comments only when the code is complex and requires context.
 - Follow security best practices. Keep secrets out of code.
 - Don't waste turns fixing indentation or formatting mid-session — use project(format) at the end to auto-fix.
+
+# Code architecture (${CURRENT_YEAR} standards)
+- Avoid god files — split large files (300+ lines) into focused modules with clear responsibilities when possible.
+- Prefer composition over inheritance. Build small, reusable pieces that compose together.
+- Extract shared logic into reusable functions, modules, or language-appropriate abstractions. Don't duplicate code across files.
+- Single responsibility — each file, function, or class should do one thing well.
+- Follow existing codebase patterns and conventions rather than inventing new abstractions.
+- Write modern, idiomatic code for the language and ecosystem. Use current ${CURRENT_YEAR}-era APIs, patterns, and best practices — avoid deprecated or legacy approaches.
 
 Only commit changes when the user explicitly asks you to.`;

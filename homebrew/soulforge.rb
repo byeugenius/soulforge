@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 class Soulforge < Formula
-  desc "AI-Powered Terminal IDE — Neovim + Multi-Agent + Graph Code Intelligence"
+  desc "Graph-powered code intelligence — multi-agent coding with codebase-aware AI"
   homepage "https://github.com/ProxySoul/soulforge"
   version "1.0.0"
   license "BUSL-1.1"

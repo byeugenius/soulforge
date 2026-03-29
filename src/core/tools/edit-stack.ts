@@ -1,15 +1,23 @@
-import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { stat as statAsync, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
-import { markToolWrite, reloadBuffer } from "../editor/instance.js";
+import { markToolWrite, readBufferContent, reloadBuffer } from "../editor/instance.js";
 import { isForbidden } from "../security/forbidden.js";
 import { emitFileEdited } from "./file-events.js";
 
 interface EditEntry {
+  /** File content BEFORE this edit was applied */
   content: string;
+  /** Hash of file content AFTER this edit was applied — used to detect stale undos */
+  afterHash: number;
   timestamp: number;
   tabId?: string;
+}
+
+/** Fast content hash using Bun's native hasher (FNV-like, non-crypto) */
+function contentHash(s: string): number {
+  // Bun.hash returns a bigint; coerce to number (safe for equality checks)
+  return Number(Bun.hash(s));
 }
 
 const MAX_STACK_SIZE = 20;
@@ -39,7 +47,7 @@ export function clearEditStacks(tabId?: string): void {
     return;
   }
   for (const [key, stack] of stacks) {
-    const filtered = stack.filter((e) => e.tabId && e.tabId !== tabId);
+    const filtered = stack.filter((e) => !e.tabId || e.tabId !== tabId);
     if (filtered.length === 0) {
       stacks.delete(key);
     } else {
@@ -48,35 +56,64 @@ export function clearEditStacks(tabId?: string): void {
   }
 }
 
-export function pushEdit(absPath: string, previousContent: string, tabId?: string): void {
+/**
+ * Push an undo entry. Call BEFORE writing the new content to disk.
+ * @param absPath - absolute file path
+ * @param previousContent - file content before the edit
+ * @param newContent - file content after the edit (used for stale detection)
+ * @param tabId - owning tab (for cross-tab isolation)
+ */
+export function pushEdit(
+  absPath: string,
+  previousContent: string,
+  newContent: string,
+  tabId?: string,
+): void {
   const key = absPath;
   let stack = stacks.get(key);
   if (!stack) {
     stack = [];
     stacks.set(key, stack);
   }
-  stack.push({ content: previousContent, timestamp: Date.now(), tabId });
+  stack.push({
+    content: previousContent,
+    afterHash: contentHash(newContent),
+    timestamp: Date.now(),
+    tabId,
+  });
   if (stack.length > MAX_STACK_SIZE) {
     stack.shift();
   }
   evictOldest();
 }
 
-function popEdit(absPath: string, tabId?: string): string | null {
+interface PopResult {
+  content: string;
+  stale: boolean;
+}
+
+/**
+ * Pop the most recent undo entry, verifying it's not stale.
+ * @param currentFileHash - hash of the file's current content on disk
+ * @returns the previous content + stale flag, or null if no entry
+ */
+function popEdit(absPath: string, currentFileHash: number, tabId?: string): PopResult | null {
   const stack = stacks.get(absPath);
   if (!stack || stack.length === 0) return null;
   if (tabId) {
     for (let i = stack.length - 1; i >= 0; i--) {
       const item = stack[i];
       if (item && (!item.tabId || item.tabId === tabId)) {
+        const stale = item.afterHash !== currentFileHash;
         stack.splice(i, 1);
-        return item.content;
+        return { content: item.content, stale };
       }
     }
     return null;
   }
   const entry = stack.pop();
-  return entry ? entry.content : null;
+  if (!entry) return null;
+  return { content: entry.content, stale: entry.afterHash !== currentFileHash };
 }
 
 function getEditCount(absPath: string, tabId?: string): number {
@@ -99,7 +136,9 @@ export const undoEditTool = {
         return { success: false, output: msg, error: msg };
       }
 
-      if (!existsSync(filePath)) {
+      try {
+        await statAsync(filePath);
+      } catch {
         return {
           success: false,
           output: `File not found: ${filePath}`,
@@ -107,14 +146,25 @@ export const undoEditTool = {
         };
       }
 
-      const steps = Math.max(1, Math.min(args.steps ?? 1, 10));
+      const steps = Math.max(1, Math.min(args.steps ?? 1, MAX_STACK_SIZE));
+      const currentContent = await readBufferContent(filePath);
+      let currentHash = contentHash(currentContent);
       let restored: string | null = null;
       let actualSteps = 0;
+      const warnings: string[] = [];
 
       for (let i = 0; i < steps; i++) {
-        const prev = popEdit(filePath, args.tabId);
-        if (!prev) break;
-        restored = prev;
+        const result = popEdit(filePath, currentHash, args.tabId);
+        if (!result) break;
+        if (result.stale) {
+          // File was modified by another tab/agent since this snapshot.
+          warnings.push(
+            `Step ${String(i + 1)}: file was modified externally since this edit — undo may not be exact`,
+          );
+        }
+        restored = result.content;
+        // Update hash for next iteration — the "current" content is now what we're about to restore
+        currentHash = contentHash(restored);
         actualSteps++;
       }
 
@@ -134,6 +184,9 @@ export const undoEditTool = {
       let output = `Undid ${String(actualSteps)} edit${actualSteps > 1 ? "s" : ""} to ${args.path} (restored ${String(lineCount)} lines)`;
       if (remaining > 0) {
         output += ` — ${String(remaining)} more undo${remaining > 1 ? "s" : ""} available`;
+      }
+      if (warnings.length > 0) {
+        output += `\n⚠ ${warnings.join("; ")}`;
       }
 
       return { success: true, output };

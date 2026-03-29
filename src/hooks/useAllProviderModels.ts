@@ -23,6 +23,7 @@ const ENV_SK: Record<string, SecretKey> = {
 export interface ProviderModelsState {
   items: ProviderModelInfo[];
   loading: boolean;
+  error?: string;
 }
 
 export interface UseAllProviderModelsReturn {
@@ -86,18 +87,18 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
 
     for (const cfg of PROVIDER_CONFIGS) {
       if (!init[cfg.id]?.loading) continue;
-      const set = (items: ProviderModelInfo[]) => {
-        if (!dead) setProviderData((p) => ({ ...p, [cfg.id]: { items, loading: false } }));
+      const set = (items: ProviderModelInfo[], error?: string) => {
+        if (!dead) setProviderData((p) => ({ ...p, [cfg.id]: { items, loading: false, error } }));
       };
       const fail = () => set([]);
 
       if (cfg.grouped) {
         fetchGroupedModels(cfg.id)
-          .then((r) => set(flattenGrouped(r)))
+          .then((r) => set(flattenGrouped(r), r.error))
           .catch(fail);
       } else {
         fetchProviderModels(cfg.id)
-          .then((r) => set(r.models))
+          .then((r) => set(r.models, r.error))
           .catch(fail);
       }
     }

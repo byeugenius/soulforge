@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { MAX_TERMINALS, useTerminalStore } from "../../stores/terminals.js";
+import { useUIStore } from "../../stores/ui.js";
 
 interface TerminalSpawnResult {
   success: boolean;
@@ -92,7 +93,13 @@ export function spawnTerminal(cwd?: string, cols = 80, rows = 24): TerminalSpawn
   handles.set(termId, handle);
 
   proc.exited.then(() => {
-    useTerminalStore.getState().updateTerminal(termId, { active: false });
+    handles.delete(termId);
+    const store = useTerminalStore.getState();
+    const wasSelected = store.selectedId === termId;
+    store.removeTerminal(termId);
+    if (wasSelected || useTerminalStore.getState().terminals.length === 0) {
+      useUIStore.getState().closeModal("floatingTerminal");
+    }
     scheduleNotify(termId);
   });
 

@@ -28,7 +28,7 @@ const MODE_LABELS: Record<SemanticMode, string> = {
   full: "full",
 };
 
-const LLM_LIMIT_PRESETS = [100, 200, 300, 500, 1000];
+const LLM_LIMIT_PRESETS = [100, 200, 300, 500];
 
 const TOKEN_BUDGET_PRESETS = [2000, 4000, 8000, 16000] as const;
 
@@ -152,8 +152,8 @@ export function RepoMapStatusPopup({
   useEffect(() => {
     if (!visible) return;
     const timer = setInterval(() => {
-      const { status, semanticStatus } = stateRef.current;
-      if (status === "scanning" || semanticStatus === "generating") {
+      const { status, semanticStatus, lspStatus: ls } = stateRef.current;
+      if (status === "scanning" || semanticStatus === "generating" || ls === "generating") {
         spinnerRef.current++;
         setRenderTick((n) => n + 1);
       }
@@ -296,6 +296,9 @@ export function RepoMapStatusPopup({
     semanticModel,
     semanticTokensIn,
     semanticTokensOut,
+    semanticTokensCache,
+    lspStatus,
+    lspProgress,
   } = stateRef.current;
   const frame = SPINNER_FRAMES[spinnerRef.current % SPINNER_FRAMES.length] ?? "\u280B";
 
@@ -314,8 +317,8 @@ export function RepoMapStatusPopup({
       : semanticStatus === "ready"
         ? `\u25CF ${semanticProgress || `${String(semanticCount)} cached`}`
         : semanticStatus === "error"
-          ? "\u25CF error"
-          : "\u25CF off";
+          ? `\u25CF error${semanticProgress ? ` (${semanticProgress})` : ""}`
+          : `\u25CF ${semanticProgress || "off"}`;
 
   const semanticColor =
     semanticStatus === "generating"
@@ -323,6 +326,24 @@ export function RepoMapStatusPopup({
       : semanticStatus === "ready"
         ? t.success
         : semanticStatus === "error"
+          ? t.error
+          : t.textMuted;
+
+  const lspLabel =
+    lspStatus === "generating"
+      ? `${frame} ${lspProgress || "enriching..."}`
+      : lspStatus === "ready"
+        ? `\u25CF ${lspProgress || "ready"}`
+        : lspStatus === "error"
+          ? `\u25CF ${lspProgress || "error"}`
+          : "\u25CF off";
+
+  const lspColor =
+    lspStatus === "generating"
+      ? t.warning
+      : lspStatus === "ready"
+        ? t.success
+        : lspStatus === "error"
           ? t.error
           : t.textMuted;
 
@@ -340,11 +361,12 @@ export function RepoMapStatusPopup({
       ? [
           {
             label: "LLM Tokens",
-            value: `\u2191${formatTokens(semanticTokensIn)} \u2193${formatTokens(semanticTokensOut)} (${formatTokens(semanticTokensIn + semanticTokensOut)} total)`,
+            value: `\u2191${formatTokens(semanticTokensIn)} \u2193${formatTokens(semanticTokensOut)}${semanticTokensCache > 0 ? ` (${String(Math.round((semanticTokensCache / semanticTokensIn) * 100))}% cached)` : ""}`,
             valueColor: t.warning,
           },
         ]
       : []),
+    { label: "LSP", value: lspLabel, valueColor: lspColor },
     ...(scanError ? [{ label: "Error", value: scanError, valueColor: t.error }] : []),
   ];
 
@@ -420,7 +442,9 @@ export function RepoMapStatusPopup({
               {row.label.padEnd(LABEL_W).slice(0, LABEL_W)}
             </text>
             <text bg={POPUP_BG} fg={row.valueColor ?? t.textMuted}>
-              {row.value}
+              {row.value.length > innerW - LABEL_W
+                ? `${row.value.slice(0, innerW - LABEL_W - 1)}\u2026`
+                : row.value}
             </text>
           </PopupRow>
         ))}
@@ -565,7 +589,7 @@ export function RepoMapStatusPopup({
                 <span fg={t.info}>{"[G] regenerate"}</span>
                 {confirmClear ? (
                   <span fg={t.brandSecondary} attributes={TextAttributes.BOLD}>
-                    {"   [C] CONFIRM clear (includes LLM)"}
+                    {"   [C] CONFIRM clear (preserves LLM)"}
                   </span>
                 ) : (
                   <span fg={t.warning}>{"   [C] clear summaries"}</span>

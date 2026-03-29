@@ -38,11 +38,12 @@ interface RefactorArgs {
   startLine?: number;
   endLine?: number;
   apply?: boolean;
+  tabId?: string;
 }
 
-async function applyEdits(edits: FileEdit[]): Promise<void> {
+async function applyEdits(edits: FileEdit[], tabId?: string): Promise<void> {
   for (const edit of edits) {
-    pushEdit(edit.file, edit.oldContent);
+    pushEdit(edit.file, edit.oldContent, edit.newContent, tabId);
     await writeFile(edit.file, edit.newContent, "utf-8");
     emitFileEdited(edit.file, edit.newContent);
   }
@@ -51,6 +52,7 @@ async function applyEdits(edits: FileEdit[]): Promise<void> {
 async function applyAndDiagnose(
   edits: FileEdit[],
   router: ReturnType<typeof getIntelligenceRouter>,
+  tabId?: string,
 ): Promise<string | null> {
   // Snapshot before-diagnostics for each file
   const beforeMap = new Map<string, import("../intelligence/types.js").Diagnostic[]>();
@@ -62,7 +64,7 @@ async function applyAndDiagnose(
     if (diags) beforeMap.set(edit.file, diags);
   }
 
-  await applyEdits(edits);
+  await applyEdits(edits, tabId);
 
   // Run diagnostic diff on each file
   try {
@@ -184,7 +186,7 @@ export const refactorTool = {
 
           let diagOutput: string | null = null;
           if (shouldApply) {
-            diagOutput = await applyAndDiagnose(tracked.value.edits, router);
+            diagOutput = await applyAndDiagnose(tracked.value.edits, router, args.tabId);
           }
           let output = formatResult(tracked.value, shouldApply);
           if (diagOutput) output += `\n${diagOutput}`;
@@ -250,7 +252,7 @@ export const refactorTool = {
 
           let diagOutput: string | null = null;
           if (shouldApply) {
-            diagOutput = await applyAndDiagnose(tracked.value.edits, router);
+            diagOutput = await applyAndDiagnose(tracked.value.edits, router, args.tabId);
           }
           let output = formatResult(tracked.value, shouldApply);
           if (diagOutput) output += `\n${diagOutput}`;
@@ -291,7 +293,7 @@ export const refactorTool = {
             };
           }
 
-          if (shouldApply) await applyFormatEdits(tracked.value);
+          if (shouldApply) await applyFormatEdits(tracked.value, args.tabId);
           return {
             success: true,
             output: `Formatted ${file} (${String(tracked.value.edits.length)} edit(s))${shouldApply ? " — applied" : " — pass apply: true to apply"}`,
@@ -329,7 +331,7 @@ export const refactorTool = {
             };
           }
 
-          if (shouldApply) await applyFormatEdits(tracked.value);
+          if (shouldApply) await applyFormatEdits(tracked.value, args.tabId);
           return {
             success: true,
             output: `Formatted ${file} lines ${String(startLine)}-${String(endLine)} (${String(tracked.value.edits.length)} edit(s))${shouldApply ? " — applied" : ""}`,
@@ -362,7 +364,7 @@ export const refactorTool = {
 
           let diagOutput: string | null = null;
           if (shouldApply) {
-            diagOutput = await applyAndDiagnose(tracked.value.edits, router);
+            diagOutput = await applyAndDiagnose(tracked.value.edits, router, args.tabId);
           }
           let output = formatResult(tracked.value, shouldApply);
           if (diagOutput) output += `\n${diagOutput}`;
@@ -383,7 +385,7 @@ export const refactorTool = {
   },
 };
 
-async function applyFormatEdits(formatEdit: FormatEdit): Promise<void> {
+async function applyFormatEdits(formatEdit: FormatEdit, tabId?: string): Promise<void> {
   const content = await readFile(formatEdit.file, "utf-8");
 
   // Pre-compute line start offsets (1-indexed: lineStarts[1] = offset of line 1)
@@ -407,7 +409,7 @@ async function applyFormatEdits(formatEdit: FormatEdit): Promise<void> {
     result = result.slice(0, startOffset) + edit.newText + result.slice(endOffset);
   }
 
-  pushEdit(formatEdit.file, content);
+  pushEdit(formatEdit.file, content, result, tabId);
   await writeFile(formatEdit.file, result, "utf-8");
   emitFileEdited(formatEdit.file, result);
 }

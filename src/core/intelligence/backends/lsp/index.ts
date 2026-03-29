@@ -3,7 +3,8 @@
 // - When Neovim is running → bridges to Neovim's LSP (nvim-bridge)
 // - When Neovim is NOT running → spawns servers directly (standalone-client)
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
   type CallHierarchyResult,
@@ -83,7 +84,7 @@ export class LspBackend implements IntelligenceBackend {
   }
 
   /** Find a real source file to use as LSP buffer anchor (for workspace-wide queries) */
-  private findAnchorFile(): string | null {
+  private async findAnchorFile(): Promise<string | null> {
     // Common entry points that are likely to exist
     const candidates = [
       "src/index.ts",
@@ -109,9 +110,9 @@ export class LspBackend implements IntelligenceBackend {
     for (const dir of [join(this.cwd, "src"), this.cwd]) {
       if (!existsSync(dir)) continue;
       try {
-        const files = readdirSync(dir);
+        const files = await readdir(dir);
         const source = files.find(
-          (f) =>
+          (f: string) =>
             f.endsWith(".ts") ||
             f.endsWith(".js") ||
             f.endsWith(".py") ||
@@ -135,7 +136,7 @@ export class LspBackend implements IntelligenceBackend {
     column: number | undefined,
     method: "definition" | "references" | "implementation",
   ): Promise<SourceLocation[] | null> {
-    const pos = this.resolvePosition(file, symbol, line, column);
+    const pos = await this.resolvePosition(file, symbol, line, column);
     if (!pos) return null;
 
     if (nvimBridge.isNvimAvailable()) {
@@ -208,7 +209,7 @@ export class LspBackend implements IntelligenceBackend {
     const absFile = resolve(file);
     let content: string;
     try {
-      content = readFileSync(absFile, "utf-8");
+      content = await readFile(absFile, "utf-8");
     } catch {
       return null;
     }
@@ -373,7 +374,7 @@ export class LspBackend implements IntelligenceBackend {
     const absFile = resolve(file);
     let content: string;
     try {
-      content = readFileSync(absFile, "utf-8");
+      content = await readFile(absFile, "utf-8");
     } catch {
       return null;
     }
@@ -542,7 +543,7 @@ export class LspBackend implements IntelligenceBackend {
     const absFile = resolve(file);
     let content: string;
     try {
-      content = readFileSync(absFile, "utf-8");
+      content = await readFile(absFile, "utf-8");
     } catch {
       return null;
     }
@@ -678,7 +679,7 @@ export class LspBackend implements IntelligenceBackend {
     line?: number,
     column?: number,
   ): Promise<TypeInfo | null> {
-    const pos = this.resolvePosition(file, symbol, line, column);
+    const pos = await this.resolvePosition(file, symbol, line, column);
     if (!pos) return null;
 
     let hover: LspHover | null = null;
@@ -743,7 +744,7 @@ export class LspBackend implements IntelligenceBackend {
     // Need a real file buffer to get an LSP client attached
     if (nvimBridge.isNvimAvailable()) {
       // Find a real file to use as the buffer anchor (LSP won't attach to ".")
-      const anchorFile = this.findAnchorFile();
+      const anchorFile = await this.findAnchorFile();
       if (anchorFile) {
         const raw = await nvimBridge.workspaceSymbols(anchorFile, query);
         if (raw && raw.length > 0) {
@@ -811,7 +812,7 @@ export class LspBackend implements IntelligenceBackend {
       if (actions && actions.length > 0) {
         const action = actions[0] as (typeof actions)[0];
         if (action?.edit) {
-          return workspaceEditToRefactorResult(action.edit, "imports", "organized");
+          return await workspaceEditToRefactorResult(action.edit, "imports", "organized");
         }
       }
       return null;
@@ -825,7 +826,7 @@ export class LspBackend implements IntelligenceBackend {
       ]);
       const first = actions[0];
       if (first?.edit) {
-        return workspaceEditToRefactorResult(first.edit, "imports", "organized");
+        return await workspaceEditToRefactorResult(first.edit, "imports", "organized");
       }
     } catch {}
     return null;
@@ -848,7 +849,7 @@ export class LspBackend implements IntelligenceBackend {
     fetchPair: (client: StandaloneLspClient, item: TItem) => Promise<[unknown[], unknown[]]>,
     convertStandalone: (raw: { item: TItem; a: unknown[]; b: unknown[] }) => TResult,
   ): Promise<TResult | null> {
-    const pos = this.resolvePosition(file, symbol, line, column);
+    const pos = await this.resolvePosition(file, symbol, line, column);
     if (!pos) return null;
 
     if (nvimBridge.isNvimAvailable()) {
@@ -934,7 +935,7 @@ export class LspBackend implements IntelligenceBackend {
     line?: number,
     column?: number,
   ): Promise<RefactorResult | null> {
-    const pos = this.resolvePosition(file, symbol, line, column);
+    const pos = await this.resolvePosition(file, symbol, line, column);
     if (!pos) return null;
 
     let edit: LspWorkspaceEdit | null = null;
@@ -953,7 +954,7 @@ export class LspBackend implements IntelligenceBackend {
     }
 
     if (!edit) return null;
-    return workspaceEditToRefactorResult(edit, symbol, newName);
+    return await workspaceEditToRefactorResult(edit, symbol, newName);
   }
 
   /** Ensure all standalone LSP servers are running AND indexed for a file. */
@@ -964,7 +965,7 @@ export class LspBackend implements IntelligenceBackend {
     if (!client) return;
 
     // Open the file so the server starts indexing the project
-    client.ensureDocumentOpen(file);
+    await client.ensureDocumentOpen(file);
 
     // Poll documentSymbol until the server returns real results (= project loaded).
     // Don't trust diagnostics — servers may emit bogus parse errors before loading tsconfig.
@@ -1137,12 +1138,12 @@ export class LspBackend implements IntelligenceBackend {
    * Otherwise, scan the file for the symbol as a word-boundary match,
    * preferring definition-like lines (function/class/const/let/type/interface/def/fn/func).
    */
-  private resolvePosition(
+  private async resolvePosition(
     file: string,
     symbol: string,
     line?: number,
     column?: number,
-  ): { line: number; col: number } | null {
+  ): Promise<{ line: number; col: number } | null> {
     if (line !== undefined && line > 0) {
       // Convert from 1-based to 0-based
       return { line: line - 1, col: column !== undefined && column > 0 ? column - 1 : 0 };
@@ -1150,7 +1151,7 @@ export class LspBackend implements IntelligenceBackend {
 
     // Scan file for the symbol name with word boundary matching
     try {
-      const content = readFileSync(file, "utf-8");
+      const content = await readFile(file, "utf-8");
       const fileLines = content.split("\n");
       const wordPattern = new RegExp(`\\b${escapeRegex(symbol)}\\b`);
 
@@ -1353,11 +1354,11 @@ function extractTypeFromHover(hover: LspHover): string | null {
 }
 
 /** Convert LSP WorkspaceEdit to our RefactorResult */
-function workspaceEditToRefactorResult(
+async function workspaceEditToRefactorResult(
   edit: LspWorkspaceEdit,
   oldName: string,
   newName: string,
-): RefactorResult {
+): Promise<RefactorResult> {
   const fileEdits = new Map<string, LspTextEdit[]>();
 
   // Collect edits from both changes and documentChanges
@@ -1390,7 +1391,7 @@ function workspaceEditToRefactorResult(
   for (const [filePath, edits] of fileEdits) {
     let content: string;
     try {
-      content = readFileSync(filePath, "utf-8");
+      content = await readFile(filePath, "utf-8");
     } catch {
       continue;
     }

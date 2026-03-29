@@ -48,7 +48,7 @@ async function autoFixFile(filePath: string, tabId?: string): Promise<string[]> 
       // Re-read the file that the formatter wrote and push to edit stack
       const afterFormat = await readFile(absPath, "utf-8");
       if (afterFormat !== preFormat) {
-        pushEdit(absPath, preFormat, tabId);
+        pushEdit(absPath, preFormat, afterFormat, tabId);
         emitFileEdited(absPath, afterFormat);
         applied.push("format");
       }
@@ -116,7 +116,7 @@ async function applyFormatEdits(formatEdit: FormatEdit, tabId?: string): Promise
   }
 
   if (result === content) return;
-  pushEdit(formatEdit.file, content, tabId);
+  pushEdit(formatEdit.file, content, result, tabId);
   await writeFile(formatEdit.file, result, "utf-8");
   emitFileEdited(formatEdit.file, result);
 }
@@ -126,7 +126,7 @@ async function applyRefactorEdits(result: RefactorResult, tabId?: string): Promi
     try {
       const current = await readFile(edit.file, "utf-8");
       if (current === edit.newContent) continue;
-      pushEdit(edit.file, current, tabId);
+      pushEdit(edit.file, current, edit.newContent, tabId);
       await writeFile(edit.file, edit.newContent, "utf-8");
       emitFileEdited(edit.file, edit.newContent);
     } catch {

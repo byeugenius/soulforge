@@ -10,12 +10,10 @@ icon: "rocket"
 
 <Step title="Install SoulForge">
   ```bash
-  # macOS (Apple Silicon)
-  curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
-  sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
+  brew tap proxysoul/tap && brew install soulforge
   ```
 
-  Or via Homebrew: `brew tap proxysoul/tap && brew install soulforge`
+  Or download from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run `./install.sh`.
 
   See [Installation](/installation) for all methods.
 </Step>

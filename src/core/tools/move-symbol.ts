@@ -16,6 +16,11 @@ interface PendingWrite {
 class WriteTransaction {
   private writes: PendingWrite[] = [];
   private committed = false;
+  private tabId?: string;
+
+  constructor(tabId?: string) {
+    this.tabId = tabId;
+  }
 
   async stage(path: string, content: string): Promise<void> {
     let original: string | null = null;
@@ -35,7 +40,7 @@ class WriteTransaction {
     for (const w of this.writes) {
       const dir = dirname(w.path);
       await mkdir(dir, { recursive: true });
-      if (w.original !== null) pushEdit(w.path, w.original);
+      if (w.original !== null) pushEdit(w.path, w.original, w.content, this.tabId);
       await writeFile(w.path, w.content, "utf-8");
       emitFileEdited(w.path, w.content);
     }
@@ -67,6 +72,7 @@ interface MoveSymbolArgs {
   symbol: string;
   from: string;
   to: string;
+  tabId?: string;
 }
 
 interface ImportStatement {
@@ -756,7 +762,7 @@ export const moveSymbolTool = {
         }
       }
 
-      const tx = new WriteTransaction();
+      const tx = new WriteTransaction(args.tabId);
       await tx.stage(to, targetContent);
       await tx.stage(from, newSource);
 

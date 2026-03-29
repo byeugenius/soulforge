@@ -6,6 +6,7 @@ import { icon, providerIcon } from "../../core/icons.js";
 import { PROVIDER_CONFIGS } from "../../core/llm/models.js";
 import { useTheme } from "../../core/theme/index.js";
 import { useAllProviderModels } from "../../hooks/useAllProviderModels.js";
+import { useUIStore } from "../../stores/ui.js";
 import { Overlay, POPUP_BG, POPUP_HL, PopupRow, SPINNER_FRAMES } from "../layout/shared.js";
 
 const MAX_W = 72;
@@ -18,6 +19,8 @@ type Entry =
       avail: boolean;
       loading: boolean;
       count: number;
+      noKey?: boolean;
+      error?: string;
     }
   | {
       kind: "model";
@@ -116,6 +119,20 @@ export const LlmSelector = memo(function LlmSelector({
         modelFilter &&
         (provTarget.includes(modelFilter) || fuzzyMatch(modelFilter, provTarget) !== null);
 
+      if (!avail && !loading) {
+        if (modelFilter && !queryMatchesProvider) continue;
+        out.push({
+          kind: "header",
+          id: cfg.id,
+          name: cfg.name,
+          avail,
+          loading,
+          count: 0,
+          noKey: true,
+        });
+        continue;
+      }
+
       let filtered = items;
       if (modelFilter && !queryMatchesProvider) {
         filtered = items.filter((m) => {
@@ -125,8 +142,6 @@ export const LlmSelector = memo(function LlmSelector({
         if (filtered.length === 0 && !loading) continue;
       }
 
-      if (!avail && items.length === 0 && !loading) continue;
-
       out.push({
         kind: "header",
         id: cfg.id,
@@ -134,6 +149,7 @@ export const LlmSelector = memo(function LlmSelector({
         avail,
         loading,
         count: filtered.length,
+        error: pd?.error,
       });
 
       for (const m of filtered) {
@@ -264,7 +280,10 @@ export const LlmSelector = memo(function LlmSelector({
 
     if (evt.name === "return") {
       const e = ents[cursorRef.current];
-      if (e?.kind === "header") {
+      if (e?.kind === "header" && (e.noKey || (e.error && e.count === 0))) {
+        onClose();
+        useUIStore.getState().openModal("apiKeySettings");
+      } else if (e?.kind === "header") {
         toggleCollapse(e.id);
       } else if (e?.kind === "model") {
         onSelect(e.fullId);
@@ -457,7 +476,12 @@ export const LlmSelector = memo(function LlmSelector({
                     )}
                     {!entry.avail && !entry.loading && (
                       <text fg={t.textDim} bg={bg}>
-                        {" · no key"}
+                        {" · no key — Enter to add"}
+                      </text>
+                    )}
+                    {entry.avail && !entry.loading && entry.count === 0 && entry.error && (
+                      <text fg={t.error ?? t.brandSecondary} bg={bg}>
+                        {" · invalid key"}
                       </text>
                     )}
                   </PopupRow>

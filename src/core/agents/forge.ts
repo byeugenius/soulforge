@@ -39,6 +39,20 @@ function hasPlanToolCall(messages: ModelMessage[]): boolean {
   return false;
 }
 
+/** Check if the most recent assistant message (last step) included a `plan` tool call. */
+function lastStepHadPlanCall(messages: ModelMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "assistant") continue;
+    if (!Array.isArray(msg.content)) return false;
+    for (const part of msg.content) {
+      if (part.type === "tool-call" && part.toolName === "plan") return true;
+    }
+    return false; // checked the last assistant message — stop
+  }
+  return false;
+}
+
 function buildForgePrepareStep(
   isPlanMode: boolean,
   drainSteering?: () => string | null,
@@ -58,7 +72,14 @@ function buildForgePrepareStep(
       messages?: ModelMessage[];
       model?: LanguageModel;
       providerOptions?: ProviderOptions;
+      toolChoice?: "required" | "auto" | "none";
     } = {};
+
+    // Plan gate: after a `plan` call, stop the tool loop (text-only).
+    // Plans always require user approval — the agent must not auto-execute.
+    if (stepNumber > 0 && lastStepHadPlanCall(messages)) {
+      result.toolChoice = "none";
+    }
 
     // Soul Map snapshot + skills are in the system prompt (instructions).
     // prepareStep only handles diffs (file changes since last step) and hints.

@@ -342,6 +342,101 @@ describe("lineReplace — language-specific escapes", () => {
 // Edge cases
 // ════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════
+// BUG REPRODUCTIONS: lineStart must be authoritative
+// These reproduce the exact bugs hit during the soul-analyze editing session
+// where oldString matched at line 151 instead of the intended line 815.
+// ════════════════════════════════════════════════════════════
+
+describe("lineReplace — lineStart is authoritative over oldString", () => {
+	it("replaces at lineStart even when oldString matches earlier in file", () => {
+		// Simulates: file has `return result;` at line 3 AND line 7
+		// Agent wants to edit line 7, provides lineStart=7
+		const content = [
+			"function a() {",      // 1
+			"  const x = 1;",      // 2
+			"  return result;",     // 3  ← oldString matches here too
+			"}",                    // 4
+			"function b() {",      // 5
+			"  const y = 2;",      // 6
+			"  return result;",     // 7  ← intended target
+			"}",                    // 8
+		].join("\n");
+
+		// Line-based replacement at line 7 should NOT touch line 3
+		const result = lineReplace(content, 7, "  return result;", "  return newResult;");
+		const lines = result.split("\n");
+		expect(lines[2]).toBe("  return result;");    // line 3 untouched
+		expect(lines[6]).toBe("  return newResult;"); // line 7 replaced
+	});
+
+	it("replaces at end of file when same pattern exists at start", () => {
+		// Exact reproduction of the soul-analyze bug:
+		// `return { success: true, output: lines.join("\\n") };\n}` at both
+		// line 152 (inside identifierFrequency) and line 815 (end of symbolSummaries)
+		const content = [
+			"function identifierFrequency() {",  // 1
+			"  if (name) {",                      // 2
+			"    return { success: true };",       // 3  ← pattern here
+			"  }",                                 // 4
+			"  return other;",                     // 5
+			"}",                                   // 6
+			"",                                    // 7
+			"function symbolSummaries() {",        // 8
+			"  return { success: true };",          // 9  ← intended target
+			"}",                                   // 10
+		].join("\n");
+
+		const result = lineReplace(content, 9, "  return { success: true };", "  return { success: true };\n}\n\nfunction newFunc() {\n  return 42;\n}");
+		const lines = result.split("\n");
+		// Line 3 must be untouched
+		expect(lines[2]).toBe("    return { success: true };");
+		// Line 9 should have the replacement
+		expect(lines[8]).toBe("  return { success: true };");
+		expect(result).toContain("function newFunc()");
+	});
+});
+
+describe("multiLineReplace — lineStart is authoritative over oldString", () => {
+	it("multi_edit replaces at correct location with duplicate patterns", () => {
+		const content = [
+			"const a = 1;",   // 1
+			"return x;",      // 2  ← duplicate
+			"const b = 2;",   // 3
+			"return x;",      // 4  ← duplicate (target)
+			"const c = 3;",   // 5
+		].join("\n");
+
+		// Edit at line 4, not line 2
+		const result = multiLineReplace(content, [
+			{ lineStart: 4, oldStr: "return x;", newStr: "return y;" },
+		]);
+		const lines = result.split("\n");
+		expect(lines[1]).toBe("return x;");  // line 2 untouched
+		expect(lines[3]).toBe("return y;");  // line 4 replaced
+	});
+
+	it("multi_edit handles two edits targeting different occurrences of same pattern", () => {
+		const content = [
+			"// block A",     // 1
+			"return x;",      // 2
+			"// block B",     // 3
+			"return x;",      // 4
+			"// block C",     // 5
+			"return x;",      // 6
+		].join("\n");
+
+		const result = multiLineReplace(content, [
+			{ lineStart: 2, oldStr: "return x;", newStr: "return a;" },
+			{ lineStart: 6, oldStr: "return x;", newStr: "return c;" },
+		]);
+		const lines = result.split("\n");
+		expect(lines[1]).toBe("return a;");  // line 2
+		expect(lines[3]).toBe("return x;");  // line 4 untouched
+		expect(lines[5]).toBe("return c;");  // line 6
+	});
+});
+
 describe("lineReplace — edge cases", () => {
 	it("empty replacement (delete line)", () => {
 		expect(lineReplace("a\nb\nc", 2, "b", "")).toBe("a\n\nc");

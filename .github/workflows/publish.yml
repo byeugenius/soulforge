@@ -113,7 +113,7 @@ jobs:
           # frozen_string_literal: true
 
           class Soulforge < Formula
-            desc "AI-Powered Terminal IDE"
+            desc "Graph-powered code intelligence"
             homepage "https://github.com/ProxySoul/soulforge"
             version "${VERSION}"
             license "BUSL-1.1"

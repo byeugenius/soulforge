@@ -73,7 +73,9 @@ async function showDependents(repoMap: IntelligenceClient, relPath: string): Pro
 
   const lines = [
     `${String(dependents.length)} files import from "${relPath}":\n`,
-    ...dependents.filter((d) => isForbidden(d.path) === null).map((d) => `  ${d.path}`),
+    ...dependents
+      .filter((d) => isForbidden(d.path) === null)
+      .map((d) => `  ${d.path} (w:${Math.round(d.weight)})`),
   ];
 
   return { success: true, output: lines.join("\n") };
@@ -90,7 +92,9 @@ async function showDependencies(repoMap: IntelligenceClient, relPath: string): P
 
   const lines = [
     `"${relPath}" imports from ${String(deps.length)} files:\n`,
-    ...deps.filter((d) => isForbidden(d.path) === null).map((d) => `  ${d.path}`),
+    ...deps
+      .filter((d) => isForbidden(d.path) === null)
+      .map((d) => `  ${d.path} (w:${Math.round(d.weight)})`),
   ];
 
   return { success: true, output: lines.join("\n") };
@@ -143,7 +147,7 @@ async function showBlastRadius(repoMap: IntelligenceClient, relPath: string): Pr
   if (dependents.length > 0) {
     lines.push(`\nDirect dependents (${String(dependents.length)}):`);
     for (const d of dependents.filter((d) => isForbidden(d.path) === null).slice(0, 20)) {
-      lines.push(`  ${d.path}`);
+      lines.push(`  ${d.path} (w:${Math.round(d.weight)})`);
     }
     if (dependents.length > 20) lines.push(`  ... and ${String(dependents.length - 20)} more`);
   }

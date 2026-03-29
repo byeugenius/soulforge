@@ -1,8 +1,8 @@
 <h1 align="center">SoulForge</h1>
 
 <p align="center">
-  <strong>AI-Powered Terminal IDE</strong><br/>
-  Embedded Neovim + Multi-Agent System + Graph-Powered Code Intelligence
+  <strong>Graph-Powered Code Intelligence</strong><br/>
+  Multi-agent coding with codebase-aware AI — embedded Neovim, 22 themes, terminal-native
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 Your real Neovim — config, plugins, LSP — embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 10 providers. Works over SSH.
 
 <p align="center">
-  <img src="assets/soulforge-hero.png" alt="SoulForge in action" width="900" />
+  <img src="assets/dark-forge.png" alt="SoulForge — Graph-Powered Code Intelligence" width="900" />
 </p>
 
 ### How it compares
@@ -44,7 +44,7 @@ Your real Neovim — config, plugins, LSP — embedded in an AI agent that under
 | **MCP** | Roadmap | Yes | Yes | Yes | No |
 | **License** | BSL 1.1 (source-available) | Proprietary | Proprietary | Apache 2.0 | Apache 2.0 |
 
-> *Competitor features verified as of March 28, 2026. This landscape moves fast — [let us know](https://github.com/ProxySoul/soulforge/issues) if something's changed.*
+> *Competitor features verified as of March 29, 2026. This landscape moves fast — [let us know](https://github.com/ProxySoul/soulforge/issues) if something's changed.*
 
 ---
 
@@ -241,27 +241,15 @@ Pick the method that fits your workflow. SoulForge checks for prerequisites on f
 
 ### Prebuilt Binary (recommended)
 
-Download the latest release for your platform — no runtime dependencies needed:
+Download the latest release for your platform from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run the installer:
 
 ```bash
-# macOS (Apple Silicon)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-arm64.tar.gz | tar xz
-sudo mv soulforge-darwin-arm64 /usr/local/bin/soulforge
-
-# macOS (Intel)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-darwin-x64.tar.gz | tar xz
-sudo mv soulforge-darwin-x64 /usr/local/bin/soulforge
-
-# Linux (x64)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-x64.tar.gz | tar xz
-sudo mv soulforge-linux-x64 /usr/local/bin/soulforge
-
-# Linux (ARM64)
-curl -fsSL https://github.com/ProxySoul/soulforge/releases/latest/download/soulforge-linux-arm64.tar.gz | tar xz
-sudo mv soulforge-linux-arm64 /usr/local/bin/soulforge
+tar xzf soulforge-*.tar.gz
+cd soulforge-*/
+./install.sh
 ```
 
-Then run `soulforge` (or `sf`).
+The installer places everything in `~/.soulforge/` and adds it to your PATH. Then run `soulforge` (or `sf`).
 
 <details>
 <summary><strong>Homebrew</strong></summary>

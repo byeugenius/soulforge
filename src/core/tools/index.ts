@@ -428,9 +428,8 @@ export function buildTools(
           .optional()
           .transform(nullToUndef)
           .describe(
-            "RECOMMENDED: 1-indexed line number from your last read_file output. " +
-              "Makes edits escape-proof — if oldString fails to match (e.g. backslash-heavy code), " +
-              "the edit falls back to line-based replacement using this anchor. Always provide when available.",
+            "Preferred: 1-indexed start line from your last read_file output. " +
+              "Line-based editing is the most reliable method — always provide lineStart and lineEnd for precise replacements.",
           ),
         lineEnd: z
           .preprocess(coerceInt, z.number())
@@ -438,7 +437,7 @@ export function buildTools(
           .optional()
           .transform(nullToUndef)
           .describe(
-            "1-indexed end line (inclusive). When both lineStart and lineEnd are set, the system replaces by line range if oldString matching fails.",
+            "Preferred: 1-indexed end line (inclusive). Provide with lineStart for reliable line-based replacements.",
           ),
       }),
       execute: deferExecute(async (args) => {
@@ -459,9 +458,6 @@ export function buildTools(
             output: `CONTENTION: File ${args.path} was modified by another tab. Your edit is based on stale content. Inform the user this file is contested.`,
             error: "contested",
           };
-        }
-        if (warning && typeof result === "string") {
-          return prependWarning(result, warning);
         }
         // Enrich successful edits with blast radius from repo map
         if (result.success && opts?.repoMap?.isReady) {
@@ -497,7 +493,7 @@ export function buildTools(
           .nullable()
           .optional()
           .transform(nullToUndef)
-          .describe("Number of edits to undo (default 1, max 10)"),
+          .describe("Number of edits to undo (default 1, max 20)"),
       }),
       execute: deferExecute((args) => undoEditTool.execute({ ...args, tabId: opts?.tabId })),
     }),
@@ -513,17 +509,19 @@ export function buildTools(
               oldString: z.string().describe("Content to replace"),
               newString: z.string().describe("Replacement content"),
               lineStart: z
-                .number()
+                .preprocess(coerceInt, z.number())
                 .nullable()
                 .optional()
                 .transform(nullToUndef)
-                .describe("RECOMMENDED: 1-indexed line number from read_file output"),
+                .describe(
+                  "Preferred: 1-indexed start line from read_file output for reliable line-based editing",
+                ),
               lineEnd: z
-                .number()
+                .preprocess(coerceInt, z.number())
                 .nullable()
                 .optional()
                 .transform(nullToUndef)
-                .describe("End line (1-indexed, inclusive) for line-range fallback"),
+                .describe("Preferred: 1-indexed end line (inclusive) for line-based replacement"),
             }),
           )
           .describe("Array of edits to apply atomically"),
@@ -540,11 +538,15 @@ export function buildTools(
         }
         const warning = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.path));
         const result = await multiEditTool.execute({ ...args, tabId: opts?.tabId });
-        if (warning && typeof result === "string") {
-          return prependWarning(result, warning);
+        if (!result.success && result.error?.includes("not found") && warning) {
+          return {
+            success: false,
+            output: `CONTENTION: File ${args.path} was modified by another tab. Your edit is based on stale content. Inform the user this file is contested.`,
+            error: "contested",
+          };
         }
         // Enrich with blast radius + cochanges (same as edit_file)
-        if (typeof result === "object" && result.success && opts?.repoMap?.isReady) {
+        if (result.success && opts?.repoMap?.isReady) {
           const rel = args.path.startsWith("/")
             ? args.path.slice(effectiveCwd.length + 1)
             : args.path;
@@ -675,11 +677,17 @@ export function buildTools(
             "top_files",
             "packages",
             "symbols_by_kind",
+            "call_graph",
+            "class_members",
+            "summaries",
+            "search_symbols",
           ])
           .describe(
             "identifier_frequency=most referenced symbols, unused_exports=dead code report, " +
               "file_profile=deps/dependents/blast/cochanges/symbols, duplication=clone detection, " +
-              "top_files=PageRank ranking, packages=external deps, symbols_by_kind=by type (function/class/etc)",
+              "top_files=PageRank ranking, packages=external deps, symbols_by_kind=by type (function/class/etc), " +
+              "call_graph=callers/callees for a symbol, class_members=methods of a class, summaries=semantic summaries, " +
+              "search_symbols=FTS prefix search on symbol names (e.g. name='build*')",
           ),
         file: z
           .string()
@@ -1064,7 +1072,7 @@ export function buildTools(
         const warning = args.file
           ? checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.file))
           : null;
-        const result = await renameSymbolTool.execute(args);
+        const result = await renameSymbolTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success && args.file) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.file]);
         }
@@ -1085,7 +1093,7 @@ export function buildTools(
         if (gate.blocked) return gate.result;
         const fromWarn = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.from));
         const toWarn = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.to));
-        const result = await moveSymbolTool.execute(args);
+        const result = await moveSymbolTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.from, args.to]);
         }
@@ -1104,7 +1112,7 @@ export function buildTools(
         const gate = await gateOutsideCwd("rename_file", resolve(args.to));
         if (gate.blocked) return gate.result;
         const warning = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.from));
-        const result = await renameFileTool.execute(args);
+        const result = await renameFileTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.from, args.to]);
         }
@@ -1170,7 +1178,7 @@ export function buildTools(
         const warning = args.file
           ? checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.file))
           : null;
-        const result = await refactorTool.execute(args);
+        const result = await refactorTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success && args.file) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.file]);
         }
@@ -1885,11 +1893,17 @@ export function buildSubagentExploreTools(opts?: {
                   "top_files",
                   "packages",
                   "symbols_by_kind",
+                  "call_graph",
+                  "class_members",
+                  "summaries",
+                  "search_symbols",
                 ])
                 .describe(
                   "identifier_frequency=most referenced symbols, unused_exports=dead code report, " +
                     "file_profile=deps/dependents/blast/cochanges/symbols, duplication=clone detection, " +
-                    "top_files=PageRank ranking, packages=external deps, symbols_by_kind=by type (function/class/etc)",
+                    "top_files=PageRank ranking, packages=external deps, symbols_by_kind=by type (function/class/etc), " +
+                    "call_graph=callers/callees for a symbol, class_members=methods of a class, summaries=semantic summaries, " +
+                    "search_symbols=FTS prefix search on symbol names (e.g. name='build*')",
                 ),
               file: z
                 .string()
@@ -2006,9 +2020,8 @@ export function buildSubagentCodeTools(opts?: {
           .optional()
           .transform(nullToUndef)
           .describe(
-            "RECOMMENDED: 1-indexed line number from your last read_file output. " +
-              "Makes edits escape-proof — if oldString fails to match (e.g. backslash-heavy code), " +
-              "the edit falls back to line-based replacement using this anchor. Always provide when available.",
+            "Preferred: 1-indexed start line from your last read_file output. " +
+              "Line-based editing is the most reliable method — always provide lineStart and lineEnd for precise replacements.",
           ),
         lineEnd: z
           .preprocess(coerceInt, z.number())
@@ -2016,7 +2029,7 @@ export function buildSubagentCodeTools(opts?: {
           .optional()
           .transform(nullToUndef)
           .describe(
-            "1-indexed end line (inclusive). When both lineStart and lineEnd are set, the system replaces by line range if oldString matching fails.",
+            "Preferred: 1-indexed end line (inclusive). Provide with lineStart for reliable line-based replacements.",
           ),
       }),
       execute: deferExecute(async (args) => {
@@ -2044,17 +2057,19 @@ export function buildSubagentCodeTools(opts?: {
               oldString: z.string().describe("Content to replace"),
               newString: z.string().describe("Replacement content"),
               lineStart: z
-                .number()
+                .preprocess(coerceInt, z.number())
                 .nullable()
                 .optional()
                 .transform(nullToUndef)
-                .describe("RECOMMENDED: 1-indexed line number from read_file output"),
+                .describe(
+                  "Preferred: 1-indexed start line from read_file output for reliable line-based editing",
+                ),
               lineEnd: z
-                .number()
+                .preprocess(coerceInt, z.number())
                 .nullable()
                 .optional()
                 .transform(nullToUndef)
-                .describe("End line (1-indexed, inclusive) for line-range fallback"),
+                .describe("Preferred: 1-indexed end line (inclusive) for line-based replacement"),
             }),
           )
           .describe("Array of edits to apply atomically"),
@@ -2083,7 +2098,7 @@ export function buildSubagentCodeTools(opts?: {
         const warning = args.file
           ? checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.file))
           : null;
-        const result = await renameSymbolTool.execute(args);
+        const result = await renameSymbolTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success && args.file) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.file]);
         }
@@ -2102,7 +2117,7 @@ export function buildSubagentCodeTools(opts?: {
       execute: deferExecute(async (args) => {
         const fromWarn = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.from));
         const toWarn = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.to));
-        const result = await moveSymbolTool.execute(args);
+        const result = await moveSymbolTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.from, args.to]);
         }
@@ -2119,7 +2134,7 @@ export function buildSubagentCodeTools(opts?: {
       }),
       execute: deferExecute(async (args) => {
         const warning = checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.from));
-        const result = await renameFileTool.execute(args);
+        const result = await renameFileTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.from, args.to]);
         }
@@ -2179,7 +2194,7 @@ export function buildSubagentCodeTools(opts?: {
         const warning = args.file
           ? checkAndClaim(opts?.tabId, opts?.tabLabel, resolve(args.file))
           : null;
-        const result = await refactorTool.execute(args);
+        const result = await refactorTool.execute({ ...args, tabId: opts?.tabId });
         if (result.success && args.file) {
           claimAfterCompoundEdit(opts?.tabId, opts?.tabLabel, [args.file]);
         }

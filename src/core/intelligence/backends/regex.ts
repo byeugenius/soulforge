@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { FileCache } from "../cache.js";
 import {
@@ -156,7 +156,7 @@ export class RegexBackend implements IntelligenceBackend {
   }
 
   async findSymbols(file: string, query?: string): Promise<SymbolInfo[] | null> {
-    const content = this.readFile(file);
+    const content = await this.readFile(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -196,7 +196,7 @@ export class RegexBackend implements IntelligenceBackend {
   }
 
   async findImports(file: string): Promise<ImportInfo[] | null> {
-    const content = this.readFile(file);
+    const content = await this.readFile(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -294,7 +294,7 @@ export class RegexBackend implements IntelligenceBackend {
   }
 
   async findExports(file: string): Promise<ExportInfo[] | null> {
-    const content = this.readFile(file);
+    const content = await this.readFile(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -353,7 +353,7 @@ export class RegexBackend implements IntelligenceBackend {
     symbolName: string,
     symbolKind?: SymbolKind,
   ): Promise<CodeBlock | null> {
-    const content = this.readFile(file);
+    const content = await this.readFile(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -388,7 +388,7 @@ export class RegexBackend implements IntelligenceBackend {
   }
 
   async readScope(file: string, startLine: number, endLine?: number): Promise<CodeBlock | null> {
-    const content = this.readFile(file);
+    const content = await this.readFile(file);
     if (!content) return null;
 
     const language = this.detectLang(file);
@@ -428,12 +428,12 @@ export class RegexBackend implements IntelligenceBackend {
     return matches.map((s) => s.location);
   }
 
-  private readFile(file: string): string | null {
+  private async readFile(file: string): Promise<string | null> {
     if (this.cache) {
       return this.cache.get(resolve(file));
     }
     try {
-      return readFileSync(resolve(file), "utf-8");
+      return await readFile(resolve(file), "utf-8");
     } catch {
       return null;
     }

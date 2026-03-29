@@ -145,7 +145,7 @@ function ShutdownSplash({
           return (
             <box key={label} gap={1} flexDirection="row">
               <text fg={done ? t.success : t.brand}>{done ? "✓" : spin}</text>
-              <text fg={done ? t.textMuted : t.textSecondary}>{label}</text>
+              <text fg={done ? t.textSecondary : t.textPrimary}>{label}</text>
             </box>
           );
         })}
@@ -1247,9 +1247,9 @@ export function App({
               ? "off"
               : effectiveConfig.semanticSummaries === "on"
                 ? "full"
-                : (effectiveConfig.semanticSummaries ?? "off")
+                : (effectiveConfig.semanticSummaries ?? "synthetic")
         }
-        currentLimit={effectiveConfig.semanticSummaryLimit ?? 300}
+        currentLimit={effectiveConfig.semanticSummaryLimit ?? 500}
         currentAutoRegen={effectiveConfig.semanticAutoRegen ?? false}
         currentTokenBudget={effectiveConfig.repoMapTokenBudget}
         currentScope={detectScope("semanticSummaries")}
@@ -1269,10 +1269,13 @@ export function App({
           contextManager.setActiveModel(activeModelForHeader);
           contextManager.clearFreeSummaries();
           const mode = contextManager.getSemanticMode();
-          contextManager.setSemanticSummaries(mode === "off" ? "synthetic" : mode);
+          contextManager
+            .setSemanticSummaries(mode === "off" ? "synthetic" : mode)
+            .then(() => contextManager.generateSemanticSummaries(activeModelForHeader))
+            .catch(() => {});
         }}
         onClearSummaries={() => {
-          contextManager.clearSemanticSummaries();
+          contextManager.clearFreeSummaries();
         }}
         onLspEnrich={() => {
           contextManager.enrichWithLsp().catch(() => {});
@@ -1292,7 +1295,14 @@ export function App({
           contextManager.setSemanticSummaryLimit(limit);
           contextManager.setSemanticAutoRegen(autoRegen);
           contextManager.setRepoMapTokenBudget(tokenBudget);
-          contextManager.setSemanticSummaries(typedMode);
+          contextManager
+            .setSemanticSummaries(typedMode)
+            .then(() =>
+              typedMode === "llm" || typedMode === "full"
+                ? contextManager.generateSemanticSummaries(activeModelForHeader)
+                : undefined,
+            )
+            .catch(() => {});
         }}
       />
 

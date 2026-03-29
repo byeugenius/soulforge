@@ -28,7 +28,11 @@ type AnalyzeAction =
   | "duplication"
   | "top_files"
   | "packages"
-  | "symbols_by_kind";
+  | "symbols_by_kind"
+  | "call_graph"
+  | "class_members"
+  | "summaries"
+  | "search_symbols";
 
 interface SoulAnalyzeArgs {
   action: AnalyzeAction;
@@ -41,7 +45,7 @@ interface SoulAnalyzeArgs {
 export const soulAnalyzeTool = {
   name: "soul_analyze",
   description:
-    "[TIER-2] Codebase analysis from Soul Map — zero file I/O, instant. Actions: identifier_frequency, unused_exports, file_profile, top_files, packages, symbols_by_kind.",
+    "[TIER-2] Codebase analysis from Soul Map — zero file I/O, instant. Actions: identifier_frequency, unused_exports, file_profile, duplication, top_files, packages, symbols_by_kind, call_graph, class_members, summaries, search_symbols.",
 
   createExecute: (repoMap?: IntelligenceClient) => {
     return async (args: SoulAnalyzeArgs): Promise<ToolResult> => {
@@ -97,6 +101,14 @@ export const soulAnalyzeTool = {
           return await packages(repoMap, args.name, args.limit);
         case "symbols_by_kind":
           return await symbolsByKind(repoMap, cwd, args.kind, args.name, args.limit);
+        case "call_graph":
+          return await callGraph(repoMap, cwd, args.name, args.file, args.limit);
+        case "class_members":
+          return await classMembers(repoMap, cwd, args.name);
+        case "summaries":
+          return await symbolSummaries(repoMap, cwd, args.file, args.name);
+        case "search_symbols":
+          return await searchSymbols(repoMap, cwd, args.name, args.limit);
         default:
           return {
             success: false,
@@ -401,7 +413,7 @@ async function fileProfile(
   if (deps.length > 0) {
     lines.push(`Dependencies (${String(deps.length)}):`);
     for (const d of deps.slice(0, 15)) {
-      lines.push(`  ${d.path}`);
+      lines.push(`  ${d.path} (w:${Math.round(d.weight)})`);
     }
     if (deps.length > 15) lines.push(`  ... and ${String(deps.length - 15)} more`);
     lines.push("");
@@ -410,7 +422,7 @@ async function fileProfile(
   if (dependents.length > 0) {
     lines.push(`Dependents (${String(dependents.length)}) — files that import from this:`);
     for (const d of dependents.slice(0, 15)) {
-      lines.push(`  ${d.path}`);
+      lines.push(`  ${d.path} (w:${Math.round(d.weight)})`);
     }
     if (dependents.length > 15) lines.push(`  ... and ${String(dependents.length - 15)} more`);
     lines.push("");
@@ -422,6 +434,37 @@ async function fileProfile(
     );
     for (const c of cochanges.slice(0, 10)) {
       lines.push(`  ${c.path} (${String(c.count)} co-commits)`);
+    }
+    lines.push("");
+  }
+
+  // Call graph: show top callers for each exported symbol
+  const callHotspots: Array<{ name: string; callerCount: number }> = [];
+  for (const s of symbols) {
+    const callers = await repoMap.getCallers(s.name, relPath);
+    if (callers.length >= 3) {
+      callHotspots.push({ name: s.name, callerCount: callers.length });
+    }
+  }
+  if (callHotspots.length > 0) {
+    callHotspots.sort((a, b) => b.callerCount - a.callerCount);
+    lines.push(`Call hotspots (${String(callHotspots.length)} symbols with 3+ callers):`);
+    for (const h of callHotspots.slice(0, 10)) {
+      lines.push(`  ${h.name} — ${String(h.callerCount)} callers`);
+    }
+    lines.push("");
+  }
+
+  // Semantic summaries for this file
+  const summaries = await repoMap.getSymbolSummaries(relPath);
+  const astSummaries = summaries.filter((s) => s.source === "ast");
+  if (astSummaries.length > 0) {
+    lines.push(`Summaries (${String(astSummaries.length)} from doc comments):`);
+    for (const s of astSummaries.slice(0, 10)) {
+      lines.push(`  ${s.symbolName} — ${s.summary}`);
+    }
+    if (astSummaries.length > 10) {
+      lines.push(`  ... and ${String(astSummaries.length - 10)} more`);
     }
     lines.push("");
   }
@@ -624,6 +667,181 @@ async function symbolsByKind(
     const rel = relative(cwd, `${cwd}/${s.path}`);
     const sig = s.signature ?? s.name;
     lines.push(`  ${rel}:${String(s.line)}  ${sig}`);
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+async function callGraph(
+  repoMap: IntelligenceClient,
+  cwd: string,
+  name: string | undefined,
+  file: string | undefined,
+  limit: number | undefined,
+): Promise<ToolResult> {
+  if (!name) {
+    return {
+      success: false,
+      output: "name param required for call_graph (symbol name to analyze)",
+      error: "missing name",
+    };
+  }
+
+  const relFile = file ? (file.startsWith("/") ? relative(cwd, file) : file) : undefined;
+
+  const callers = await repoMap.getCallers(name, relFile);
+  const cap = limit ?? 30;
+
+  const symbols = await repoMap.findSymbols(name);
+
+  const lines: string[] = [`Call graph for "${name}":\n`];
+
+  if (callers.length > 0) {
+    lines.push(`Callers (${String(callers.length)}) — functions that call ${name}:`);
+    const shown = callers.slice(0, cap);
+    for (const c of shown) {
+      if (isForbidden(c.callerPath) !== null) continue;
+      lines.push(`  ${c.callerPath}:${String(c.callLine)} in ${c.callerName}`);
+    }
+    if (callers.length > cap) {
+      lines.push(`  ... and ${String(callers.length - cap)} more`);
+    }
+    lines.push("");
+  } else {
+    lines.push("No callers found in call graph.\n");
+  }
+
+  if (callers.length === 0 && symbols.length === 0) {
+    return { success: true, output: `"${name}" not found in call graph or symbol index.` };
+  }
+
+  if (symbols.length > 0) {
+    lines.push(`Defined in ${String(symbols.length)} location(s):`);
+    for (const s of symbols) {
+      if (isForbidden(s.path) !== null) continue;
+      lines.push(`  ${s.path} (${s.kind}, PR:${s.pagerank.toFixed(3)})`);
+    }
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+async function classMembers(
+  repoMap: IntelligenceClient,
+  cwd: string,
+  name: string | undefined,
+): Promise<ToolResult> {
+  if (!name) {
+    return {
+      success: false,
+      output: "name param required for class_members (class name to inspect)",
+      error: "missing name",
+    };
+  }
+
+  const members = await repoMap.getClassMembers(name);
+  if (members.length === 0) {
+    return {
+      success: true,
+      output: `No members found for class "${name}" (class not indexed or has no qualified_name entries).`,
+    };
+  }
+
+  const symbols = await repoMap.findSymbols(name);
+  const classSymbol = symbols.find((s) => s.kind === "class");
+  const filePath = classSymbol?.path ?? "";
+
+  const lines: string[] = [];
+  if (filePath) {
+    const rel = relative(cwd, `${cwd}/${filePath}`);
+    lines.push(`Class "${name}" in ${rel} — ${String(members.length)} members:\n`);
+  } else {
+    lines.push(`Class "${name}" — ${String(members.length)} members:\n`);
+  }
+
+  for (const m of members) {
+    const exported = m.isExported ? "+" : " ";
+    const sig = m.signature
+      ? m.signature.replace(/^(export\s+)?(async\s+)?/, (_, _e, a) => a ?? "")
+      : `${m.kind} ${m.name}`;
+    const span = m.endLine > m.line ? ` (${String(m.endLine - m.line + 1)}L)` : "";
+    lines.push(`  ${exported}${m.name} :${String(m.line)}${span} — ${sig}`);
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+async function symbolSummaries(
+  repoMap: IntelligenceClient,
+  cwd: string,
+  file: string | undefined,
+  name: string | undefined,
+): Promise<ToolResult> {
+  if (!file && !name) {
+    return {
+      success: false,
+      output: "file or name param required for summaries",
+      error: "missing params",
+    };
+  }
+
+  const relFile = file ? (file.startsWith("/") ? relative(cwd, file) : file) : undefined;
+
+  const summaries = await repoMap.getSymbolSummaries(relFile, name);
+  if (summaries.length === 0) {
+    const target = relFile ?? name ?? "";
+    return {
+      success: true,
+      output: `No semantic summaries found for "${target}". Summaries are generated from doc comments (AST) and synthetic analysis.`,
+    };
+  }
+
+  const lines: string[] = [];
+  if (relFile) {
+    lines.push(`Semantic summaries for ${relFile} (${String(summaries.length)} symbols):\n`);
+  } else {
+    lines.push(`Semantic summaries for "${name}" (${String(summaries.length)} entries):\n`);
+  }
+
+  for (const s of summaries) {
+    const sourceTag = s.source === "ast" ? "[AST]" : s.source === "llm" ? "[LLM]" : "[SYN]";
+    if (relFile) {
+      lines.push(`  ${s.symbolName} ${sourceTag} — ${s.summary}`);
+    } else {
+      lines.push(`  ${s.filePath}  ${s.symbolName} ${sourceTag} — ${s.summary}`);
+    }
+  }
+
+  return { success: true, output: lines.join("\n") };
+}
+
+async function searchSymbols(
+  repoMap: IntelligenceClient,
+  cwd: string,
+  query: string | undefined,
+  limit: number | undefined,
+): Promise<ToolResult> {
+  if (!query) {
+    return {
+      success: false,
+      output: 'name param required for search_symbols (e.g. "build*", "parse*", "detect")',
+      error: "missing name",
+    };
+  }
+
+  const cap = Math.min(limit ?? 20, 30);
+  const results = await repoMap.searchSymbolsFts(query, cap);
+
+  if (results.length === 0) {
+    return { success: true, output: `No symbols matching "${query}".` };
+  }
+
+  const lines = [`${String(results.length)} symbols matching "${query}":\n`];
+  for (const r of results) {
+    if (isForbidden(r.path) !== null) continue;
+    const rel = relative(cwd, `${cwd}/${r.path}`);
+    const exported = r.isExported ? "+" : " ";
+    lines.push(`  ${exported}${r.kind} ${r.name}  ${rel}:${String(r.line)}`);
   }
 
   return { success: true, output: lines.join("\n") };

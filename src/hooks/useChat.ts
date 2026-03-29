@@ -35,7 +35,11 @@ import { createThinkingParser } from "../core/thinking-parser.js";
 import { emitCacheReset, onFileEdited } from "../core/tools/file-events.js";
 import { planFileName } from "../core/tools/index.js";
 import { setShellCoAuthorEnabled } from "../core/tools/shell.js";
-import { completeInProgressTasks, resetInProgressTasks } from "../core/tools/task-list.js";
+import {
+  clearTasks,
+  completeInProgressTasks,
+  resetInProgressTasks,
+} from "../core/tools/task-list.js";
 import { getIOClient } from "../core/workers/io-client.js";
 import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
@@ -1214,11 +1218,16 @@ export function useChat({
         setSidebarPlan(plan);
       },
       onPlanStepUpdate: (stepId: string, status: PlanStepStatus) => {
+        if (status === "active") clearTasks(tabId);
         const updater = (prev: Plan | null) => {
           if (!prev) return prev;
           return {
             ...prev,
-            steps: prev.steps.map((s) => (s.id === stepId ? { ...s, status } : s)),
+            steps: prev.steps.map((s) =>
+              s.id === stepId
+                ? { ...s, status, ...(status === "active" ? { startedAt: Date.now() } : {}) }
+                : s,
+            ),
           };
         };
         setActivePlan(updater);
@@ -1288,7 +1297,7 @@ export function useChat({
       onWebSearchApproval: (query: string) => promptWebAccess(`Search: "${query}"`),
       onFetchPageApproval: (url: string) => promptWebAccess(`Fetch: ${url}`),
     }),
-    [openEditor, openEditorWithFile, cwd, setActivePlan, promptWebAccess],
+    [openEditor, openEditorWithFile, cwd, setActivePlan, promptWebAccess, tabId],
   );
 
   const handleSubmit = useCallback(
@@ -1340,7 +1349,10 @@ export function useChat({
       lastFlushedStreamingChars.current = 0;
       setStreamSegments([]);
       setLiveToolCalls([]);
-      if (!planExecutionRef.current) setActivePlan(null);
+      if (!planExecutionRef.current) {
+        setActivePlan(null);
+        setSidebarPlan(null);
+      }
       setPendingQuestion(null);
 
       // Capture pre-stream token baseline for live estimation
@@ -1361,7 +1373,7 @@ export function useChat({
       // Track subagent token usage and aggregate into the main total
       const subagentCumulative = new Map<
         string,
-        { input: number; output: number; cache: number }
+        { input: number; output: number; cache: number; cacheWrite: number }
       >();
       const completedResultChars = new Map<string, number>();
 
@@ -1376,28 +1388,45 @@ export function useChat({
       };
 
       const unsubAgentStats = onAgentStats((event) => {
-        const prev = subagentCumulative.get(event.agentId) ?? { input: 0, output: 0, cache: 0 };
+        const prev = subagentCumulative.get(event.agentId) ?? {
+          input: 0,
+          output: 0,
+          cache: 0,
+          cacheWrite: 0,
+        };
         const deltaIn = event.tokenUsage.input - prev.input;
         const deltaOut = event.tokenUsage.output - prev.output;
         const deltaCache = (event.cacheHits ?? 0) - prev.cache;
+        const deltaCacheWrite = (event.cacheWrite ?? 0) - prev.cacheWrite;
         subagentCumulative.set(event.agentId, {
           input: event.tokenUsage.input,
           output: event.tokenUsage.output,
           cache: event.cacheHits ?? 0,
+          cacheWrite: event.cacheWrite ?? 0,
         });
-        if (deltaIn > 0 || deltaOut > 0 || deltaCache > 0) {
+        if (deltaIn > 0 || deltaOut > 0 || deltaCache > 0 || deltaCacheWrite > 0) {
           const base = baseTokenUsageRef.current;
           const subModelId = event.modelId ?? "unknown";
+          // inputTokens from SDK = total (noCache + cacheRead + cacheWrite).
+          // Subtract cache tokens to get uncached input only — same as main agent path.
+          const uncachedIn = Math.max(
+            0,
+            deltaIn -
+              (deltaCache > 0 ? deltaCache : 0) -
+              (deltaCacheWrite > 0 ? deltaCacheWrite : 0),
+          );
           const newUsage: TokenUsage = {
             ...base,
             total: base.total + deltaIn + deltaOut,
-            subagentInput: base.subagentInput + deltaIn,
+            subagentInput: base.subagentInput + uncachedIn,
             subagentOutput: base.subagentOutput + deltaOut,
             cacheRead: base.cacheRead + (deltaCache > 0 ? deltaCache : 0),
+            cacheWrite: base.cacheWrite + (deltaCacheWrite > 0 ? deltaCacheWrite : 0),
             modelBreakdown: accumulateModelUsage(base.modelBreakdown, subModelId, {
-              input: deltaIn,
+              input: uncachedIn,
               output: deltaOut,
               cacheRead: deltaCache > 0 ? deltaCache : 0,
+              cacheWrite: deltaCacheWrite > 0 ? deltaCacheWrite : 0,
             }),
           };
           pendingTokenUsage.current = newUsage;
@@ -2144,6 +2173,7 @@ export function useChat({
           finalSegments.push({ type: "plan", plan: activePlanRef.current });
         }
         setActivePlan(null);
+        setSidebarPlan(null);
 
         if (workingStateRef.current && fullText.length > 0) {
           extractFromAssistantMessage(workingStateRef.current, {
@@ -2376,6 +2406,7 @@ export function useChat({
             setForgeMode("default");
 
             if (postAction.action === "cancel") {
+              clearTasks(tabId);
               setMessages((prev) => [
                 ...prev,
                 {
@@ -2434,24 +2465,30 @@ export function useChat({
           willContinue = true;
           pendingCompactRef.current = false;
           const planSnapshot = activePlanRef.current;
+          const buildPlanHint = () =>
+            planSnapshot
+              ? (() => {
+                  const active = planSnapshot.steps.find((s) => s.status === "active");
+                  const done = planSnapshot.steps.filter((s) => s.status === "done").length;
+                  const total = planSnapshot.steps.length;
+                  return ` You are executing plan "${planSnapshot.title}" — ${String(done)}/${String(total)} steps done.${active ? ` Currently on step [${active.id}]: ${active.label}.` : ""}`;
+                })()
+              : "";
           summarizeConversationRef
             .current({ skipQueueDrain: true })
             .then(() => {
-              const planHint = planSnapshot
-                ? (() => {
-                    const active = planSnapshot.steps.find((s) => s.status === "active");
-                    const done = planSnapshot.steps.filter((s) => s.status === "done").length;
-                    const total = planSnapshot.steps.length;
-                    return ` You are executing plan "${planSnapshot.title}" — ${String(done)}/${String(total)} steps done.${active ? ` Currently on step [${active.id}]: ${active.label}.` : ""}`;
-                  })()
-                : "";
-              setTimeout(() => handleSubmitRef.current(`Continue.${planHint}`), 0);
+              setTimeout(() => handleSubmitRef.current(`Continue.${buildPlanHint()}`), 0);
             })
-            .catch(() => {});
+            .catch(() => {
+              // Compaction failed — still continue so the agent doesn't hang
+              setTimeout(() => handleSubmitRef.current(`Continue.${buildPlanHint()}`), 0);
+            });
         }
 
         if (!willContinue) {
           setActivePlan(null);
+          setSidebarPlan(null);
+          clearTasks(tabId);
           setMessageQueue((queue) => {
             if (queue.length > 0) {
               const [next, ...rest] = queue;
@@ -2521,6 +2558,7 @@ export function useChat({
         setPendingPlanReview(null);
       }
       setActivePlan(null);
+      setSidebarPlan(null);
       steeringAbortedRef.current = true;
       // Snapshot buffers before clearing so the catch block can reconstruct partial content
       abortedSegmentsSnapshot.current = [...streamSegmentsBuffer.current];

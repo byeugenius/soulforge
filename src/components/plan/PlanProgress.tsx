@@ -85,7 +85,13 @@ export function PlanProgress({ plan, tasks }: Props) {
               {step.label}
             </text>
           </box>
-          {step.status === "active" && hasTasks && <TaskList tasks={tasks} nested />}
+          {step.status === "active" &&
+            hasTasks &&
+            (() => {
+              const { startedAt } = step;
+              const stepTasks = startedAt ? tasks.filter((t) => t.created >= startedAt) : tasks;
+              return stepTasks.length > 0 ? <TaskList tasks={stepTasks} nested /> : null;
+            })()}
         </box>
       ))}
       {hiddenAfter > 0 && <text fg={t.textDim}>{String(hiddenAfter)} more pending</text>}

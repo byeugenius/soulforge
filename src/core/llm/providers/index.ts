@@ -23,15 +23,15 @@ import { vercelGatewayProvider } from "./vercel-gateway.js";
 import { xai } from "./xai.js";
 
 const BUILTIN_PROVIDERS: ProviderDefinition[] = [
-  vercelGatewayProvider,
   llmgateway,
   anthropic,
+  proxy,
+  vercelGatewayProvider,
   openai,
   xai,
   google,
   openrouter,
   ollama,
-  proxy,
 ];
 
 let allProviders: ProviderDefinition[] = [...BUILTIN_PROVIDERS];

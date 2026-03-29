@@ -3,7 +3,7 @@ import type { ForgeMode } from "../types/index.js";
 import { BOLD, EXIT_ERROR, EXIT_OK, RED, RST, VALID_MODES } from "./constants.js";
 import type { HeadlessAction } from "./types.js";
 
-const USAGE = `${BOLD}SoulForge${RST} — AI-Powered Terminal IDE (headless mode)
+const USAGE = `${BOLD}SoulForge${RST} — Graph-Powered Code Intelligence (headless mode)
 
 ${BOLD}Usage:${RST}
   soulforge --headless <prompt>                          Run a prompt

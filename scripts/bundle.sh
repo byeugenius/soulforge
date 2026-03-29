@@ -225,14 +225,13 @@ D='\033[2m'
 M='\033[38;2;85;85;85m'
 G='\033[38;2;74;167;74m'
 W='\033[38;2;170;170;170m'
+Y='\033[38;2;230;180;60m'
 B='\033[1m'
 RST='\033[0m'
 SPINNER=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 
 spin() {
-  local msg="$1"
-  local pid="$2"
-  local i=0
+  local msg="$1" pid="$2" i=0
   while kill -0 "$pid" 2>/dev/null; do
     printf "\r  ${P}${SPINNER[$((i % 10))]}${RST} ${M}%s${RST}  " "$msg"
     i=$((i + 1))
@@ -242,29 +241,25 @@ spin() {
   printf "\r  ${G}✓${RST} ${W}%s${RST}  \n" "$msg"
 }
 
-step() {
-  printf "  ${G}✓${RST} ${W}%s${RST}\n" "$1"
-}
+step() { printf "  ${G}✓${RST} ${W}%s${RST}\n" "$1"; }
+dim()  { printf "  ${M}%s${RST}\n" "$1"; }
 
 clear
 printf "\033[?25l"
-
 sleep 0.1
 
 printf "\n"
 printf "  ${P}${B}░${RST}\n"
-sleep 0.05
+sleep 0.04
 printf "\033[1A\r  ${P}${B}▒${RST}\n"
-sleep 0.05
+sleep 0.04
 printf "\033[1A\r  ${P}${B}▓${RST}\n"
-sleep 0.05
+sleep 0.04
 printf "\033[1A\r  ${P}${B}◆${RST}\n"
-sleep 0.1
+sleep 0.08
 
 printf "  ${D}${P}~∿~${RST}\n"
-sleep 0.1
 
-printf "\n"
 WORDMARK_1="┌─┐┌─┐┬ ┬┬  ┌─┐┌─┐┬─┐┌─┐┌─┐"
 WORDMARK_2="└─┐│ ││ ││  ├┤ │ │├┬┘│ ┬├┤ "
 WORDMARK_3="└─┘└─┘└─┘┴─┘└  └─┘┴└─└─┘└─┘"
@@ -274,64 +269,49 @@ garble() {
   local text="$1" out="" i ch
   for ((i=0; i<${#text}; i++)); do
     ch="${text:$i:1}"
-    if [[ "$ch" == " " ]]; then
-      out+=" "
-    else
-      out+="${GLITCH:$((RANDOM % ${#GLITCH})):1}"
-    fi
+    if [[ "$ch" == " " ]]; then out+=" "; else out+="${GLITCH:$((RANDOM % ${#GLITCH})):1}"; fi
   done
   printf "%s" "$out"
 }
 
+printf "\n"
 printf "  ${M}$(garble "$WORDMARK_1")${RST}\n"
-sleep 0.03
+sleep 0.02
 printf "\033[1A\r  ${P}${B}${WORDMARK_1}${RST}\n"
 printf "  ${M}$(garble "$WORDMARK_2")${RST}\n"
-sleep 0.03
+sleep 0.02
 printf "\033[1A\r  ${P}${B}${WORDMARK_2}${RST}\n"
 printf "  ${M}$(garble "$WORDMARK_3")${RST}\n"
-sleep 0.03
+sleep 0.02
 printf "\033[1A\r  ${P}${B}${WORDMARK_3}${RST}\n"
 
-sleep 0.1
 printf "\n"
-printf "  ${M}── ${D}AI-Powered Terminal IDE${RST}${M} ──${RST}\n"
-sleep 0.1
+printf "  ${M}── ${D}Graph-Powered Code Intelligence${RST}${M} ──${RST}\n"
 
 BRAND="by "
 printf "\n  "
-for ((i=0; i<${#BRAND}; i++)); do
-  printf "${M}${BRAND:$i:1}${RST}"
-  sleep 0.02
-done
+for ((i=0; i<${#BRAND}; i++)); do printf "${M}${BRAND:$i:1}${RST}"; sleep 0.015; done
 PROXY="Proxy"
-for ((i=0; i<${#PROXY}; i++)); do
-  printf "${P}${PROXY:$i:1}${RST}"
-  sleep 0.02
-done
+for ((i=0; i<${#PROXY}; i++)); do printf "${P}${PROXY:$i:1}${RST}"; sleep 0.015; done
 SOUL="Soul"
-for ((i=0; i<${#SOUL}; i++)); do
-  printf "${R}${SOUL:$i:1}${RST}"
-  sleep 0.02
-done
+for ((i=0; i<${#SOUL}; i++)); do printf "${R}${SOUL:$i:1}${RST}"; sleep 0.015; done
 printf "${M}.com${RST}"
-sleep 0.1
 
 printf "\n\n"
-printf "  ${M}──────────────────────────────${RST}\n"
-printf "  ${P}${B}INSTALLING${RST}\n"
-printf "  ${M}──────────────────────────────${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+printf "  ${P}${B}INSTALLING${RST}  ${M}→ ~/.soulforge/${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
 printf "\n"
 
-# Clean previous install
+# Clean previous install (preserve config + sessions)
 if [[ -d "$SOULFORGE_DIR" ]]; then
-  rm -rf "${SOULFORGE_DIR}/bin" "${SOULFORGE_DIR}/installs" "${SOULFORGE_DIR}/wasm" "${SOULFORGE_DIR}/opentui-assets" "${SOULFORGE_DIR}/init.lua" 2>/dev/null
-  printf "  ${G}✓${RST} ${W}Cleared previous installation${RST}\n"
+  rm -rf "${SOULFORGE_DIR}/bin" "${SOULFORGE_DIR}/installs" "${SOULFORGE_DIR}/wasm" "${SOULFORGE_DIR}/workers" "${SOULFORGE_DIR}/native" "${SOULFORGE_DIR}/opentui-assets" "${SOULFORGE_DIR}/init.lua" 2>/dev/null
+  dim "Cleaned previous install (config & sessions preserved)"
 fi
 
 mkdir -p "$BIN_DIR"
 
-(cp "${SCRIPT_DIR}/soulforge" "${BIN_DIR}/soulforge" && chmod +x "${BIN_DIR}/soulforge") &
+(cp "${SCRIPT_DIR}/soulforge" "${BIN_DIR}/soulforge" && chmod +x "${BIN_DIR}/soulforge" && ln -sf "${BIN_DIR}/soulforge" "${BIN_DIR}/sf") &
 spin "Forging the soul binary" $!
 
 (for bin in rg fd lazygit cli-proxy-api; do
@@ -380,7 +360,6 @@ CONFIG_FILE="${SOULFORGE_DIR}/config.json"
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo '{"nerdFont":true}' > "$CONFIG_FILE"
 elif ! grep -q '"nerdFont"' "$CONFIG_FILE" 2>/dev/null; then
-  # Inject nerdFont into existing config (portable sed)
   sed -i.bak 's/^{/{"nerdFont":true,/' "$CONFIG_FILE" 2>/dev/null || true
   rm -f "${CONFIG_FILE}.bak"
 fi
@@ -398,20 +377,20 @@ if [[ -n "$SHELL_RC" ]] && ! grep -q '.soulforge/bin' "$SHELL_RC" 2>/dev/null; t
   echo '' >> "$SHELL_RC"
   echo '# SoulForge' >> "$SHELL_RC"
   echo 'export PATH="$HOME/.soulforge/bin:$PATH"' >> "$SHELL_RC"
-  step "Inscribed PATH into $(basename "$SHELL_RC")"
+  step "Added to PATH in $(basename "$SHELL_RC")"
 else
-  step "PATH runes already inscribed"
+  step "PATH already configured"
 fi
 
 printf "\n"
-printf "  ${M}──────────────────────────────${RST}\n"
-printf "  ${G}${B}◆ FORGE COMPLETE${RST}\n"
-printf "  ${M}──────────────────────────────${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+printf "  ${G}${B}◆ INSTALLED${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
 printf "\n"
-printf "  ${W}Installed to ${P}~/.soulforge/bin/soulforge${RST}\n"
+printf "  ${W}Commands:${RST}  ${P}soulforge${RST}  ${M}or${RST}  ${P}sf${RST}\n"
+printf "  ${W}Location:${RST}  ${M}~/.soulforge/bin/${RST}\n"
 printf "\n"
-printf "  ${W}Ignite the forge:${RST}\n"
-printf "    ${P}source ${SHELL_RC:-~/.zshrc} && soulforge${RST}\n"
+printf "  ${Y}→${RST} ${W}Run${RST} ${P}source ${SHELL_RC:-~/.zshrc}${RST} ${W}then${RST} ${P}soulforge${RST}\n"
 printf "\n"
 printf "\033[?25h"
 INSTALL_EOF
@@ -435,9 +414,7 @@ RST='\033[0m'
 SPINNER=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 
 spin() {
-  local msg="$1"
-  local pid="$2"
-  local i=0
+  local msg="$1" pid="$2" i=0
   while kill -0 "$pid" 2>/dev/null; do
     printf "\r  ${R}${SPINNER[$((i % 10))]}${RST} ${M}%s${RST}  " "$msg"
     i=$((i + 1))
@@ -450,13 +427,12 @@ spin() {
 clear
 printf "\033[?25l"
 printf "\n"
-
 printf "  ${P}${B}◆${RST}\n"
 printf "  ${D}${P}∿·∿${RST}\n"
 printf "\n"
-printf "  ${M}──────────────────────────────${RST}\n"
-printf "  ${R}${B}UNINSTALLING${RST}\n"
-printf "  ${M}──────────────────────────────${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+printf "  ${R}${B}UNINSTALLING${RST}  ${M}← ~/.soulforge/${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
 printf "\n"
 
 if [[ -d "$SOULFORGE_DIR" ]]; then
@@ -464,9 +440,9 @@ if [[ -d "$SOULFORGE_DIR" ]]; then
   spin "Extinguishing the forge" $!
 
   (rm -rf "${SOULFORGE_DIR}/installs") &
-  spin "Banishing the spirits" $!
+  spin "Banishing the editor spirit" $!
 
-  (rm -rf "${SOULFORGE_DIR}/fonts" "${SOULFORGE_DIR}/wasm" "${SOULFORGE_DIR}/workers" "${SOULFORGE_DIR}/opentui-assets" "${SOULFORGE_DIR}/init.lua") &
+  (rm -rf "${SOULFORGE_DIR}/fonts" "${SOULFORGE_DIR}/wasm" "${SOULFORGE_DIR}/workers" "${SOULFORGE_DIR}/native" "${SOULFORGE_DIR}/opentui-assets" "${SOULFORGE_DIR}/init.lua") &
   spin "Dissolving the runes" $!
 
   (rm -rf "${SOULFORGE_DIR}/sessions" "${SOULFORGE_DIR}/memories") &
@@ -477,7 +453,7 @@ if [[ -d "$SOULFORGE_DIR" ]]; then
   spin "Scattering the ashes" $!
 
   (rm -rf "${HOME}/.local/share/soulforge" "${HOME}/.local/state/soulforge" "${HOME}/.cache/soulforge" "${HOME}/.config/soulforge") &
-  spin "Purging lazy.nvim & mason data" $!
+  spin "Purging the spirit realm" $!
 else
   printf "  ${M}Nothing to remove at ${SOULFORGE_DIR}${RST}\n"
 fi
@@ -487,14 +463,14 @@ for rc in "${HOME}/.zshrc" "${HOME}/.bashrc" "${HOME}/.bash_profile"; do
     sed -i.bak '/# SoulForge/d' "$rc"
     sed -i.bak '/\.soulforge\/bin/d' "$rc"
     rm -f "${rc}.bak"
-    printf "  ${G}✓${RST} ${W}Cleansed PATH from $(basename "$rc")${RST}\n"
+    printf "  ${G}✓${RST} ${W}Removed PATH from $(basename "$rc")${RST}\n"
   fi
 done
 
 printf "\n"
-printf "  ${M}──────────────────────────────${RST}\n"
-printf "  ${R}${B}◆ SOUL RELEASED${RST}\n"
-printf "  ${M}──────────────────────────────${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
+printf "  ${R}${B}◆ UNINSTALLED${RST}\n"
+printf "  ${M}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RST}\n"
 printf "\n"
 printf "  ${W}Restart your terminal or run:${RST}\n"
 printf "    ${P}source ~/.zshrc${RST}\n"

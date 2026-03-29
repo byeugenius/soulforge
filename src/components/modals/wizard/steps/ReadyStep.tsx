@@ -1,11 +1,13 @@
 import { memo } from "react";
 import { icon } from "../../../../core/icons.js";
+import { useTheme } from "../../../../core/theme/index.js";
 import { POPUP_BG, PopupRow } from "../../../layout/shared.js";
 import { QUICK_START } from "../data.js";
 import { Gap, SectionLabel, StepHeader } from "../primitives.js";
-import { C, ITALIC } from "../theme.js";
+import { ITALIC } from "../theme.js";
 
 export const ReadyStep = memo(function ReadyStep({ iw }: { iw: number }) {
+  const t = useTheme();
   return (
     <>
       <Gap iw={iw} />
@@ -13,17 +15,17 @@ export const ReadyStep = memo(function ReadyStep({ iw }: { iw: number }) {
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={C.text} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={POPUP_BG}>
           Just type what you want to build, fix, or explore.
         </text>
       </PopupRow>
       <PopupRow w={iw}>
-        <text fg={C.text} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={POPUP_BG}>
           SoulForge reads your codebase, plans changes, and edits files —
         </text>
       </PopupRow>
       <PopupRow w={iw}>
-        <text fg={C.text} bg={POPUP_BG}>
+        <text fg={t.textSecondary} bg={POPUP_BG}>
           all from this terminal.
         </text>
       </PopupRow>
@@ -36,9 +38,9 @@ export const ReadyStep = memo(function ReadyStep({ iw }: { iw: number }) {
 
       {QUICK_START.map((q) => (
         <PopupRow key={q} w={iw}>
-          <text fg={C.subtle} bg={POPUP_BG}>
+          <text fg={t.textDim} bg={POPUP_BG}>
             {"  "}
-            <span fg={C.text}>{q}</span>
+            <span fg={t.textSecondary}>{q}</span>
           </text>
         </PopupRow>
       ))}
@@ -46,12 +48,12 @@ export const ReadyStep = memo(function ReadyStep({ iw }: { iw: number }) {
       <Gap iw={iw} n={2} />
 
       <PopupRow w={iw}>
-        <text fg={C.green} bg={POPUP_BG}>
+        <text fg={t.success} bg={POPUP_BG}>
           ✓ Ready to forge.
         </text>
-        <text fg={C.muted} bg={POPUP_BG}>
+        <text fg={t.textMuted} bg={POPUP_BG}>
           {"  "}
-          <span fg={C.red} attributes={ITALIC}>
+          <span fg={t.brandSecondary} attributes={ITALIC}>
             speak to the forge...
           </span>
         </text>
@@ -60,8 +62,8 @@ export const ReadyStep = memo(function ReadyStep({ iw }: { iw: number }) {
       <Gap iw={iw} />
 
       <PopupRow w={iw}>
-        <text fg={C.faint} bg={POPUP_BG}>
-          Re-run this wizard anytime with <span fg={C.muted}>soulforge --wizard</span>
+        <text fg={t.textFaint} bg={POPUP_BG}>
+          Re-run this wizard anytime with <span fg={t.textMuted}>soulforge --wizard</span>
         </text>
       </PopupRow>
     </>

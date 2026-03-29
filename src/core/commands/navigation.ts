@@ -121,10 +121,12 @@ function handleRename(input: string, ctx: CommandContext): void {
   }
 }
 
-function resolveTerminalId(idStr: string): number | null {
-  const n = Number(idStr);
-  if (!Number.isNaN(n) && n > 0) return n;
-  return null;
+function resolveTerminalByPosition(posStr: string): number | null {
+  const pos = Number(posStr);
+  if (!Number.isInteger(pos) || pos < 1) return null;
+  const terminals = useTerminalStore.getState().terminals;
+  const entry = terminals[pos - 1];
+  return entry?.id ?? null;
 }
 
 function handleTerminals(input: string, ctx: CommandContext): void {
@@ -153,14 +155,14 @@ function handleTerminals(input: string, ctx: CommandContext): void {
 
   if (sub === "close" || sub === "kill") {
     const store = useTerminalStore.getState();
-    const id = arg ? resolveTerminalId(arg) : store.selectedId;
+    const id = arg ? resolveTerminalByPosition(arg) : store.selectedId;
     if (!id) {
-      sysMsg(ctx, "Usage: /terminals close <id>");
+      sysMsg(ctx, "Usage: /terminals close <number>");
       return;
     }
     const entry = store.terminals.find((t) => t.id === id);
     if (!entry) {
-      sysMsg(ctx, `Terminal ${String(id)} not found.`);
+      sysMsg(ctx, `No terminal at position ${arg}.`);
       return;
     }
     closeTerminal(id);
@@ -170,12 +172,17 @@ function handleTerminals(input: string, ctx: CommandContext): void {
 
   if (sub === "show" || sub === "open") {
     if (arg) {
-      const id = resolveTerminalId(arg);
+      const id = resolveTerminalByPosition(arg);
       if (!id) {
-        sysMsg(ctx, "Usage: /terminals show <id>");
+        sysMsg(ctx, `No terminal at position ${arg}.`);
         return;
       }
       useTerminalStore.getState().selectTerminal(id);
+    }
+    const store = useTerminalStore.getState();
+    if (!store.selectedId || !store.terminals.some((t) => t.id === store.selectedId)) {
+      sysMsg(ctx, "No terminals. Use /terminals new to create one.");
+      return;
     }
     useUIStore.getState().openModal("floatingTerminal");
     return;

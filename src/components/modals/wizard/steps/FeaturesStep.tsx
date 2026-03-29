@@ -1,11 +1,13 @@
 import { memo } from "react";
 import { icon } from "../../../../core/icons.js";
+import { useTheme } from "../../../../core/theme/index.js";
 import { POPUP_BG, PopupRow } from "../../../layout/shared.js";
 import { FEATURES, MODES } from "../data.js";
 import { Feat, Gap, SectionLabel, StepHeader } from "../primitives.js";
-import { BOLD, C } from "../theme.js";
+import { BOLD } from "../theme.js";
 
 export const FeaturesStep = memo(function FeaturesStep({ iw }: { iw: number }) {
+  const t = useTheme();
   return (
     <>
       <Gap iw={iw} />
@@ -32,19 +34,19 @@ export const FeaturesStep = memo(function FeaturesStep({ iw }: { iw: number }) {
 
       <SectionLabel iw={iw} label="Modes" />
       <PopupRow w={iw}>
-        <text fg={C.subtle} bg={POPUP_BG}>
+        <text fg={t.textDim} bg={POPUP_BG}>
           {"  "}
-          <span fg={C.amber}>{MODES[0]}</span>
+          <span fg={t.warning}>{MODES[0]}</span>
           {` · ${MODES.slice(1).join(" · ")}`}
         </text>
       </PopupRow>
       <PopupRow w={iw}>
-        <text fg={C.subtle} bg={POPUP_BG}>
+        <text fg={t.textDim} bg={POPUP_BG}>
           {"  "}Cycle with{" "}
-          <span fg={C.cyan} attributes={BOLD}>
+          <span fg={t.info} attributes={BOLD}>
             Ctrl+D
           </span>{" "}
-          or type <span fg={C.purple}>/mode</span>
+          or type <span fg={t.brand}>/mode</span>
         </text>
       </PopupRow>
     </>

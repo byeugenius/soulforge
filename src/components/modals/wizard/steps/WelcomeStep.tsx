@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { icon } from "../../../../core/icons.js";
+import { useTheme } from "../../../../core/theme/index.js";
 import { POPUP_BG, PopupRow } from "../../../layout/shared.js";
 import {
   BLINK_COUNT,
@@ -10,7 +11,7 @@ import {
   WELCOME_TITLE,
 } from "../data.js";
 import { Gap } from "../primitives.js";
-import { BOLD, C, ITALIC } from "../theme.js";
+import { BOLD, ITALIC } from "../theme.js";
 
 function useTypewriter(text: string, ms: number) {
   const [len, setLen] = useState(0);
@@ -48,6 +49,7 @@ function useTypewriter(text: string, ms: number) {
 }
 
 export const WelcomeStep = memo(function WelcomeStep({ iw }: { iw: number }) {
+  const t = useTheme();
   const { typed, cursorOn } = useTypewriter(WELCOME_TITLE, TYPEWRITER_MS);
   const ghostIc = icon("ghost");
 
@@ -55,37 +57,37 @@ export const WelcomeStep = memo(function WelcomeStep({ iw }: { iw: number }) {
     <>
       <Gap iw={iw} n={2} />
       <PopupRow w={iw}>
-        <text fg={C.purple} attributes={BOLD} bg={POPUP_BG}>
+        <text fg={t.brand} attributes={BOLD} bg={POPUP_BG}>
           {"   "}
           {ghostIc}{" "}
         </text>
-        <text fg={C.white} attributes={BOLD} bg={POPUP_BG}>
+        <text fg={t.textPrimary} attributes={BOLD} bg={POPUP_BG}>
           {typed}
         </text>
-        <text fg={C.purple} bg={POPUP_BG}>
+        <text fg={t.brand} bg={POPUP_BG}>
           {cursorOn ? "▌" : " "}
         </text>
       </PopupRow>
       <Gap iw={iw} />
       <PopupRow w={iw}>
-        <text fg={C.text} attributes={ITALIC} bg={POPUP_BG}>
-          {"   AI-Powered Terminal IDE by proxySoul"}
+        <text fg={t.textSecondary} attributes={ITALIC} bg={POPUP_BG}>
+          {"   Graph-Powered Code Intelligence"}
         </text>
       </PopupRow>
       <Gap iw={iw} n={2} />
       {WELCOME_BULLETS.map((b) => (
         <PopupRow key={b} w={iw}>
-          <text fg={C.purple} bg={POPUP_BG}>
+          <text fg={t.brand} bg={POPUP_BG}>
             {"   ◆ "}
           </text>
-          <text fg={C.text} bg={POPUP_BG}>
+          <text fg={t.textSecondary} bg={POPUP_BG}>
             {b}
           </text>
         </PopupRow>
       ))}
       <Gap iw={iw} n={2} />
       <PopupRow w={iw}>
-        <text fg={C.muted} attributes={ITALIC} bg={POPUP_BG}>
+        <text fg={t.textMuted} attributes={ITALIC} bg={POPUP_BG}>
           {"   Press → or Enter to begin setup"}
         </text>
       </PopupRow>

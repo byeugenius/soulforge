@@ -28,6 +28,7 @@ export interface ProviderConfig {
   name: string;
   envVar: string;
   grouped?: boolean;
+  fallbackModels?: ProviderModelInfo[];
 }
 
 export const PROVIDER_CONFIGS: ProviderConfig[] = getAllProviders().map((p) => ({
@@ -35,6 +36,7 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = getAllProviders().map((p) => (
   name: p.name,
   envVar: p.envVar,
   grouped: p.grouped,
+  fallbackModels: p.fallbackModels,
 }));
 
 const DEFAULT_CONTEXT_TOKENS = 128_000;
@@ -120,14 +122,34 @@ export async function fetchOpenRouterMetadata(): Promise<void> {
 function findOpenRouterModel(model: string): OpenRouterModel | undefined {
   if (!openRouterCache) return undefined;
   const lower = model.toLowerCase();
-  return (
+
+  // Exact suffix match (case-insensitive)
+  const exact =
     openRouterCache.find((m) => m.id.endsWith(`/${lower}`)) ??
-    openRouterCache.find((m) => m.id.endsWith(`/${model}`)) ??
-    openRouterCache.find((m) => {
-      const orModel = m.id.split("/").pop() ?? "";
-      return lower.startsWith(orModel.toLowerCase()) || orModel.toLowerCase().startsWith(lower);
-    })
-  );
+    openRouterCache.find((m) => m.id.endsWith(`/${model}`));
+  if (exact) return exact;
+
+  // Normalize hyphens → dots for version matching (Anthropic uses "claude-opus-4-6",
+  // OpenRouter uses "claude-opus-4.6") and try exact match again
+  const dotNormalized = lower.replace(/-(\d+)-(\d)/g, "-$1.$2");
+  if (dotNormalized !== lower) {
+    const dotMatch = openRouterCache.find((m) => m.id.endsWith(`/${dotNormalized}`));
+    if (dotMatch) return dotMatch;
+  }
+
+  // Fuzzy prefix match — pick the longest (most specific) match
+  let best: OpenRouterModel | undefined;
+  let bestLen = 0;
+  for (const m of openRouterCache) {
+    const orModel = (m.id.split("/").pop() ?? "").toLowerCase();
+    if (lower.startsWith(orModel) || orModel.startsWith(lower)) {
+      if (orModel.length > bestLen) {
+        best = m;
+        bestLen = orModel.length;
+      }
+    }
+  }
+  return best;
 }
 
 function getOpenRouterModelName(model: string): string | undefined {
@@ -239,7 +261,7 @@ export async function fetchProviderModels(providerId: string): Promise<FetchMode
     return { models: provider.fallbackModels };
   } catch (err) {
     const msg = toErrorMessage(err);
-    return { models: provider.fallbackModels, error: `API error: ${msg}` };
+    return { models: [], error: `API error: ${msg}` };
   }
 }
 
@@ -323,21 +345,6 @@ const GROUP_DISPLAY_NAMES: Record<string, string> = {
   deepseek: "DeepSeek",
   other: "Other",
 };
-
-function groupFallbackModels(providerId: string): GroupedModelsResult {
-  const provider = getProvider(providerId);
-  if (!provider) return { subProviders: [], modelsByProvider: {} };
-  const grouped: Record<string, ProviderModelInfo[]> = {};
-  for (const m of provider.fallbackModels) {
-    const group = inferModelGroup(m.id);
-    if (!grouped[group]) grouped[group] = [];
-    grouped[group].push(m);
-  }
-  const subProviders: SubProvider[] = Object.keys(grouped)
-    .sort()
-    .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-  return { subProviders, modelsByProvider: grouped };
-}
 
 export async function fetchGroupedModels(providerId: string): Promise<GroupedModelsResult> {
   const entry = groupedCache.get(providerId);
@@ -466,14 +473,14 @@ async function fetchLLMGatewayGrouped(): Promise<GroupedModelsResult> {
     return result;
   } catch (err) {
     const msg = toErrorMessage(err);
-    return { ...groupFallbackModels("llmgateway"), error: `LLM Gateway: ${msg}` };
+    return { subProviders: [], modelsByProvider: {}, error: `LLM Gateway: ${msg}` };
   }
 }
 
 async function fetchOpenRouterGrouped(): Promise<GroupedModelsResult> {
   const apiKey = getProviderApiKey("OPENROUTER_API_KEY");
   if (!apiKey) {
-    return groupFallbackModels("openrouter");
+    return { subProviders: [], modelsByProvider: {}, error: "OPENROUTER_API_KEY not set" };
   }
 
   try {
@@ -482,7 +489,8 @@ async function fetchOpenRouterGrouped(): Promise<GroupedModelsResult> {
     });
     if (!res.ok) {
       return {
-        ...groupFallbackModels("openrouter"),
+        subProviders: [],
+        modelsByProvider: {},
         error: `OpenRouter error: ${String(res.status)}`,
       };
     }
@@ -517,7 +525,7 @@ async function fetchOpenRouterGrouped(): Promise<GroupedModelsResult> {
     return result;
   } catch (err) {
     const msg = toErrorMessage(err);
-    return { ...groupFallbackModels("openrouter"), error: `OpenRouter: ${msg}` };
+    return { subProviders: [], modelsByProvider: {}, error: `OpenRouter: ${msg}` };
   }
 }
 
@@ -527,7 +535,7 @@ async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
 
   const proxyStatus = await ensureProxy();
   if (!proxyStatus.ok) {
-    return { ...groupFallbackModels("proxy"), error: proxyStatus.error };
+    return { subProviders: [], modelsByProvider: {}, error: proxyStatus.error };
   }
 
   try {
@@ -575,6 +583,6 @@ async function fetchProxyGrouped(): Promise<GroupedModelsResult> {
     groupedCache.set("proxy", { result, ts: Date.now() });
     return result;
   } catch {
-    return { ...groupFallbackModels("proxy"), error: "Proxy not running — showing defaults" };
+    return { subProviders: [], modelsByProvider: {}, error: "Proxy not running" };
   }
 }

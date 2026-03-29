@@ -8,6 +8,7 @@ const IS_BUNDLED = import.meta.url.includes("$bunfs");
 
 type SummaryGenerator = (
   batch: SymbolForSummary[],
+  batchTotal?: number,
 ) => Promise<Array<{ name: string; summary: string }>>;
 
 interface RepoMapStats {
@@ -22,6 +23,7 @@ interface SummaryBreakdown {
   ast: number;
   llm: number;
   synthetic: number;
+  lsp: number;
   total: number;
   eligible: number;
 }
@@ -32,7 +34,7 @@ export class IntelligenceClient extends WorkerClient {
   private _cwd: string;
   private _stats: RepoMapStats = { files: 0, symbols: 0, edges: 0, summaries: 0, calls: 0 };
   private _dbSize = 0;
-  private _semanticMode: "off" | "ast" | "synthetic" | "llm" | "full" | "on" = "off";
+  private _semanticMode: "off" | "ast" | "synthetic" | "llm" | "full" | "on" = "synthetic";
   private _symbolCache = new Map<
     string,
     Array<{ name: string; kind: string; isExported: boolean }>
@@ -173,7 +175,11 @@ export class IntelligenceClient extends WorkerClient {
   setSummaryGenerator(generator: SummaryGenerator | null): void {
     if (generator) {
       this.registerCallback("summaryGenerator", async (data) => {
-        return generator(data as SymbolForSummary[]);
+        const { batch, batchTotal } = data as {
+          batch: SymbolForSummary[];
+          batchTotal?: number;
+        };
+        return generator(batch, batchTotal);
       });
     }
   }
@@ -270,6 +276,22 @@ export class IntelligenceClient extends WorkerClient {
     relPath: string,
   ): Promise<Array<{ name: string; kind: string; line: number; endLine: number | null }>> {
     return this.call("getFileSymbolRanges", relPath);
+  }
+
+  async searchSymbolsFts(
+    query: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      name: string;
+      path: string;
+      kind: string;
+      line: number;
+      isExported: boolean;
+      pagerank: number;
+    }>
+  > {
+    return this.call("searchSymbolsFts", query, limit);
   }
 
   async getSymbolSignature(
@@ -406,6 +428,47 @@ export class IntelligenceClient extends WorkerClient {
     }>
   > {
     return this.call("getCallees", symbolId);
+  }
+
+  async getCallers(
+    name: string,
+    filePath?: string,
+  ): Promise<
+    Array<{
+      callerName: string;
+      callerPath: string;
+      callerLine: number;
+      callLine: number;
+    }>
+  > {
+    return this.call("getCallers", name, filePath);
+  }
+
+  async getClassMembers(className: string): Promise<
+    Array<{
+      name: string;
+      kind: string;
+      line: number;
+      endLine: number;
+      signature: string | null;
+      isExported: boolean;
+    }>
+  > {
+    return this.call("getClassMembers", className);
+  }
+
+  async getSymbolSummaries(
+    file?: string,
+    name?: string,
+  ): Promise<
+    Array<{
+      symbolName: string;
+      filePath: string;
+      summary: string;
+      source: string;
+    }>
+  > {
+    return this.call("getSymbolSummaries", file, name);
   }
 
   // ── Stats ──────────────────────────────────────────────────────────

@@ -82,7 +82,7 @@ async function braveSearch(query: string, count: number): Promise<SearchResult[]
 async function duckduckgoSearch(query: string, count: number): Promise<SearchResult[]> {
   const encoded = encodeURIComponent(query);
   const res = await fetch(`https://html.duckduckgo.com/html/?q=${encoded}`, {
-    headers: { "User-Agent": "SoulForge/1.0 (Terminal IDE)" },
+    headers: { "User-Agent": "SoulForge/1.0" },
     signal: AbortSignal.timeout(15_000),
   });
 

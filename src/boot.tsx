@@ -42,26 +42,28 @@ const DIM = "\x1b[2m";
 const ITALIC = "\x1b[3m";
 
 function rgb(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
+  let h = hex.slice(1);
+  if (h.length === 3)
+    h =
+      (h[0] ?? "0") + (h[0] ?? "0") + (h[1] ?? "0") + (h[1] ?? "0") + (h[2] ?? "0") + (h[2] ?? "0");
+  const n = parseInt(h, 16);
   return `\x1b[38;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 
 // Sync-load theme name from config before React mounts
-{
-  try {
-    const raw = readFileSync(join(homedir(), ".soulforge", "config.json"), "utf-8");
-    const cfg = JSON.parse(raw);
-    if (cfg.theme?.name) applyTheme(cfg.theme.name, cfg.theme?.transparent);
-  } catch {}
-}
+try {
+  const raw = readFileSync(join(homedir(), ".soulforge", "config.json"), "utf-8");
+  const cfg = JSON.parse(raw);
+  if (cfg.theme?.name) applyTheme(cfg.theme.name, cfg.theme?.transparent);
+} catch {}
 watchThemes();
 
 const _t = getThemeTokens();
 const PURPLE = rgb(_t.brand);
 const DIM_PURPLE = rgb(_t.brandDim);
-const FAINT = rgb(_t.textFaint);
-const MUTED = rgb(_t.textMuted);
-const SUBTLE = rgb(_t.textDim);
+const FAINT = rgb("#333333");
+const MUTED = rgb("#777777");
+const SUBTLE = rgb("#555555");
 const RED = rgb(_t.brandSecondary);
 
 const cols = process.stdout.columns ?? 80;
@@ -126,7 +128,9 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 // BUN_BE_BUN=1 makes compiled binaries act as the bun CLI (supports -e).
 // Pass theme colors to spinner subprocess as hex → ANSI
 function hexToAnsi(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  const n = parseInt(h, 16);
   return `\\x1b[38;2;${(n >> 16) & 0xff};${(n >> 8) & 0xff};${n & 0xff}m`;
 }
 const spinnerProc = Bun.spawn(
@@ -136,7 +140,7 @@ const spinnerProc = Bun.spawn(
     `
 const RST = "\\x1b[0m";
 const PURPLE = "${hexToAnsi(_t.brand)}";
-const MUTED = "${hexToAnsi(_t.textMuted)}";
+const MUTED = "${hexToAnsi("#777777")}";
 const DIM = "\\x1b[2m";
 const SPINNER = ${JSON.stringify(SPINNER)};
 const row = ${ROW.status};
@@ -230,7 +234,7 @@ if (narrow) {
 await sleep(60);
 center(
   ROW.sub,
-  `${SUBTLE}── ${RST}${MUTED}${ITALIC}AI-Powered Terminal IDE${RST}${SUBTLE} ──${RST}`,
+  `${SUBTLE}── ${RST}${MUTED}${ITALIC}Graph-Powered Code Intelligence${RST}${SUBTLE} ──${RST}`,
 );
 
 await sleep(100);

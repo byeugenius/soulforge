@@ -1,7 +1,7 @@
 {
   "name": "@proxysoul/soulforge",
-  "version": "1.0.1",
-  "description": "AI-Powered Terminal IDE by proxySoul",
+  "version": "1.0.2",
+  "description": "Graph-powered code intelligence — multi-agent coding with codebase-aware AI",
   "repository": {
     "type": "git",
     "url": "https://github.com/proxysoul/soulforge.git"

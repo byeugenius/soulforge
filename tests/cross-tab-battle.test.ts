@@ -486,10 +486,10 @@ describe("tool-wrapper claimAfterCompoundEdit", () => {
 
 describe("edit-stack tab ownership", () => {
   it("pushEdit accepts tabId without error", () => {
-    // pushEdit(path, content, tabId?) — verify the 3-arg signature works
-    pushEdit(resolve("/test-tab.ts"), "content-a", "tab-1");
-    pushEdit(resolve("/test-tab.ts"), "content-b", "tab-2");
-    pushEdit(resolve("/test-tab.ts"), "content-c");
+    // pushEdit(path, previousContent, newContent, tabId?) — verify the 4-arg signature works
+    pushEdit(resolve("/test-tab.ts"), "content-a", "content-b", "tab-1");
+    pushEdit(resolve("/test-tab.ts"), "content-b", "content-c", "tab-2");
+    pushEdit(resolve("/test-tab.ts"), "content-c", "content-d");
     // No throw = signature is correct
   });
 
@@ -499,7 +499,7 @@ describe("edit-stack tab ownership", () => {
     const { writeFileSync, existsSync, unlinkSync } = await import("node:fs");
     writeFileSync(tmpPath, "final-content", "utf-8");
 
-    pushEdit(tmpPath, "original-content", "tab-1");
+    pushEdit(tmpPath, "original-content", "final-content", "tab-1");
 
     const result = await undoEditTool.execute({ path: tmpPath, steps: 1, tabId: "tab-1" });
     expect(result.success).toBe(true);
@@ -519,9 +519,9 @@ describe("edit-stack tab ownership", () => {
     writeFileSync(tmpPath, "current-content", "utf-8");
 
     // Tab-1 edits
-    pushEdit(tmpPath, "tab1-original", "tab-1");
+    pushEdit(tmpPath, "tab1-original", "current-content", "tab-1");
     // Tab-2 edits (pushed after tab-1)
-    pushEdit(tmpPath, "tab2-original", "tab-2");
+    pushEdit(tmpPath, "tab2-original", "current-content", "tab-2");
 
     // Undo for tab-1 should find tab1-original (skip tab2's entry)
     const result = await undoEditTool.execute({ path: tmpPath, steps: 1, tabId: "tab-1" });
@@ -537,8 +537,8 @@ describe("edit-stack tab ownership", () => {
     const { writeFileSync, readFileSync, existsSync, unlinkSync } = await import("node:fs");
     writeFileSync(tmpPath, "current", "utf-8");
 
-    pushEdit(tmpPath, "oldest", "tab-1");
-    pushEdit(tmpPath, "newest", "tab-2");
+    pushEdit(tmpPath, "oldest", "current", "tab-1");
+    pushEdit(tmpPath, "newest", "current", "tab-2");
 
     // No tabId — should pop newest (tab-2's entry)
     const result = await undoEditTool.execute({ path: tmpPath, steps: 1 });
@@ -1077,13 +1077,13 @@ describe("edit-stack adversarial interleaving", () => {
     writeFileSync(file, "current", "utf-8");
 
     // Interleaved push pattern: A, B, C, A, B, C, A
-    pushEdit(file, "a-v1", "tab-a");
-    pushEdit(file, "b-v1", "tab-b");
-    pushEdit(file, "c-v1", "tab-c");
-    pushEdit(file, "a-v2", "tab-a");
-    pushEdit(file, "b-v2", "tab-b");
-    pushEdit(file, "c-v2", "tab-c");
-    pushEdit(file, "a-v3", "tab-a");
+    pushEdit(file, "a-v1", "current", "tab-a");
+    pushEdit(file, "b-v1", "current", "tab-b");
+    pushEdit(file, "c-v1", "current", "tab-c");
+    pushEdit(file, "a-v2", "current", "tab-a");
+    pushEdit(file, "b-v2", "current", "tab-b");
+    pushEdit(file, "c-v2", "current", "tab-c");
+    pushEdit(file, "a-v3", "current", "tab-a");
 
     // Undo tab-b: should get b-v2 (most recent tab-b entry), skipping a-v3 and c-v2
     const r1 = await undoEditTool.execute({ path: file, steps: 1, tabId: "tab-b" });
@@ -1106,8 +1106,8 @@ describe("edit-stack adversarial interleaving", () => {
   it("popEdit with tabId returns null when only other tabs' entries exist", async () => {
     const file = tmpFile("only-others");
     writeFileSync(file, "current", "utf-8");
-    pushEdit(file, "tab-a-content", "tab-a");
-    pushEdit(file, "tab-b-content", "tab-b");
+    pushEdit(file, "tab-a-content", "current", "tab-a");
+    pushEdit(file, "tab-b-content", "current", "tab-b");
 
     // tab-c has no entries
     const result = await undoEditTool.execute({ path: file, steps: 1, tabId: "tab-c" });
@@ -1122,8 +1122,8 @@ describe("edit-stack adversarial interleaving", () => {
   it("popEdit with tabId matches unowned entries (tabId=undefined)", async () => {
     const file = tmpFile("unowned");
     writeFileSync(file, "current", "utf-8");
-    pushEdit(file, "unowned-content"); // no tabId
-    pushEdit(file, "tab-a-content", "tab-a");
+    pushEdit(file, "unowned-content", "current"); // no tabId
+    pushEdit(file, "tab-a-content", "current", "tab-a");
 
     // tab-a undo: should pop tab-a-content first (most recent matching)
     const r1 = await undoEditTool.execute({ path: file, steps: 1, tabId: "tab-a" });
@@ -1142,11 +1142,11 @@ describe("edit-stack adversarial interleaving", () => {
     writeFileSync(file, "current", "utf-8");
 
     // Push: A, B, A, B, A — 3 entries for A, 2 for B
-    pushEdit(file, "a1", "tab-a");
-    pushEdit(file, "b1", "tab-b");
-    pushEdit(file, "a2", "tab-a");
-    pushEdit(file, "b2", "tab-b");
-    pushEdit(file, "a3", "tab-a");
+    pushEdit(file, "a1", "current", "tab-a");
+    pushEdit(file, "b1", "current", "tab-b");
+    pushEdit(file, "a2", "current", "tab-a");
+    pushEdit(file, "b2", "current", "tab-b");
+    pushEdit(file, "a3", "current", "tab-a");
 
     // Undo 3 steps for tab-a — should restore a3 (the earliest of the 3)
     const result = await undoEditTool.execute({ path: file, steps: 3, tabId: "tab-a" });
@@ -1167,7 +1167,7 @@ describe("edit-stack adversarial interleaving", () => {
     // Push 25 entries (MAX_STACK_SIZE=20) — oldest 5 should be evicted
     for (let i = 0; i < 25; i++) {
       const tabId = i < 10 ? "tab-a" : "tab-b";
-      pushEdit(file, `content-${String(i)}`, tabId);
+      pushEdit(file, `content-${String(i)}`, "current", tabId);
     }
     // After eviction: entries 5-24 remain (20 items)
     // tab-a: entries 5-9 (5 items), tab-b: entries 10-24 (15 items)

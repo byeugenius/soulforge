@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { stat as statAsync } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { getIntelligenceRouter } from "../intelligence/index.js";
@@ -123,9 +123,14 @@ async function autoResolveFile(
     const exact = results.filter((s) => s.name === symbol);
     const matches = exact.length > 0 ? exact : results.slice(0, 1);
 
-    const validFiles = matches
-      .map((m) => resolve(m.location.file))
-      .filter((f) => existsSync(f) && statSync(f).isFile());
+    const validFiles: string[] = [];
+    for (const m of matches) {
+      const f = resolve(m.location.file);
+      try {
+        const st = await statAsync(f);
+        if (st.isFile()) validFiles.push(f);
+      } catch {}
+    }
 
     const unique = [...new Set(validFiles)];
     if (unique.length === 1) return { resolved: unique[0] as string };

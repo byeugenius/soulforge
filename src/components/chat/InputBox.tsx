@@ -454,6 +454,11 @@ export const InputBox = memo(function InputBox({
         return;
       }
       if (evt.ctrl || evt.meta || evt.name === "tab") return;
+      if (evt.name === "space") {
+        setFuzzyQuery((prev) => `${prev} `);
+        evt.preventDefault();
+        return;
+      }
       if (evt.name && evt.name.length === 1) {
         setFuzzyQuery((prev) => prev + evt.name);
         evt.preventDefault();

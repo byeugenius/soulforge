@@ -78,7 +78,7 @@ function formatToolArgs(toolCall: { toolName: string; input?: unknown }): string
 }
 
 export function buildStepCallbacks(parentToolCallId: string, agentId?: string, modelId?: string) {
-  const acc = { toolUses: 0, stepCount: 0, input: 0, output: 0, cacheRead: 0 };
+  const acc = { toolUses: 0, stepCount: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   // Accumulate steps so they survive NoObjectGeneratedError (AI SDK doesn't attach steps to that error)
   // biome-ignore lint/suspicious/noExplicitAny: step shape varies across SDK versions
   const steps: any[] = [];
@@ -124,7 +124,11 @@ export function buildStepCallbacks(parentToolCallId: string, agentId?: string, m
       usage?: {
         inputTokens?: number;
         outputTokens?: number;
-        inputTokenDetails?: { cacheReadTokens?: number };
+        inputTokenDetails?: {
+          cacheReadTokens?: number;
+          cacheWriteTokens?: number;
+          noCacheTokens?: number;
+        };
       };
     }) => {
       steps.push(step);
@@ -133,6 +137,7 @@ export function buildStepCallbacks(parentToolCallId: string, agentId?: string, m
       acc.input += step.usage?.inputTokens ?? 0;
       acc.output += step.usage?.outputTokens ?? 0;
       acc.cacheRead += step.usage?.inputTokenDetails?.cacheReadTokens ?? 0;
+      acc.cacheWrite += step.usage?.inputTokenDetails?.cacheWriteTokens ?? 0;
       if (agentId) {
         emitAgentStats({
           parentToolCallId,
@@ -142,6 +147,7 @@ export function buildStepCallbacks(parentToolCallId: string, agentId?: string, m
           stepCount: acc.stepCount,
           tokenUsage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
           cacheHits: acc.cacheRead,
+          cacheWrite: acc.cacheWrite,
         });
       }
     },

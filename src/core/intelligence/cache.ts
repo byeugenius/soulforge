@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 
 interface CacheEntry {
   content: string;
@@ -17,10 +17,10 @@ export class FileCache {
     this.maxSize = maxSize;
   }
 
-  get(filePath: string): string | null {
+  async get(filePath: string): Promise<string | null> {
     try {
-      const stat = statSync(filePath);
-      const mtime = stat.mtimeMs;
+      const s = await stat(filePath);
+      const mtime = s.mtimeMs;
       const cached = this.entries.get(filePath);
 
       if (cached && cached.mtime === mtime) {
@@ -29,7 +29,7 @@ export class FileCache {
         return cached.content;
       }
 
-      const content = readFileSync(filePath, "utf-8");
+      const content = await readFile(filePath, "utf-8");
       this.set(filePath, content, mtime);
       return content;
     } catch {

@@ -27,10 +27,10 @@ export interface BrandSegment {
 export function getBrandSegments(): BrandSegment[] {
   const t = getThemeTokens();
   return [
-    { text: "by ", color: t.textMuted },
+    { text: "by ", color: t.textSecondary },
     { text: "Proxy", color: t.brand },
     { text: "Soul", color: t.brandSecondary },
-    { text: ".com", color: t.textMuted },
+    { text: ".com", color: t.textSecondary },
   ];
 }
 

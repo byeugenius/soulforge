@@ -1,0 +1,34 @@
+---
+title: "Floating Terminals"
+description: "Spawn, resize, and manage terminal sessions alongside the chat."
+icon: "terminal"
+---
+
+## Overview
+
+SoulForge includes floating terminal panels powered by Ghostty's terminal emulator. Run commands, watch logs, or interact with REPLs — all without leaving the chat.
+
+## Usage
+
+| Command | Action |
+|---------|--------|
+| `/terminals` | Open the terminal manager |
+| `Ctrl+T` | New tab (or terminal depending on context) |
+
+Terminals run as independent sessions alongside the chat. They persist across compaction and can be resized.
+
+## How it works
+
+The floating terminal uses [Ghostty](https://ghostty.org/)'s Zig-based terminal emulator compiled to a native library. This gives you:
+
+- Full ANSI/VT100 support
+- GPU-accelerated rendering (via the native lib)
+- Mouse support
+- 256-color and true-color
+- Proper Unicode and emoji rendering
+
+The terminal state is managed independently from the chat — agent tool calls (`shell`) don't interfere with your terminal sessions.
+
+## Platform notes
+
+The Ghostty native library (`.dylib` on macOS, `.so` on Linux) is included in the standalone bundle. If it's missing, SoulForge starts normally — floating terminals are simply unavailable.

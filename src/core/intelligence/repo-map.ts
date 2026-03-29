@@ -82,6 +82,7 @@ export interface SymbolForSummary {
 
 type SummaryGenerator = (
   batch: SymbolForSummary[],
+  batchTotal?: number,
 ) => Promise<Array<{ name: string; summary: string }>>;
 
 export class RepoMap {
@@ -99,7 +100,7 @@ export class RepoMap {
   private hasGit: boolean | null = null;
 
   private entryPointsCache: string[] | null = null;
-  private semanticMode: "off" | "ast" | "synthetic" | "llm" | "full" | "on" = "off";
+  private semanticMode: "off" | "ast" | "synthetic" | "llm" | "full" | "on" = "synthetic";
   private summaryGenerator: SummaryGenerator | null = null;
   private regenTimer: ReturnType<typeof setTimeout> | null = null;
   maxFiles: number = MAX_INDEXED_FILES;
@@ -421,7 +422,12 @@ export class RepoMap {
 
   private cleanOrphanedSummaries(): void {
     try {
-      this.db.run("DELETE FROM semantic_summaries WHERE symbol_id NOT IN (SELECT id FROM symbols)");
+      // Only delete orphaned non-LLM summaries (ast/synthetic are cheap to regenerate).
+      // LLM summaries with file_path+symbol_name survive symbol ID changes across rescans
+      // and get matched by (file_path, symbol_name) in generateSemanticSummaries.
+      this.db.run(
+        "DELETE FROM semantic_summaries WHERE symbol_id NOT IN (SELECT id FROM symbols) AND (source != 'llm' OR file_path = '')",
+      );
     } catch {}
   }
 
@@ -2245,7 +2251,7 @@ export class RepoMap {
     );
   }
 
-  async generateSemanticSummaries(maxSymbols = 300): Promise<number> {
+  async generateSemanticSummaries(maxSymbols = 500): Promise<number> {
     if (!this.summaryGenerator || !this.ready) return 0;
 
     // Smart targeting: skip self-documenting symbols (types, interfaces, enums, type aliases).
@@ -2278,14 +2284,19 @@ export class RepoMap {
       )
       .all(maxSymbols);
 
-    // Filter to symbols that need (re)generation
-    const existing = new Map<number, number>();
+    // Filter to symbols that need (re)generation.
+    // Key by (file_path, symbol_name) so summaries survive symbol ID changes across rescans.
+    const existingById = new Map<number, number>();
+    const existingByKey = new Map<string, number>();
     for (const row of this.db
-      .query<{ symbol_id: number; file_mtime: number }, []>(
-        "SELECT symbol_id, file_mtime FROM semantic_summaries WHERE source = 'llm'",
+      .query<{ symbol_id: number; file_mtime: number; file_path: string; symbol_name: string }, []>(
+        "SELECT symbol_id, file_mtime, file_path, symbol_name FROM semantic_summaries WHERE source = 'llm'",
       )
       .all()) {
-      existing.set(row.symbol_id, row.file_mtime);
+      existingById.set(row.symbol_id, row.file_mtime);
+      if (row.file_path && row.symbol_name) {
+        existingByKey.set(`${row.file_path}\0${row.symbol_name}`, row.file_mtime);
+      }
     }
 
     const needed: Array<{
@@ -2301,7 +2312,8 @@ export class RepoMap {
     }> = [];
 
     for (const sym of topSymbols) {
-      const cachedMtime = existing.get(sym.sym_id);
+      const cachedMtime =
+        existingById.get(sym.sym_id) ?? existingByKey.get(`${sym.file_path}\0${sym.name}`);
       if (cachedMtime === sym.file_mtime) continue;
 
       const absPath = join(this.cwd, sym.file_path);
@@ -2355,37 +2367,53 @@ export class RepoMap {
 
     if (needed.length === 0) return 0;
 
-    const batch: SymbolForSummary[] = needed.map((s) => ({
-      name: s.name,
-      kind: s.kind,
-      signature: s.signature,
-      code: s.code,
-      filePath: s.filePath,
-      dependents: s.dependents,
-      lineSpan: s.lineSpan,
-    }));
-
-    const results = await this.summaryGenerator(batch);
-
-    const summaryMap = new Map<string, string>();
-    for (const r of results) summaryMap.set(r.name, r.summary);
-
     const upsert = this.db.prepare(
       `INSERT OR REPLACE INTO semantic_summaries (symbol_id, source, summary, file_mtime, file_path, symbol_name)
        VALUES (?, 'llm', ?, ?, ?, ?)`,
     );
     const symExists = this.db.prepare("SELECT 1 FROM symbols WHERE id = ?");
     let count = 0;
-    const tx = this.db.transaction(() => {
-      for (const sym of needed) {
-        const summary = summaryMap.get(sym.name);
-        if (summary && symExists.get(sym.symId)) {
-          upsert.run(sym.symId, summary, sym.fileMtime, sym.filePath, sym.name);
-          count++;
-        }
+
+    const SAVE_CHUNK = 10;
+    for (let ci = 0; ci < needed.length; ci += SAVE_CHUNK) {
+      const chunk = needed.slice(ci, ci + SAVE_CHUNK);
+      const batch: SymbolForSummary[] = chunk.map((s) => ({
+        name: s.name,
+        kind: s.kind,
+        signature: s.signature,
+        code: s.code,
+        filePath: s.filePath,
+        dependents: s.dependents,
+        lineSpan: s.lineSpan,
+      }));
+
+      const results = await this.summaryGenerator(batch, needed.length);
+      if (results.length === 0) break;
+
+      const summaryMap = new Map<string, string>();
+      const summaryMapLower = new Map<string, string>();
+      for (const r of results) {
+        summaryMap.set(r.name, r.summary);
+        summaryMapLower.set(r.name.toLowerCase(), r.summary);
       }
-    });
-    tx();
+
+      const tx = this.db.transaction(() => {
+        for (const sym of chunk) {
+          const summary = summaryMap.get(sym.name) ?? summaryMapLower.get(sym.name.toLowerCase());
+          if (summary && symExists.get(sym.symId)) {
+            upsert.run(sym.symId, summary, sym.fileMtime, sym.filePath, sym.name);
+            count++;
+          }
+        }
+      });
+      tx();
+    }
+
+    if (count > 0) {
+      try {
+        this.db.run("PRAGMA wal_checkpoint(PASSIVE)");
+      } catch {}
+    }
 
     return count;
   }
@@ -2426,7 +2454,7 @@ export class RepoMap {
     const placeholders = symbolIds.map(() => "?").join(",");
     const result = new Map<number, string>();
 
-    if (this.semanticMode === "on") {
+    if (this.semanticMode === "on" || this.semanticMode === "full") {
       // Merged: load both, AST wins on conflict (it's from actual documentation)
       const rows = this.db
         .query<{ symbol_id: number; summary: string; source: string }, number[]>(
@@ -2706,6 +2734,13 @@ export class RepoMap {
     }
     const semanticMap = this.getSemanticSummaries(allSymbolIds);
 
+    // Caller counts: collect all symbol names for badge lookup
+    const allSymbolNames: string[] = [];
+    for (const syms of symbolsByFile.values()) {
+      for (const s of syms) allSymbolNames.push(s.name);
+    }
+    const callerCounts = this.getCallerCounts(allSymbolNames);
+
     // [NEW] marks files modified within the last 48h — recency signal, not session memory
     const recentCutoff = Date.now() - 48 * 60 * 60 * 1000;
 
@@ -2817,7 +2852,9 @@ export class RepoMap {
             display = rawSig ?? `${kindTag(sym.kind as SymbolKind)}${sym.name}`;
           }
 
-          symbolLines += `  ${exported}${display} :${String(sym.line)}\n`;
+          const callers = callerCounts.get(sym.name);
+          const callerBadge = callers && callers >= 10 ? ` [${String(callers)}↑]` : "";
+          symbolLines += `  ${exported}${display} :${String(sym.line)}${callerBadge}\n`;
         }
         if (overflow > 0) {
           symbolLines += `  ... +${String(overflow)} more exports\n`;
@@ -3183,6 +3220,70 @@ export class RepoMap {
         name: row.name,
         path: absPath,
         kind: row.kind,
+        isExported: row.is_exported === 1,
+        pagerank: row.pagerank,
+      });
+    }
+    return results;
+  }
+
+  /** FTS prefix/token search on symbol names (e.g. "build*", "detect*") */
+  searchSymbolsFts(
+    query: string,
+    limit = 20,
+  ): Array<{
+    name: string;
+    path: string;
+    kind: string;
+    line: number;
+    isExported: boolean;
+    pagerank: number;
+  }> {
+    if (!this.ready) return [];
+    // Sanitize: strip FTS special chars except * for prefix
+    const safe = query.replace(/[^a-zA-Z0-9_*]/g, "");
+    if (!safe || safe === "*") return [];
+    const rows = this.db
+      .query<
+        {
+          name: string;
+          path: string;
+          kind: string;
+          line: number;
+          is_exported: number;
+          pagerank: number;
+        },
+        [string, number]
+      >(
+        `SELECT s.name, f.path, s.kind, s.line, s.is_exported, f.pagerank
+           FROM symbols_fts fts
+           JOIN symbols s ON s.rowid = fts.rowid
+           JOIN files f ON f.id = s.file_id
+           WHERE symbols_fts MATCH ?
+             AND s.kind IN ('interface','type','class','function','enum','variable','method')
+           ORDER BY s.is_exported DESC, f.pagerank DESC
+           LIMIT ?`,
+      )
+      .all(safe, limit);
+
+    const seen = new Set<string>();
+    const results: Array<{
+      name: string;
+      path: string;
+      kind: string;
+      line: number;
+      isExported: boolean;
+      pagerank: number;
+    }> = [];
+    for (const row of rows) {
+      const key = `${row.name}@${row.path}:${row.line}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        name: row.name,
+        path: row.path,
+        kind: row.kind,
+        line: row.line,
         isExported: row.is_exported === 1,
         pagerank: row.pagerank,
       });
@@ -3943,6 +4044,114 @@ export class RepoMap {
     }));
   }
 
+  /** Get class/object methods via qualified_name */
+  getClassMembers(className: string): Array<{
+    name: string;
+    kind: string;
+    line: number;
+    endLine: number;
+    signature: string | null;
+    isExported: boolean;
+  }> {
+    const rows = this.db
+      .query<
+        {
+          name: string;
+          kind: string;
+          line: number;
+          end_line: number;
+          signature: string | null;
+          is_exported: number;
+          qualified_name: string;
+        },
+        [string]
+      >(
+        `SELECT s.name, s.kind, s.line, s.end_line, s.signature, s.is_exported, s.qualified_name
+           FROM symbols s
+           JOIN files f ON s.file_id = f.id
+           WHERE s.qualified_name LIKE ? || '.%'
+           ORDER BY s.line`,
+      )
+      .all(className);
+    return rows.map((r) => ({
+      name: r.qualified_name?.split(".").pop() ?? r.name,
+      kind: r.kind,
+      line: r.line,
+      endLine: r.end_line,
+      signature: r.signature,
+      isExported: r.is_exported === 1,
+    }));
+  }
+
+  /** Get semantic summaries for a file or symbol */
+  getSymbolSummaries(
+    file?: string,
+    name?: string,
+  ): Array<{
+    symbolName: string;
+    filePath: string;
+    summary: string;
+    source: string;
+  }> {
+    if (file) {
+      return this.db
+        .query<
+          { symbol_name: string; file_path: string; summary: string; source: string },
+          [string]
+        >(
+          `SELECT symbol_name, file_path, summary, source
+             FROM semantic_summaries
+             WHERE file_path = ?
+             ORDER BY source ASC, symbol_name`,
+        )
+        .all(file)
+        .map((r) => ({
+          symbolName: r.symbol_name,
+          filePath: r.file_path,
+          summary: r.summary,
+          source: r.source,
+        }));
+    }
+    if (name) {
+      return this.db
+        .query<
+          { symbol_name: string; file_path: string; summary: string; source: string },
+          [string]
+        >(
+          `SELECT symbol_name, file_path, summary, source
+             FROM semantic_summaries
+             WHERE symbol_name = ?
+             ORDER BY source ASC`,
+        )
+        .all(name)
+        .map((r) => ({
+          symbolName: r.symbol_name,
+          filePath: r.file_path,
+          summary: r.summary,
+          source: r.source,
+        }));
+    }
+    return [];
+  }
+
+  /** Bulk-query caller counts for symbol names (for render badges) */
+  getCallerCounts(symbolNames: string[]): Map<string, number> {
+    if (symbolNames.length === 0) return new Map();
+    const placeholders = symbolNames.map(() => "?").join(",");
+    const rows = this.db
+      .query<{ callee_name: string; cnt: number }, string[]>(
+        `SELECT callee_name, COUNT(*) as cnt
+           FROM calls
+           WHERE callee_name IN (${placeholders})
+           GROUP BY callee_name
+           HAVING cnt >= 5`,
+      )
+      .all(...symbolNames);
+    const result = new Map<string, number>();
+    for (const r of rows) result.set(r.callee_name, r.cnt);
+    return result;
+  }
+
   getStats(): { files: number; symbols: number; edges: number; summaries: number; calls: number } {
     const files = this.db.query<{ c: number }, []>("SELECT COUNT(*) as c FROM files").get()?.c ?? 0;
     const symbols =
@@ -3976,6 +4185,7 @@ export class RepoMap {
     ast: number;
     llm: number;
     synthetic: number;
+    lsp: number;
     total: number;
     eligible: number;
   } {
@@ -3993,6 +4203,12 @@ export class RepoMap {
           "SELECT COUNT(*) as c FROM semantic_summaries WHERE source='synthetic'",
         )
         .get()?.c ?? 0;
+    const lsp =
+      this.db
+        .query<{ c: number }, []>(
+          "SELECT COUNT(*) as c FROM symbols WHERE qualified_name IS NOT NULL",
+        )
+        .get()?.c ?? 0;
     const total =
       this.db
         .query<{ c: number }, []>("SELECT COUNT(DISTINCT symbol_id) as c FROM semantic_summaries")
@@ -4003,7 +4219,7 @@ export class RepoMap {
           "SELECT COUNT(*) as c FROM symbols WHERE is_exported=1 AND kind IN ('function','method','class','interface','type')",
         )
         .get()?.c ?? 0;
-    return { ast, llm, synthetic, total, eligible };
+    return { ast, llm, synthetic, lsp, total, eligible };
   }
 
   /**
