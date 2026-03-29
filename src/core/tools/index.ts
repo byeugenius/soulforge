@@ -287,7 +287,7 @@ export function buildTools(
   const effectiveCwd = cwd ?? process.cwd();
   const mm = opts?.memoryManager ?? new MemoryManager(effectiveCwd);
   const memoryTool = createMemoryTool(mm);
-  const skillsEnabled = opts?.agentSkills !== false;
+  const skillsEnabled = opts?.agentSkills === true;
   const skillsTool =
     skillsEnabled && opts?.contextManager
       ? createSkillsTool(opts.contextManager, opts?.onApproveDestructive)
@@ -390,20 +390,6 @@ export function buildTools(
         const isReread = sequentialReadFiles.has(normPath);
         sequentialReadFiles.add(normPath);
         if (result.success) {
-          // Read nudges disabled — they cause the agent to respond conversationally
-          // ("You're right, let me stop reading") and interrupt legitimate investigation.
-          // The system prompt's "max 3 exploration rounds" + step-utils consecutive-read
-          // detection handle this at the agent loop level instead.
-          //
-          // if (isReread && (readCountPerFile.get(normPath) ?? 0) >= REREAD_NUDGE) {
-          //   return { ...result, output: result.output + NUDGE_REREAD };
-          // }
-          // if (sequentialReads >= READ_NUDGE_HARD) {
-          //   return { ...result, output: result.output + NUDGE_HARD };
-          // }
-          // if (sequentialReads >= READ_NUDGE_SOFT) {
-          //   return { ...result, output: result.output + NUDGE_SOFT };
-          // }
           void isReread;
         }
         return result;

@@ -25,15 +25,6 @@ export const PROVIDERS = [
   { name: "CLIProxyAPI", desc: "Managed access — no keys needed", highlight: false },
 ] as const;
 
-export const ENV_VARS = [
-  { key: "LLM_GATEWAY_API_KEY", provider: "LLM Gateway" },
-  { key: "ANTHROPIC_API_KEY", provider: "Anthropic / Claude" },
-  { key: "OPENAI_API_KEY", provider: "OpenAI / GPT" },
-  { key: "GOOGLE_GENERATIVE_AI_API_KEY", provider: "Google / Gemini" },
-  { key: "OPENROUTER_API_KEY", provider: "OpenRouter" },
-  { key: "XAI_API_KEY", provider: "xAI / Grok" },
-] as const;
-
 /* ── Feature & shortcut data ──────────────────────────────────── */
 
 export const FEATURES = [

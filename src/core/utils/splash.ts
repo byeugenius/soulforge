@@ -33,15 +33,3 @@ export function getBrandSegments(): BrandSegment[] {
     { text: ".com", color: t.textSecondary },
   ];
 }
-
-/** @deprecated Use getBrandSegments() for theme support */
-export const BRAND_SEGMENTS = new Proxy([] as BrandSegment[], {
-  get(_, prop) {
-    const segments = getBrandSegments();
-    if (prop === "length") return segments.length;
-    if (prop === Symbol.iterator) return segments[Symbol.iterator].bind(segments);
-    const idx = typeof prop === "string" ? Number(prop) : Number.NaN;
-    if (!Number.isNaN(idx)) return segments[idx];
-    return (segments as never)[prop as never];
-  },
-});

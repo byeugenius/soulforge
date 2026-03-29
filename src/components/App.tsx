@@ -397,6 +397,15 @@ export function App({
   const modalToolsPopup = useUIStore((s) => s.modals.toolsPopup);
   const modalFirstRunWizard = useUIStore((s) => s.modals.firstRunWizard);
   const toolsState = useToolsStore();
+
+  // Init tools store from config and persist changes
+  useEffect(() => {
+    toolsState.initFromConfig(effectiveConfig.disabledTools);
+  }, [effectiveConfig.disabledTools, toolsState.initFromConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    saveGlobalConfig({ disabledTools: [...toolsState.disabledTools] });
+  }, [toolsState.disabledTools]);
   const statusDashboardTab = useUIStore((s) => s.statusDashboardTab);
   const modalRepoMapStatus = useUIStore((s) => s.modals.repoMapStatus);
   const isModalOpen = useUIStore(selectIsAnyModalOpen);
@@ -1132,11 +1141,12 @@ export function App({
       <SkillSearch
         visible={modalSkillSearch}
         contextManager={tabMgr.getActiveChat()?.contextManager ?? contextManager}
-        agentSkillsEnabled={effectiveConfig.agentFeatures?.agentSkills !== false}
+        agentSkillsEnabled={!toolsState.disabledTools.has("skills")}
         onToggleAgentSkills={() => {
-          const current = effectiveConfig.agentFeatures?.agentSkills !== false;
-          saveToScope({ agentFeatures: { agentSkills: !current } }, modelScope);
-          addSystemMessage(`Agent skills ${!current ? "enabled" : "disabled"}`);
+          toolsState.toggleTool("skills");
+          addSystemMessage(
+            `Agent skills ${toolsState.disabledTools.has("skills") ? "enabled" : "disabled"}`,
+          );
         }}
         onClose={getCloser("skillSearch")}
         onSystemMessage={addSystemMessage}
@@ -1173,9 +1183,7 @@ export function App({
       <ToolsPopup
         visible={modalToolsPopup}
         disabledTools={toolsState.disabledTools}
-        agentManaged={toolsState.agentManaged}
         onToggleTool={toolsState.toggleTool}
-        onToggleAgentManaged={toolsState.toggleAgentManaged}
         onClose={getCloser("toolsPopup")}
       />
 

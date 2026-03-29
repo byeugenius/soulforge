@@ -9,7 +9,7 @@ import type { AgentFeatures } from "../../types/index.js";
 import { getWorkspaceCoordinator } from "../coordination/WorkspaceCoordinator.js";
 import { getModelContextWindow } from "../llm/models.js";
 import { isForbidden } from "../security/forbidden.js";
-// detectModelFamily removed — subagent pruning is now always disabled
+
 import { getActiveTaskTab } from "../tools/task-list.js";
 import type { IntelligenceClient } from "../workers/intelligence-client.js";
 import { AgentBus, type AgentTask, normalizePath, type SharedCache } from "./agent-bus.js";

@@ -27,7 +27,10 @@ interface MultiEditArgs {
  */
 export const multiEditTool = {
   name: "multi_edit",
-  description: "Apply multiple edits to a single file atomically. All-or-nothing validation.",
+  description:
+    "Apply multiple edits to a single file atomically. All-or-nothing validation. " +
+    "Each edit's oldString and lineStart/lineEnd reference the ORIGINAL file — the tool handles offset tracking internally. " +
+    "Provide lineStart and lineEnd (1-indexed) for reliable edits.",
   execute: async (args: MultiEditArgs): Promise<ToolResult> => {
     try {
       const filePath = resolve(args.path);
@@ -62,6 +65,7 @@ export const multiEditTool = {
       // lineOffset tracks cumulative line count changes from prior edits so that
       // lineStart values (which reference the ORIGINAL file) stay accurate.
       let lineOffset = 0;
+      const warnings: string[] = [];
 
       for (let i = 0; i < args.edits.length; i++) {
         const edit = args.edits[i];
@@ -111,6 +115,9 @@ export const multiEditTool = {
 
             // oldString doesn't match range — apply by line numbers anyway
             // (line numbers are authoritative, oldString may be stale)
+            warnings.push(
+              `Edit ${String(i + 1)}: oldString did not match lines ${String(edit.lineStart)}-${String(edit.lineEnd ?? (edit.lineStart ?? 0) + oldLineCount - 1)} — applied by line numbers`,
+            );
             applyLineReplace(start, end);
             lineOffset += newLineCount - oldLineCount;
             continue;
@@ -207,6 +214,7 @@ export const multiEditTool = {
       }
 
       let output = `Applied ${String(args.edits.length)} edits to ${args.path}`;
+      if (warnings.length > 0) output += `\n⚠ ${warnings.join("\n⚠ ")}`;
       if (deltas.length > 0) output += ` (${deltas.join(", ")})`;
 
       // Post-edit diagnostics with timeout (matching edit_file behavior)

@@ -94,8 +94,6 @@ export const CATEGORIES = [
   "System",
 ] as const;
 
-export type CommandCategory = (typeof CATEGORIES)[number];
-
 const COMMAND_DEFS: CommandDef[] = [
   {
     cmd: "/agent-features",

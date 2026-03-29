@@ -358,7 +358,6 @@ function handleAgentFeatures(_input: string, ctx: CommandContext): void {
     tierRouting: "auto-route trivial tasks to cheaper models",
     dispatchCache: "cache file reads across dispatch boundaries",
     targetFileValidation: "require file paths on dispatch tasks",
-    agentSkills: "allow agent to search, install, and load skills from skills.sh",
   };
   const featureLabel: Record<string, string> = {
     desloppify: "De-sloppify",
@@ -366,13 +365,16 @@ function handleAgentFeatures(_input: string, ctx: CommandContext): void {
     tierRouting: "Tier Routing",
     dispatchCache: "Dispatch Cache",
     targetFileValidation: "Target File Validation",
-    agentSkills: "Agent Skills",
   };
+  // Features that default to off when not explicitly set in config
+  const defaultOff = new Set(["desloppify", "verifyEdits"]);
+  const isOn = (key: string, state: Record<string, unknown>) =>
+    defaultOff.has(key) ? state[key] === true : state[key] !== false;
   const localState = { ...ctx.agentFeatures };
   const buildOptions = () =>
     Object.entries(featureLabel).map(([key, label]) => ({
       value: key,
-      label: `${label}: ${(localState as Record<string, unknown>)[key] !== false ? "on" : "off"}`,
+      label: `${label}: ${isOn(key, localState as Record<string, unknown>) ? "on" : "off"}`,
       description: featureDesc[key] ?? "",
     }));
   ctx.openCommandPicker({
@@ -385,7 +387,7 @@ function handleAgentFeatures(_input: string, ctx: CommandContext): void {
     initialScope: ctx.detectScope("agentFeatures"),
     onSelect: (value, scope) => {
       const key = value as keyof AgentFeatures;
-      const current = (localState as Record<string, unknown>)[key] !== false;
+      const current = isOn(key, localState as Record<string, unknown>);
       (localState as Record<string, unknown>)[key] = !current;
       ctx.saveToScope({ agentFeatures: { [key]: !current } }, scope ?? "project");
       sysMsg(
@@ -396,7 +398,7 @@ function handleAgentFeatures(_input: string, ctx: CommandContext): void {
     },
     onScopeMove: (value, from, to) => {
       const key = value as keyof AgentFeatures;
-      const current = (localState as Record<string, unknown>)[key] !== false;
+      const current = isOn(key, localState as Record<string, unknown>);
       ctx.saveToScope({ agentFeatures: { [key]: current } }, to, from);
     },
   });

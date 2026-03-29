@@ -1,15 +1,15 @@
 import { create } from "zustand";
 
+const DEFAULT_DISABLED = ["request_tools", "release_tools", "skills"];
+
 interface ToolsState {
   disabledTools: Set<string>;
-  agentManaged: boolean;
   toggleTool: (name: string) => void;
-  toggleAgentManaged: () => void;
+  initFromConfig: (disabled?: string[]) => void;
 }
 
 export const useToolsStore = create<ToolsState>()((set) => ({
-  disabledTools: new Set<string>(["request_tools", "release_tools"]),
-  agentManaged: false,
+  disabledTools: new Set<string>(DEFAULT_DISABLED),
   toggleTool: (name) =>
     set((s) => {
       const next = new Set(s.disabledTools);
@@ -17,17 +17,5 @@ export const useToolsStore = create<ToolsState>()((set) => ({
       else next.add(name);
       return { disabledTools: next };
     }),
-  toggleAgentManaged: () =>
-    set((s) => {
-      const next = !s.agentManaged;
-      const tools = new Set(s.disabledTools);
-      if (next) {
-        tools.delete("request_tools");
-        tools.delete("release_tools");
-      } else {
-        tools.add("request_tools");
-        tools.add("release_tools");
-      }
-      return { agentManaged: next, disabledTools: tools };
-    }),
+  initFromConfig: (disabled) => set({ disabledTools: new Set(disabled ?? DEFAULT_DISABLED) }),
 }));

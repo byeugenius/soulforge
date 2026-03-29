@@ -20,19 +20,6 @@ export const CONFIG_SCOPES: ConfigScope[] = ["project", "global"];
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-export const SPINNER_FRAMES_FILLED = [
-  "\u28CB",
-  "\u28D9",
-  "\u28F9",
-  "\u28F8",
-  "\u28FC",
-  "\u28F4",
-  "\u28E6",
-  "\u28E7",
-  "\u28C7",
-  "\u28CF",
-];
-
 let globalFrame = 0;
 let refCount = 0;
 let tickTimer: ReturnType<typeof setInterval> | null = null;

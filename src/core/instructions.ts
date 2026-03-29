@@ -72,13 +72,13 @@ interface LoadedInstruction {
   content: string;
 }
 
-export interface InstructionSection {
+interface InstructionSection {
   heading: string;
   depth: number;
   content: string;
 }
 
-export interface InstructionStructure {
+interface InstructionStructure {
   sections: InstructionSection[];
   codeBlocks: Array<{ lang: string; code: string }>;
   raw: string;
@@ -163,16 +163,4 @@ export function buildInstructionPrompt(instructions: LoadedInstruction[]): strin
     parts.push(`[${inst.file}]\n${inst.content}`);
   }
   return `Project instructions:\n${parts.join("\n\n")}`;
-}
-
-/** Load and parse instruction files into structured format. */
-export function loadStructuredInstructions(
-  cwd: string,
-  enabledIds?: string[],
-): Array<LoadedInstruction & { structure: InstructionStructure }> {
-  const loaded = loadInstructions(cwd, enabledIds);
-  return loaded.map((inst) => ({
-    ...inst,
-    structure: parseInstructionStructure(inst.content),
-  }));
 }

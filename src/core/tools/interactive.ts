@@ -295,9 +295,6 @@ export function buildInteractiveTools(
       },
     }),
 
-    // editor_panel disabled — agent should tell user to open editor (Ctrl+E) instead of forcing it open
-    // editor_panel: tool({ ... }),
-
     ask_user: tool({
       description:
         "Ask the user a question with selectable options. " +

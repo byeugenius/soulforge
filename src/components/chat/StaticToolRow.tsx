@@ -28,26 +28,7 @@ export function getRowColors() {
   };
 }
 
-/** @deprecated Use getRowColors() for themed values */
-export const ROW_COLORS = {
-  get textDone() {
-    return getThemeTokens().textMuted;
-  },
-  get toolNameActive() {
-    return getThemeTokens().brand;
-  },
-  get argsActive() {
-    return getThemeTokens().textSecondary;
-  },
-  get checkDone() {
-    return getThemeTokens().success;
-  },
-  get error() {
-    return getThemeTokens().error;
-  },
-};
-
-export interface StaticToolRowProps {
+interface StaticToolRowProps {
   statusContent: ReactNode;
   isDone: boolean;
   icon: string;

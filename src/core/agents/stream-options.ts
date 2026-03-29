@@ -64,6 +64,14 @@ export async function repairToolCall({
   let input = toolCall.input.trim();
   if (!input) return null;
 
+  // Fix unquoted string values: {"path": src/core/tools} → {"path": "src/core/tools"}
+  // Matches: after a colon (with optional whitespace), a bare value that isn't
+  // a number, boolean, null, string, object, or array — i.e. an unquoted string.
+  input = input.replace(
+    /:\s*(?!\s*["{}[\]0-9-]|\s*(?:true|false|null)\b)([^,}\]\n]+?)\s*([,}\]])/g,
+    (_match, val, delim) => `: "${val.trim()}"${delim}`,
+  );
+
   // Fix trailing commas: {"a": 1,} → {"a": 1}
   input = input.replace(/,\s*([}\]])/g, "$1");
 

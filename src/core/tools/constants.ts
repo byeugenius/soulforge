@@ -8,12 +8,13 @@ export const CORE_TOOL_NAMES: string[] = [
   "glob",
   "shell",
   "project",
-  "request_tools",
-  "release_tools",
 ];
 
 /** Tool catalog — name + one-liner for all tools. Used by /tools popup and request_tools listing. */
 export const TOOL_CATALOG: Record<string, string> = {
+  request_tools: "Let the agent load tools on demand (saves ~300 tokens/tool/call)",
+  release_tools: "Let the agent unload tools it no longer needs",
+  skills: "Let the agent search, install, and load skills from skills.sh",
   read_file: "Read file contents with optional line range or symbol target",
   edit_file: "Edit, create, or write files with line-anchored matching",
   multi_edit: "Apply multiple edits to one or more files atomically",
@@ -22,8 +23,6 @@ export const TOOL_CATALOG: Record<string, string> = {
   glob: "Find files by glob pattern",
   shell: "Execute shell commands",
   project: "Auto-detected lint, format, test, build, typecheck across 23 ecosystems",
-  request_tools: "Load additional tools by name (agent-managed mode)",
-  release_tools: "Deactivate tools you no longer need (agent-managed mode)",
   dispatch: "Spawn parallel subagents for multi-file tasks",
   plan: "Create an implementation plan for large changes (7+ files)",
   update_plan_step: "Update a plan step's status during execution",
@@ -46,7 +45,6 @@ export const TOOL_CATALOG: Record<string, string> = {
   test_scaffold: "Generate test skeleton for a file",
   memory: "Read/write persistent memories across sessions",
   editor: "Open file in embedded Neovim editor",
-  skills: "Search, add, or remove agent skills",
   task_list: "Create and track tasks for the current session",
 };
 
@@ -73,8 +71,6 @@ export const RESTRICTED_TOOL_NAMES: string[] = [
   "ask_user",
   "plan",
   "update_plan_step",
-  "request_tools",
-  "release_tools",
 ];
 
 /** Tools available during plan execution.
@@ -106,8 +102,6 @@ export const PLAN_EXECUTION_TOOL_NAMES: string[] = [
   "soul_find",
   "soul_analyze",
   "soul_impact",
-  "request_tools",
-  "release_tools",
 ];
 
 const SUBAGENT_MAX_LINES = 750;

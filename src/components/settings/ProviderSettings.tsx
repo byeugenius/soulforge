@@ -168,7 +168,7 @@ const DEFAULTS: CurrentValues = {
   budgetTokens: 10000,
   effort: "off",
   speed: "off",
-  sendReasoning: true,
+  sendReasoning: false,
   disableParallelToolUse: false,
   openaiReasoningEffort: "off",
   serviceTier: "off",
@@ -176,8 +176,8 @@ const DEFAULTS: CurrentValues = {
   webSearch: true,
   compact: false,
   clearToolUses: false,
-  clearThinking: false,
-  pruning: "subagents",
+  clearThinking: true,
+  pruning: "none",
 };
 
 function readValuesFromLayer(layer: Partial<AppConfig> | null): Partial<CurrentValues> {

@@ -130,6 +130,42 @@ describe("repairToolCall — string edge cases", () => {
   });
 });
 
+describe("repairToolCall — unquoted string values", () => {
+  it("quotes a single unquoted path value", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"path": src/core/tools}') });
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result!.input)).toEqual({ path: "src/core/tools" });
+  });
+
+  it("quotes unquoted value with other valid fields", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"path": src/core/tools, "depth": 2}') });
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result!.input)).toEqual({ path: "src/core/tools", depth: 2 });
+  });
+
+  it("does not touch already-quoted strings", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"path": "src/core/tools"}') });
+    expect(result).toBeNull(); // already valid
+  });
+
+  it("does not touch numbers, booleans, null", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"a": 1, "b": true, "c": false, "d": null}') });
+    expect(result).toBeNull(); // already valid
+  });
+
+  it("quotes multiple unquoted values", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"from": src/a.ts, "to": src/b.ts}') });
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result!.input)).toEqual({ from: "src/a.ts", to: "src/b.ts" });
+  });
+
+  it("handles unquoted value with spaces before delimiter", async () => {
+    const result = await repairToolCall({ toolCall: mockToolCall('{"path": some/path  }') });
+    expect(result).not.toBeNull();
+    expect(JSON.parse(result!.input)).toEqual({ path: "some/path" });
+  });
+});
+
 describe("repairToolCall — invalid / no-op input", () => {
   it("returns null for empty string", async () => {
     const result = await repairToolCall({ toolCall: mockToolCall("") });

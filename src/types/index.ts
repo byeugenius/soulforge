@@ -285,6 +285,8 @@ export interface AppConfig {
   /** LSP servers to disable (by Mason package name). Scoped: project overrides global. */
   disabledLspServers?: string[];
   agentFeatures?: AgentFeatures;
+  /** Tools disabled by the user. Persisted across sessions. */
+  disabledTools?: string[];
   /** Custom OpenAI-compatible providers. Merged: project overrides global by id. */
   providers?: import("../core/llm/providers/types.js").CustomProviderConfig[];
   /** Instruction files to load into system prompt. Default: ["forge"] (FORGE.md only). */

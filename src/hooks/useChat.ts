@@ -1635,7 +1635,7 @@ export function useChat({
           sharedCacheRef: sharedCacheRef.current,
           agentFeatures: {
             ...effectiveConfig.agentFeatures,
-            onDemandTools: useToolsStore.getState().agentManaged,
+            onDemandTools: !useToolsStore.getState().disabledTools.has("request_tools"),
           },
           planExecution: planExecutionRef.current,
           drainSteering,
@@ -1682,7 +1682,9 @@ export function useChat({
                           sharedCacheRef: sharedCacheRef.current,
                           agentFeatures: {
                             ...effectiveConfig.agentFeatures,
-                            onDemandTools: useToolsStore.getState().agentManaged,
+                            onDemandTools: !useToolsStore
+                              .getState()
+                              .disabledTools.has("request_tools"),
                           },
                           planExecution: planExecutionRef.current,
                           drainSteering,

@@ -163,7 +163,7 @@ function buildForgePrepareStep(
       const combined = drainSteering();
       if (combined) {
         tailParts.push(
-          `IMPORTANT — the user just sent this while you were working. Prioritize this:\n\n${combined}`,
+          `<steering>\nThe user just sent a new message while you were working:\n\n${combined}\n\nFinish any in-progress tool call, then switch entirely to this message in your next response.\n</steering>`,
         );
       }
     }
@@ -371,13 +371,13 @@ export function createForgeAgent({
   if (modelId) contextManager.setActiveModel(modelId);
   const canUseCodeExecution = codeExecution && isAnthropicNative(modelId);
 
-  const onDemandEnabled = agentFeatures?.onDemandTools !== false && !isRestricted && !planExecution;
+  const onDemandEnabled = !disabledTools?.has("request_tools") && !isRestricted && !planExecution;
   const activeDeferredTools = onDemandEnabled ? new Set<string>() : undefined;
 
   const directTools = buildTools(undefined, editorIntegration, onApproveWebSearch, {
     codeExecution: canUseCodeExecution,
     contextManager,
-    agentSkills: agentFeatures?.agentSkills,
+    agentSkills: !disabledTools?.has("skills"),
     webSearchModel,
     repoMap,
     onApproveFetchPage,
