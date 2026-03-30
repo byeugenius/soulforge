@@ -27,6 +27,7 @@ import { getMissingRequired } from "../core/setup/prerequisites.js";
 import { suspendAndRun } from "../core/terminal/suspend.js";
 import { useTheme, useThemeStore } from "../core/theme/index.js";
 import { garble, WORDMARK as SHUTDOWN_WORDMARK } from "../core/utils/splash.js";
+import { isDismissed } from "../core/version.js";
 import type { ChatInstance, WorkspaceSnapshot } from "../hooks/useChat.js";
 import { useConfigSync } from "../hooks/useConfigSync.js";
 import { useEditorFocus } from "../hooks/useEditorFocus.js";
@@ -37,11 +38,13 @@ import { useGlobalKeyboard } from "../hooks/useGlobalKeyboard.js";
 import { useNeovim } from "../hooks/useNeovim.js";
 import { buildSessionMeta } from "../hooks/useSessionBuilder.js";
 import { useTabs } from "../hooks/useTabs.js";
+import { useVersionCheck } from "../hooks/useVersionCheck.js";
 import { cleanupAndExit, restart, setExitSessionId } from "../index.js";
 import { logBackgroundError } from "../stores/errors.js";
 import { startMemoryPoll } from "../stores/statusbar.js";
 import { useToolsStore } from "../stores/tools.js";
 import { type ModalName, selectIsAnyModalOpen, useUIStore } from "../stores/ui.js";
+import { useVersionStore } from "../stores/version.js";
 import type { AppConfig, ChatMessage, EditorIntegration, TaskRouter } from "../types/index.js";
 import { BrandTag } from "./layout/BrandTag.js";
 import { ContextBar } from "./layout/ContextBar.js";
@@ -63,6 +66,7 @@ import { InfoPopup } from "./modals/InfoPopup.js";
 import { LlmSelector } from "./modals/LlmSelector.js";
 import { SessionPicker } from "./modals/SessionPicker.js";
 import { StatusDashboard } from "./modals/StatusDashboard.js";
+import { UpdateModal } from "./modals/UpdateModal.js";
 import { EditorSettings } from "./settings/EditorSettings.js";
 import { LspInstallSearch } from "./settings/LspInstallSearch.js";
 import { ProviderSettings } from "./settings/ProviderSettings.js";
@@ -397,6 +401,7 @@ export function App({
   const modalStatusDashboard = useUIStore((s) => s.modals.statusDashboard);
   const modalToolsPopup = useUIStore((s) => s.modals.toolsPopup);
   const modalFirstRunWizard = useUIStore((s) => s.modals.firstRunWizard);
+  const modalUpdateModal = useUIStore((s) => s.modals.updateModal);
   const toolsState = useToolsStore();
 
   // Init tools store from config and persist changes
@@ -415,6 +420,27 @@ export function App({
   const closerCache = useRef<Partial<Record<ModalName, () => void>>>({});
   const getCloser = (name: ModalName) =>
     (closerCache.current[name] ??= () => useUIStore.getState().closeModal(name));
+
+  useVersionCheck();
+  const versionCurrent = useVersionStore((s) => s.current);
+  const versionLatest = useVersionStore((s) => s.latest);
+  const versionUpdateAvailable = useVersionStore((s) => s.updateAvailable);
+
+  // Show update modal on first launch when a new version is available
+  const updateModalShown = useRef(false);
+  useEffect(() => {
+    if (!versionUpdateAvailable || !versionLatest || updateModalShown.current) return;
+    if (isDismissed(versionLatest)) return;
+    updateModalShown.current = true;
+    // Small delay so it doesn't fight with wizard/setup modals
+    const timer = setTimeout(() => {
+      const ui = useUIStore.getState();
+      if (!ui.modals.firstRunWizard && !ui.modals.setup) {
+        ui.openModal("updateModal");
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [versionUpdateAvailable, versionLatest]);
 
   useEffect(() => {
     if (getMissingRequired().length > 0) {
@@ -937,10 +963,12 @@ export function App({
         height={1}
         flexDirection="row"
       >
-        <box flexShrink={0}>
+        <box flexShrink={0} flexDirection="row" gap={0}>
           <text fg={t.brand} attributes={TextAttributes.BOLD}>
             {icon("ghost")} SoulForge
           </text>
+          <text fg={t.textFaint}> v{versionCurrent}</text>
+          {versionUpdateAvailable && <text fg={t.success}> ({versionLatest} available)</text>}
         </box>
         <box gap={1} flexShrink={1} flexDirection="row" justifyContent="center" overflow="hidden">
           <text truncate>
@@ -1330,6 +1358,12 @@ export function App({
           useUIStore.getState().closeModal("firstRunWizard");
           saveToScope({ onboardingComplete: true }, "global");
         }}
+      />
+
+      <UpdateModal
+        visible={modalUpdateModal}
+        onClose={getCloser("updateModal")}
+        onRestart={restart}
       />
 
       <SimpleModalLayer

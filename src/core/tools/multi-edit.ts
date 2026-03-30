@@ -57,7 +57,7 @@ export const multiEditTool = {
         return { success: false, output: msg, error: msg };
       }
 
-      const originalContent = await readBufferContent(filePath);
+      const originalContent = await readFile(filePath, "utf-8");
       let content = originalContent;
 
       // Phase 1: Validate and apply edits sequentially against evolving content.

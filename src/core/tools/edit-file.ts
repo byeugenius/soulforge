@@ -303,7 +303,7 @@ export const editFileTool = {
         return { success: false, output: msg, error: msg };
       }
 
-      const content = await readBufferContent(filePath);
+      const content = await readFile(filePath, "utf-8");
       const lines = content.split("\n");
 
       // ═══════════════════════════════════════════════════════════════

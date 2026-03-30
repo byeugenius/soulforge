@@ -291,13 +291,16 @@ brew install soulforge
 </details>
 
 <details>
-<summary><strong>npm / Bun</strong></summary>
+<summary><strong>Bun (global install)</strong></summary>
 
-Requires [Bun](https://bun.sh) >= 1.0 as the runtime.
+Requires [Bun](https://bun.sh) >= 1.2 as the runtime — SoulForge uses Bun-specific APIs (Workers, native modules, PTY).
 
 ```bash
+# Install Bun if you don't have it
+curl -fsSL https://bun.sh/install | bash
+
+# Install SoulForge globally
 bun install -g @proxysoul/soulforge
-# or: npm install -g @proxysoul/soulforge
 
 soulforge   # or: sf
 ```

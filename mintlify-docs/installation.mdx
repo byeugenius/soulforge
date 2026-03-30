@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install SoulForge on macOS or Linux. Prebuilt binary, Homebrew, npm, or source."
+description: "Install SoulForge on macOS or Linux. Prebuilt binary, Homebrew, Bun, or source."
 icon: "download"
 ---
 
@@ -53,23 +53,21 @@ Or use a single [AI Gateway](https://sdk.vercel.ai/docs/ai-sdk-core/provider-man
     brew install soulforge
     ```
   </Tab>
-  <Tab title="npm / pnpm / Bun">
+  <Tab title="Bun (global install)">
+    Requires [Bun](https://bun.sh) >= 1.2 — SoulForge uses Bun-specific APIs (Workers, native modules, PTY).
+
     ```bash
-    # npm
-    npm install -g @proxysoul/soulforge
+    # Install Bun if you don't have it
+    curl -fsSL https://bun.sh/install | bash
 
-    # pnpm
-    pnpm add -g @proxysoul/soulforge
-
-    # bun
+    # Install SoulForge globally
     bun install -g @proxysoul/soulforge
 
-    # Or run without installing
-    npx @proxysoul/soulforge
+    soulforge   # or: sf
     ```
   </Tab>
   <Tab title="Build from source">
-    Requires [Bun](https://bun.sh) >= 1.0.
+    Requires [Bun](https://bun.sh) >= 1.2.
 
     ```bash
     git clone https://github.com/ProxySoul/soulforge.git

@@ -1,4 +1,5 @@
 import { getThemeTokens } from "../core/theme/index.js";
+import { CURRENT_VERSION } from "../core/version.js";
 import type { ForgeMode } from "../types/index.js";
 
 export const RST = "\x1b[0m";
@@ -39,4 +40,4 @@ export const EXIT_ERROR = 1;
 export const EXIT_TIMEOUT = 2;
 export const EXIT_ABORT = 130;
 
-export const VERSION = "1.0.0";
+export const VERSION = CURRENT_VERSION;

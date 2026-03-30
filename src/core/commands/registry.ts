@@ -451,7 +451,7 @@ const COMMAND_DEFS: CommandDef[] = [
   {
     cmd: "/proxy",
     ic: "proxy",
-    desc: "Proxy — status, start, stop, restart, login, upgrade",
+    desc: "Proxy — status, install, start, stop, restart, login, upgrade",
     category: "Models",
     tags: ["account", "login", "logout", "install", "upgrade", "start", "stop", "restart"],
   },
@@ -582,6 +582,13 @@ const COMMAND_DEFS: CommandDef[] = [
     desc: "View & manage storage usage",
     category: "System",
     tags: ["disk", "cleanup"],
+  },
+  {
+    cmd: "/update",
+    ic: "ghost",
+    desc: "Check for SoulForge updates",
+    category: "System",
+    tags: ["upgrade", "version"],
   },
   {
     cmd: "/tab",

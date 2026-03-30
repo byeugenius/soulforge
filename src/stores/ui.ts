@@ -29,7 +29,8 @@ export type ModalName =
   | "statusDashboard"
   | "toolsPopup"
   | "firstRunWizard"
-  | "floatingTerminal";
+  | "floatingTerminal"
+  | "updateModal";
 
 type Modals = Record<ModalName, boolean>;
 
@@ -59,6 +60,7 @@ const INITIAL_MODALS: Modals = {
   toolsPopup: false,
   firstRunWizard: false,
   floatingTerminal: false,
+  updateModal: false,
 };
 
 interface UIState {

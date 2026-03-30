@@ -11,6 +11,10 @@ function handleDiagnose(_input: string, _ctx: CommandContext): void {
   useUIStore.getState().openModal("diagnosePopup");
 }
 
+function handleUpdate(_input: string, _ctx: CommandContext): void {
+  useUIStore.getState().openModal("updateModal");
+}
+
 function handleSetup(_input: string, ctx: CommandContext): void {
   ctx.openSetup();
 }
@@ -51,4 +55,5 @@ export function register(map: Map<string, CommandHandler>): void {
   map.set("/lsp install", handleLspInstall);
   map.set("/lsp-restart", handleLspRestart);
   map.set("/lsp restart", handleLspRestart);
+  map.set("/update", handleUpdate);
 }

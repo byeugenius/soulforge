@@ -16,7 +16,7 @@
  *   bun scripts/build.ts --compile --outfile=path --target=bun-darwin-aarch64
  */
 import { type BunPlugin } from "bun";
-import { copyFileSync, cpSync, renameSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, renameSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 // ── Stub plugin for react-devtools-core (optional peer dep of @opentui/react) ──
@@ -226,6 +226,24 @@ if (isCompile) {
   // @opentui/core in node_modules (set via OTUI_TREE_SITTER_WORKER_PATH in syntax.ts).
   copyFileSync("src/core/editor/init.lua", "dist/init.lua");
   cpSync("node_modules/@opentui/core/assets", "dist/opentui-assets", { recursive: true });
+
+  // Shell wrapper that checks for bun before exec — gives a clear error to
+  // npm/pnpm users who don't have bun installed.
+  await Bun.write(
+    "dist/bin.sh",
+    '#!/bin/sh\n'
+    + 'if ! command -v bun >/dev/null 2>&1; then\n'
+    + '  echo "SoulForge requires Bun (https://bun.sh)" >&2\n'
+    + '  echo "" >&2\n'
+    + '  echo "Install Bun:" >&2\n'
+    + '  echo "  curl -fsSL https://bun.sh/install | bash" >&2\n'
+    + '  echo "" >&2\n'
+    + '  echo "Then run: soulforge" >&2\n'
+    + '  exit 1\n'
+    + 'fi\n'
+    + 'exec bun "$(dirname "$0")/index.js" "$@"\n',
+  );
+  chmodSync("dist/bin.sh", 0o755);
 
   const elapsed = (performance.now() - start).toFixed(0);
   const count = result.outputs.length + workerResult.outputs.length;

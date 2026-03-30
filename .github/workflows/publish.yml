@@ -193,7 +193,42 @@ jobs:
               system "gunzip", libexec/"soulforge.gz" if File.exist?(libexec/"soulforge.gz")
               Dir.glob(libexec/"deps/native/**/*.gz").each { |f| system "gunzip", f }
               system "chmod", "+x", libexec/"soulforge"
-              system "#{libexec}/install.sh", "--quiet"
+
+              sf = Pathname.new(Dir.home)/".soulforge"
+              sf_bin = sf/"bin"
+              %w[bin installs wasm workers native opentui-assets init.lua].each { |d| rm_rf sf/d }
+              sf_bin.mkpath
+
+              cp libexec/"soulforge", sf_bin/"soulforge"
+              chmod 0755, sf_bin/"soulforge"
+              ln_sf sf_bin/"soulforge", sf_bin/"sf"
+
+              %w[rg fd lazygit cli-proxy-api].each do |tool|
+                cp libexec/"deps"/tool, sf_bin/tool
+                chmod 0755, sf_bin/tool
+              end
+
+              nvim_dir = sf/"installs"/"nvim-bundled"
+              (sf/"installs").mkpath
+              cp_r libexec/"deps"/"nvim", nvim_dir
+              ln_sf nvim_dir/"bin"/"nvim", sf_bin/"nvim"
+
+              (sf/"wasm").mkpath
+              (sf/"workers").mkpath
+              cp Dir[libexec/"deps"/"wasm"/"*.wasm"], sf/"wasm"
+              cp Dir[libexec/"deps"/"workers"/"*.js"], sf/"workers"
+              cp_r libexec/"deps"/"native", sf/"native" if (libexec/"deps"/"native").exist?
+              cp_r libexec/"deps"/"opentui-assets", sf/"opentui-assets"
+              cp libexec/"deps"/"init.lua", sf/"init.lua"
+
+              font_dir = OS.mac? ? Pathname.new(Dir.home)/"Library"/"Fonts" : Pathname.new(Dir.home)/".local"/"share"/"fonts"
+              font_dir.mkpath
+              Dir[libexec/"deps"/"nerd-fonts"/"*.ttf"].each { |f| cp f, font_dir rescue nil }
+
+              system "xattr", "-cr", sf if OS.mac?
+
+              config = sf/"config.json"
+              config.write('{"nerdFont":true}') unless config.exist?
             end
 
             def caveats

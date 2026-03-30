@@ -93,13 +93,13 @@ brew tap proxysoul/tap
 brew install soulforge
 ```
 
-### Option 3: npm / Bun
+### Option 3: Bun (global install)
 
-Requires [Bun](https://bun.sh) >= 1.0.
+Requires [Bun](https://bun.sh) >= 1.2 — SoulForge uses Bun-specific APIs.
 
 ```bash
+curl -fsSL https://bun.sh/install | bash   # install Bun if needed
 bun install -g @proxysoul/soulforge
-# or: npm install -g @proxysoul/soulforge
 ```
 
 ### Option 4: Build from source

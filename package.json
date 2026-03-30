@@ -1,6 +1,6 @@
 {
   "name": "@proxysoul/soulforge",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "description": "Graph-powered code intelligence — multi-agent coding with codebase-aware AI",
   "repository": {
     "type": "git",
@@ -15,8 +15,11 @@
   "license": "BUSL-1.1",
   "author": "proxySoul",
   "bin": {
-    "soulforge": "./dist/index.js",
-    "sf": "./dist/index.js"
+    "soulforge": "./dist/bin.sh",
+    "sf": "./dist/bin.sh"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
   },
   "files": [
     "dist",
