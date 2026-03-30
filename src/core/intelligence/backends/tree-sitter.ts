@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const BUNDLED_WASM_DIR = join(homedir(), ".soulforge", "wasm");
 
@@ -1365,16 +1365,18 @@ export class TreeSitterBackend implements IntelligenceBackend {
     if (TreeSitterBackend.IS_BUNDLED) {
       return join(BUNDLED_WASM_DIR, basename);
     }
-    // Dev mode: resolve from node_modules relative to project root
-    const cwd = process.cwd();
-    const devPaths = [
-      join(cwd, "node_modules", "web-tree-sitter", basename),
-      join(cwd, "node_modules", "tree-sitter-wasms", "out", basename),
-    ];
-    for (const p of devPaths) {
-      if (existsSync(p)) return p;
+    // Walk up from the bundle/source dir to find node_modules.
+    // Covers npm global installs (cwd ≠ package root) and dev mode alike.
+    let dir = import.meta.dir;
+    for (let i = 0; i < 5; i++) {
+      for (const sub of ["node_modules/web-tree-sitter", "node_modules/tree-sitter-wasms/out"]) {
+        const p = join(dir, sub, basename);
+        if (existsSync(p)) return p;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
-    // Fallback to bundled install location
     return join(BUNDLED_WASM_DIR, basename);
   }
 

@@ -16,7 +16,7 @@
  *   bun scripts/build.ts --compile --outfile=path --target=bun-darwin-aarch64
  */
 import { type BunPlugin } from "bun";
-import { renameSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, renameSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 // ── Stub plugin for react-devtools-core (optional peer dep of @opentui/react) ──
@@ -218,6 +218,9 @@ if (isCompile) {
     for (const log of workerResult.logs) console.error(log);
     process.exit(1);
   }
+
+  // Copy runtime resources that can't be bundled inline
+  copyFileSync("src/core/editor/init.lua", "dist/init.lua");
 
   const elapsed = (performance.now() - start).toFixed(0);
   const count = result.outputs.length + workerResult.outputs.length;
