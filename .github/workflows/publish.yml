@@ -194,41 +194,47 @@ jobs:
               Dir.glob(libexec/"deps/native/**/*.gz").each { |f| system "gunzip", f }
               system "chmod", "+x", libexec/"soulforge"
 
-              sf = Pathname.new(Dir.home)/".soulforge"
-              sf_bin = sf/"bin"
-              %w[bin installs wasm workers native opentui-assets init.lua].each { |d| rm_rf sf/d }
-              sf_bin.mkpath
+              # Use inline bash instead of Ruby file ops or install.sh —
+              # both fail silently under Homebrew's post_install context.
+              system "bash", "-c", <<~SH
+                set -euo pipefail
+                SF="\$HOME/.soulforge"
+                BIN="\$SF/bin"
+                SRC="#{libexec}"
 
-              cp libexec/"soulforge", sf_bin/"soulforge"
-              chmod 0755, sf_bin/"soulforge"
-              ln_sf sf_bin/"soulforge", sf_bin/"sf"
+                rm -rf "\$SF/bin" "\$SF/installs" "\$SF/wasm" "\$SF/workers" "\$SF/native" "\$SF/opentui-assets" "\$SF/init.lua" 2>/dev/null || true
+                mkdir -p "\$BIN"
 
-              %w[rg fd lazygit cli-proxy-api].each do |tool|
-                cp libexec/"deps"/tool, sf_bin/tool
-                chmod 0755, sf_bin/tool
-              end
+                cp "\$SRC/soulforge" "\$BIN/soulforge"
+                chmod +x "\$BIN/soulforge"
+                ln -sf "\$BIN/soulforge" "\$BIN/sf"
 
-              nvim_dir = sf/"installs"/"nvim-bundled"
-              (sf/"installs").mkpath
-              cp_r libexec/"deps"/"nvim", nvim_dir
-              ln_sf nvim_dir/"bin"/"nvim", sf_bin/"nvim"
+                for tool in rg fd lazygit cli-proxy-api; do
+                  cp "\$SRC/deps/\$tool" "\$BIN/\$tool"
+                  chmod +x "\$BIN/\$tool"
+                done
 
-              (sf/"wasm").mkpath
-              (sf/"workers").mkpath
-              cp Dir[libexec/"deps"/"wasm"/"*.wasm"], sf/"wasm"
-              cp Dir[libexec/"deps"/"workers"/"*.js"], sf/"workers"
-              cp_r libexec/"deps"/"native", sf/"native" if (libexec/"deps"/"native").exist?
-              cp_r libexec/"deps"/"opentui-assets", sf/"opentui-assets"
-              cp libexec/"deps"/"init.lua", sf/"init.lua"
+                mkdir -p "\$SF/installs"
+                cp -r "\$SRC/deps/nvim" "\$SF/installs/nvim-bundled"
+                ln -sf "\$SF/installs/nvim-bundled/bin/nvim" "\$BIN/nvim"
 
-              font_dir = OS.mac? ? Pathname.new(Dir.home)/"Library"/"Fonts" : Pathname.new(Dir.home)/".local"/"share"/"fonts"
-              font_dir.mkpath
-              Dir[libexec/"deps"/"nerd-fonts"/"*.ttf"].each { |f| cp f, font_dir rescue nil }
+                mkdir -p "\$SF/wasm" "\$SF/workers"
+                cp "\$SRC/deps/wasm/"*.wasm "\$SF/wasm/"
+                cp "\$SRC/deps/workers/"*.js "\$SF/workers/"
+                [ -d "\$SRC/deps/native" ] && cp -r "\$SRC/deps/native" "\$SF/native"
+                rm -rf "\$SF/opentui-assets"
+                cp -r "\$SRC/deps/opentui-assets" "\$SF/opentui-assets"
+                cp "\$SRC/deps/init.lua" "\$SF/init.lua"
 
-              system "xattr", "-cr", sf if OS.mac?
+                FONT_DIR="\$HOME/Library/Fonts"
+                [ "$(uname)" != "Darwin" ] && FONT_DIR="\$HOME/.local/share/fonts"
+                mkdir -p "\$FONT_DIR"
+                cp "\$SRC/deps/nerd-fonts/"*.ttf "\$FONT_DIR/" 2>/dev/null || true
 
-              config = sf/"config.json"
-              config.write('{"nerdFont":true}') unless config.exist?
+                [ "$(uname)" = "Darwin" ] && xattr -cr "\$SF" 2>/dev/null || true
+
+                [ ! -f "\$SF/config.json" ] && echo '{"nerdFont":true}' > "\$SF/config.json"
+              SH
             end
 
             def caveats
