@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [1.3.2] — 2026-03-30
+
+### Bug Fixes
+
+- robust resource resolution for brew, npm, and binary installs
 ## [1.2.0] — 2026-03-29
 
 ### Bug Fixes
