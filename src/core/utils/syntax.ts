@@ -165,10 +165,3 @@ export function getTSClient() {
   }
   return _tsClient;
 }
-
-const TREE_SITTER_LANGS = new Set(["ts", "tsx", "js", "jsx", "typescript", "javascript"]);
-
-/** Returns true if tree-sitter has a parser for this language. */
-export function isTreeSitterLanguage(lang: string): boolean {
-  return TREE_SITTER_LANGS.has(lang.toLowerCase());
-}

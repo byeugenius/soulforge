@@ -180,7 +180,7 @@ export interface PerformanceConfig {
   serviceTier?: ServiceTier | "off";
 }
 
-export type PruningTarget = "none" | "main" | "subagents" | "both";
+type PruningTarget = "none" | "main" | "subagents" | "both";
 
 export interface ContextManagementConfig {
   /** Enable server-side context compaction for 200K+ models */

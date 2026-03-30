@@ -1,9 +1,70 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
+import { isBinaryFile } from "isbinaryfile";
 import { createWorkerHandler } from "./rpc.js";
 
+const MAX_READ_LINES = 2000;
+const MAX_LINE_LENGTH = 2000;
+const MAX_READ_SIZE = 250 * 1024;
+
 const handlers: Record<string, (...args: unknown[]) => unknown> = {
+  // ── File Read (offloaded from main thread) ─────────────────────────
+  readFileNumbered: async (filePath: unknown, startLine: unknown, endLine: unknown) => {
+    const fp = filePath as string;
+    let st: ReturnType<typeof statSync>;
+    try {
+      st = statSync(fp);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const msg =
+        code === "EACCES" || code === "EPERM"
+          ? `Permission denied: ${fp}`
+          : `File not found: ${fp}`;
+      return { error: "not_found", message: msg };
+    }
+
+    if (st.isDirectory()) {
+      return { error: "directory", message: `Path is a directory: ${fp}` };
+    }
+
+    if (await isBinaryFile(fp)) {
+      const ext = extname(fp).toLowerCase();
+      const sizeStr =
+        st.size > 1024 * 1024
+          ? `${(st.size / (1024 * 1024)).toFixed(1)}MB`
+          : `${(st.size / 1024).toFixed(0)}KB`;
+      return { error: "binary", ext, sizeStr };
+    }
+
+    if (st.size > MAX_READ_SIZE) {
+      const sizeStr =
+        st.size > 1024 * 1024
+          ? `${(st.size / (1024 * 1024)).toFixed(1)}MB`
+          : `${String(Math.round(st.size / 1024))}KB`;
+      return { error: "too_large", sizeStr };
+    }
+
+    const content = await readFile(fp, "utf-8");
+    const lines = content.split("\n");
+    const start = ((startLine as number | null) ?? 1) - 1;
+    const end = (endLine as number | null) ?? lines.length;
+    let slice = lines.slice(start, end);
+
+    const totalLines = lines.length;
+    const truncated = slice.length > MAX_READ_LINES;
+    if (truncated) slice = slice.slice(0, MAX_READ_LINES);
+
+    const numbered = slice
+      .map((line: string, i: number) => {
+        const l = line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line;
+        return `${String(start + i + 1).padStart(4)}  ${l}`;
+      })
+      .join("\n");
+
+    return { ok: true, numbered, totalLines, truncated, start };
+  },
+
   // ── Shell Output Compression ───────────────────────────────────────
   compressShellOutput: async (raw: unknown) => {
     const { compressShellOutput } = await import("../tools/shell-compress.js");

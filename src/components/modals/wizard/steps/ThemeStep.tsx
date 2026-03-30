@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { saveGlobalConfig } from "../../../../config/index.js";
 import { applyTheme, listThemes, useTheme, useThemeStore } from "../../../../core/theme/index.js";
 import { usePopupScroll } from "../../../../hooks/usePopupScroll.js";
@@ -33,7 +33,7 @@ export function ThemeStep({ iw, setActive }: ThemeStepProps) {
   const { cursor, setCursor, scrollOffset, adjustScroll } = usePopupScroll(maxVisible);
 
   // Initialize cursor to current theme
-  useMemo(() => {
+  useEffect(() => {
     const idx = themes.findIndex((th) => th.id === currentName);
     if (idx >= 0) {
       setCursor(idx);
@@ -41,7 +41,9 @@ export function ThemeStep({ iw, setActive }: ThemeStepProps) {
     }
   }, [currentName, themes, setCursor, adjustScroll]);
 
-  setActive(false);
+  useEffect(() => {
+    setActive(false);
+  }, [setActive]);
 
   useKeyboard((evt) => {
     if (evt.name === "up") {

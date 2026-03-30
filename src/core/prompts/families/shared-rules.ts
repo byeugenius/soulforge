@@ -8,7 +8,7 @@
  * 3. Add the family detection case in provider-options.ts detectModelFamily()
  */
 
-export const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_YEAR = new Date().getFullYear();
 
 export const SHARED_RULES = `
 # Tool usage policy

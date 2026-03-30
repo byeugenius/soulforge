@@ -13,9 +13,9 @@ const SEARCH_NAMES = new Set([
   "soul_impact",
 ]);
 
-export type BatchKind = "edits" | "reads" | "search";
+type BatchKind = "edits" | "reads" | "search";
 
-export type ToolGroup =
+type ToolGroup =
   | { type: "normal"; tc: ToolCall }
   | { type: "meta"; calls: ToolCall[] }
   | { type: "batch"; kind: BatchKind; calls: ToolCall[] };
@@ -27,7 +27,7 @@ function toolKind(name: string): BatchKind | null {
   return null;
 }
 
-export { EDIT_NAMES, META_TOOLS };
+export { EDIT_NAMES };
 
 /**
  * Group consecutive tool calls of the same kind for compact UI display.

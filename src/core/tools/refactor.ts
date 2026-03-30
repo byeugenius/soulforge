@@ -68,14 +68,14 @@ async function applyAndDiagnose(
 
   // Run diagnostic diff on each file
   try {
-    const { formatPostEditResult, postEditDiagnostics } = await import(
+    const { formatPostEditResult, sameFileDiagnostics } = await import(
       "../intelligence/post-edit.js"
     );
     const parts: string[] = [];
     for (const edit of edits) {
       const lang = router.detectLanguage(edit.file);
       const before = beforeMap.get(edit.file) ?? [];
-      const diffResult = await postEditDiagnostics(router, edit.file, lang, before);
+      const diffResult = await sameFileDiagnostics(router, edit.file, lang, before);
       const diffOutput = formatPostEditResult(diffResult);
       if (diffOutput) parts.push(diffOutput);
     }

@@ -315,6 +315,50 @@ export function getDirGroup(filePath: string): string | null {
 }
 
 export async function collectFiles(dir: string, depth = 0): Promise<CollectedFile[]> {
+  // Try git ls-files first — respects .gitignore automatically
+  if (depth === 0) {
+    const gitFiles = await collectFilesViaGit(dir);
+    if (gitFiles) return gitFiles;
+  }
+  return collectFilesWalk(dir, depth);
+}
+
+/**
+ * Use `git ls-files` to collect tracked + untracked (but not ignored) files.
+ * Returns null if not a git repo or git is unavailable.
+ */
+async function collectFilesViaGit(dir: string): Promise<CollectedFile[] | null> {
+  try {
+    const proc = Bun.spawn(["git", "ls-files", "--cached", "--others", "--exclude-standard"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const text = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    if (code !== 0) return null;
+
+    const files: CollectedFile[] = [];
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      const ext = extname(line).toLowerCase();
+      if (!(ext in INDEXABLE_EXTENSIONS)) continue;
+      const fullPath = join(dir, line);
+      if (isForbidden(fullPath)) continue;
+      try {
+        const s = await stat(fullPath);
+        if (s.size < MAX_FILE_SIZE) files.push({ path: fullPath, mtimeMs: s.mtimeMs });
+      } catch {}
+      if (files.length % 50 === 0) await new Promise<void>((r) => setTimeout(r, 0));
+    }
+    return files;
+  } catch {
+    return null;
+  }
+}
+
+/** Fallback: manual directory walk for non-git repos. */
+async function collectFilesWalk(dir: string, depth: number): Promise<CollectedFile[]> {
   if (depth > MAX_DEPTH) return [];
   const files: CollectedFile[] = [];
   try {
@@ -323,7 +367,7 @@ export async function collectFiles(dir: string, depth = 0): Promise<CollectedFil
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!IGNORED_DIRS.has(entry.name)) {
-          files.push(...(await collectFiles(fullPath, depth + 1)));
+          files.push(...(await collectFilesWalk(fullPath, depth + 1)));
         }
       } else if (entry.isFile()) {
         if (isForbidden(fullPath)) continue;

@@ -158,5 +158,3 @@ export function computeFragmentHashes(tokens: string[]): FragmentHash[] {
 
   return results;
 }
-
-export { FRAGMENT_WINDOW, NUM_HASHES };

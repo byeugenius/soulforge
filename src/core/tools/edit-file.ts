@@ -4,6 +4,7 @@ import type { ToolResult } from "../../types";
 import { analyzeFile } from "../analysis/complexity";
 import { markToolWrite, readBufferContent, reloadBuffer } from "../editor/instance";
 import { isForbidden } from "../security/forbidden.js";
+import { autoFormatAfterEdit } from "./auto-format.js";
 import { pushEdit } from "./edit-stack.js";
 import { emitFileEdited } from "./file-events.js";
 
@@ -164,19 +165,23 @@ async function applyEdit(
   let output = `Edited ${filePath}${label}`;
   if (deltas.length > 0) output += ` (${deltas.join(", ")})`;
 
-  // Post-edit diagnostics: await with a tight timeout so we don't freeze the UI
+  // Auto-format after edit (cached command, 5s timeout)
+  const formatted = await autoFormatAfterEdit(filePath);
+  if (formatted) output += " (formatted)";
+
+  // Post-edit diagnostics: same-file only (skip expensive cross-file findImporters)
   try {
     const diagCtx = await Promise.race([
       diagsPromise,
       new Promise<null>((r) => setTimeout(() => r(null), 500)),
     ]);
     if (diagCtx) {
-      const { formatPostEditResult, postEditDiagnostics } = await import(
+      const { formatPostEditResult, sameFileDiagnostics } = await import(
         "../intelligence/post-edit.js"
       );
       const diffResult = await Promise.race([
-        postEditDiagnostics(diagCtx.router, filePath, diagCtx.language, diagCtx.beforeDiags),
-        new Promise<null>((r) => setTimeout(() => r(null), 2000)),
+        sameFileDiagnostics(diagCtx.router, filePath, diagCtx.language, diagCtx.beforeDiags),
+        new Promise<null>((r) => setTimeout(() => r(null), 800)),
       ]);
       if (diffResult) {
         const diffOutput = formatPostEditResult(diffResult);

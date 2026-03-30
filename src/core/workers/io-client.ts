@@ -25,6 +25,13 @@ interface LoadSessionResult {
   tabEntries: [string, ChatMessage[]][];
 }
 
+export type ReadFileResult =
+  | { ok: true; numbered: string; totalLines: number; truncated: boolean; start: number }
+  | { error: "directory"; message: string }
+  | { error: "binary"; ext: string; sizeStr: string }
+  | { error: "too_large"; sizeStr: string }
+  | { error: "not_found"; message: string };
+
 let _instance: IOClient | null = null;
 
 export function getIOClient(): IOClient {
@@ -62,6 +69,16 @@ export class IOClient extends WorkerClient {
       store.incrementCalls("io");
       if (error) store.incrementErrors("io");
     };
+  }
+
+  // ── File Read (offloaded from main thread) ─────────────────────
+
+  async readFileNumbered(
+    filePath: string,
+    startLine?: number | null,
+    endLine?: number | null,
+  ): Promise<ReadFileResult> {
+    return this.call("readFileNumbered", filePath, startLine, endLine);
   }
 
   // ── Shell Compression ────────────────────────────────────────────

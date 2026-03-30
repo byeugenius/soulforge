@@ -61,6 +61,11 @@ export function markToolWrite(filePath: string): void {
   recentToolWrites.set(filePath, Date.now());
 }
 
+// Track concurrent reads — when multiple are in-flight, skip Neovim RPC
+// to avoid serializing on the single RPC channel and blocking the event loop.
+let inflight = 0;
+const BATCH_THRESHOLD = 2; // skip nvim when 2+ reads are concurrent
+
 export async function readBufferContent(filePath: string): Promise<string> {
   // If this file was just written by a tool, read from disk to avoid stale nvim buffer
   const toolWriteTime = recentToolWrites.get(filePath);
@@ -69,38 +74,50 @@ export async function readBufferContent(filePath: string): Promise<string> {
     return readFile(filePath, "utf-8");
   }
 
-  const nvim = instance as
-    | (NvimInstance & {
-        api: { executeLua: (code: string, args: unknown[]) => Promise<unknown> };
-      })
-    | null;
-  if (nvim) {
-    try {
-      const result = await Promise.race([
-        nvim.api.executeLua(
-          `
-        local path = select(1, ...)
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) then
-            local name = vim.api.nvim_buf_get_name(buf)
-            if name == path then
-              local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-              return table.concat(lines, "\\n")
+  inflight++;
+  try {
+    // When multiple reads are in-flight (parallel tool calls), go straight to disk.
+    // Neovim's single RPC channel serializes requests — 6 parallel reads would
+    // queue up with 3s timeouts each, blocking the UI for seconds.
+    if (inflight >= BATCH_THRESHOLD) {
+      return await readFile(filePath, "utf-8");
+    }
+
+    const nvim = instance as
+      | (NvimInstance & {
+          api: { executeLua: (code: string, args: unknown[]) => Promise<unknown> };
+        })
+      | null;
+    if (nvim) {
+      try {
+        const result = await Promise.race([
+          nvim.api.executeLua(
+            `
+          local path = select(1, ...)
+          for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_loaded(buf) then
+              local name = vim.api.nvim_buf_get_name(buf)
+              if name == path then
+                local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+                return table.concat(lines, "\\n")
+              end
             end
           end
-        end
-        return nil
-        `,
-          [filePath],
-        ),
-        new Promise<null>((r) => setTimeout(() => r(null), NVIM_READ_TIMEOUT)),
-      ]);
-      if (typeof result === "string") return result;
-    } catch {
-      // Fall through to disk read
+          return nil
+          `,
+            [filePath],
+          ),
+          new Promise<null>((r) => setTimeout(() => r(null), NVIM_READ_TIMEOUT)),
+        ]);
+        if (typeof result === "string") return result;
+      } catch {
+        // Fall through to disk read
+      }
     }
+    return await readFile(filePath, "utf-8");
+  } finally {
+    inflight--;
   }
-  return readFile(filePath, "utf-8");
 }
 
 export function waitForNvim(timeoutMs = 5000): Promise<NvimInstance | null> {

@@ -2,57 +2,57 @@ declare var self: Worker;
 
 // ── Message Types ──────────────────────────────────────────────────────
 
-export interface CallMessage {
+interface CallMessage {
   type: "call";
   id: number;
   method: string;
   args: unknown[];
 }
 
-export interface ResultMessage {
+interface ResultMessage {
   type: "result";
   id: number;
   data: unknown;
 }
 
-export interface ErrorMessage {
+interface ErrorMessage {
   type: "error";
   id: number;
   message: string;
   stack?: string;
 }
 
-export interface EventMessage {
+interface EventMessage {
   type: "event";
   event: string;
   data: unknown;
 }
 
-export interface CallbackRequest {
+interface CallbackRequest {
   type: "callback";
   id: number;
   name: string;
   data: unknown;
 }
 
-export interface CallbackResponse {
+interface CallbackResponse {
   type: "callback-result";
   id: number;
   data: unknown;
   error?: string;
 }
 
-export interface InitMessage {
+interface InitMessage {
   type: "init";
   config: Record<string, unknown>;
 }
 
-export interface DisposeMessage {
+interface DisposeMessage {
   type: "dispose";
 }
 
-export type WorkerInbound = CallMessage | InitMessage | DisposeMessage | CallbackResponse;
-export type WorkerOutbound = ResultMessage | ErrorMessage | EventMessage | CallbackRequest;
+type WorkerInbound = CallMessage | InitMessage | DisposeMessage | CallbackResponse;
+type WorkerOutbound = ResultMessage | ErrorMessage | EventMessage | CallbackRequest;
 
 // ── Worker-Side Handler ────────────────────────────────────────────────
 

@@ -20,6 +20,75 @@ interface PostEditResult {
   crossFileErrors: NewDiagnostic[];
 }
 
+/**
+ * Lightweight same-file-only diagnostics for the edit hot path.
+ * Skips the expensive cross-file findImporters scan that does recursive
+ * readdir + readFile on the main thread — that blocks the UI when
+ * multiple edits are in-flight.
+ */
+export async function sameFileDiagnostics(
+  router: CodeIntelligenceRouter,
+  filePath: string,
+  language: Language,
+  beforeDiags: Diagnostic[],
+): Promise<PostEditResult> {
+  const result: PostEditResult = {
+    newErrors: [],
+    newWarnings: [],
+    resolved: 0,
+    crossFileErrors: [],
+  };
+
+  const afterDiags = await router.executeWithFallback(language, "getDiagnostics", (b) =>
+    b.getDiagnostics ? b.getDiagnostics(filePath) : Promise.resolve(null),
+  );
+
+  if (!afterDiags) return result;
+
+  const newDiags = afterDiags.filter(
+    (after) =>
+      !beforeDiags.some(
+        (before) =>
+          before.line === after.line &&
+          before.message === after.message &&
+          before.severity === after.severity,
+      ),
+  );
+
+  const resolvedDiags = beforeDiags.filter(
+    (before) =>
+      before.severity === "error" &&
+      !afterDiags.some(
+        (after) =>
+          after.line === before.line &&
+          after.message === before.message &&
+          after.severity === before.severity,
+      ),
+  );
+  result.resolved = resolvedDiags.length;
+
+  for (const diag of newDiags) {
+    const fixes = await getFixesForDiagnostic(router, filePath, language, diag);
+    const entry: NewDiagnostic = {
+      file: filePath,
+      line: diag.line,
+      column: diag.column,
+      severity: diag.severity,
+      message: diag.message,
+      code: diag.code,
+      fixes,
+    };
+    if (diag.severity === "error") {
+      result.newErrors.push(entry);
+    } else if (diag.severity === "warning") {
+      result.newWarnings.push(entry);
+    }
+  }
+
+  return result;
+}
+
+/** Full diagnostics including cross-file importer scanning. Use for explicit typecheck, not edit hot path. */
 export async function postEditDiagnostics(
   router: CodeIntelligenceRouter,
   filePath: string,

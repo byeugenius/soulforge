@@ -731,4 +731,4 @@ export function buildSymbolLookup(repoMap?: {
   };
 }
 
-export { compactOldToolResults, KEEP_RECENT_MESSAGES, pruneByTokenBudget };
+export { compactOldToolResults, KEEP_RECENT_MESSAGES };

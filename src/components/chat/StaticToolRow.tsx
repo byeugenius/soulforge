@@ -17,17 +17,6 @@ import {
   OUTSIDE_BADGE,
 } from "./tool-formatters.js";
 
-export function getRowColors() {
-  const t = getThemeTokens();
-  return {
-    textDone: t.textMuted,
-    toolNameActive: t.brand,
-    argsActive: t.textSecondary,
-    checkDone: t.success,
-    error: t.error,
-  };
-}
-
 interface StaticToolRowProps {
   statusContent: ReactNode;
   isDone: boolean;

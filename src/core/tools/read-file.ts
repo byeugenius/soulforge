@@ -5,6 +5,7 @@ import type { ToolResult } from "../../types";
 import { readBufferContent } from "../editor/instance";
 import type { SymbolKind } from "../intelligence/types.js";
 import { isForbidden } from "../security/forbidden.js";
+import { getIOClient, type ReadFileResult } from "../workers/io-client.js";
 import { binaryHint } from "./binary-detect.js";
 import { emitFileRead } from "./file-events.js";
 
@@ -21,6 +22,125 @@ interface ReadFileArgs {
 const MAX_READ_LINES = 2000;
 const MAX_LINE_LENGTH = 2000;
 const MAX_READ_SIZE = 250 * 1024;
+
+/**
+ * Offload the heavy read path (stat, binary check, read, line-number) to the
+ * IO worker thread so parallel tool calls don't block the UI event loop.
+ */
+async function readViaWorker(filePath: string, args: ReadFileArgs): Promise<ToolResult> {
+  let result: ReadFileResult;
+  try {
+    result = await getIOClient().readFileNumbered(filePath, args.startLine, args.endLine);
+  } catch {
+    // Worker unavailable (crashed / not started) — fall back to main-thread read
+    return readOnMainThread(filePath, args);
+  }
+
+  if ("error" in result) {
+    switch (result.error) {
+      case "directory": {
+        const msg = `Path is a directory: ${filePath}`;
+        return { success: false, output: msg, error: msg };
+      }
+      case "binary": {
+        const hint = binaryHint(result.ext);
+        const msg = `Cannot read binary file: "${args.path}" (${result.ext || "no extension"}, ${result.sizeStr}).${hint}`;
+        return { success: false, output: msg, error: "binary" };
+      }
+      case "too_large": {
+        const msg = `File too large (${result.sizeStr}). Maximum is ${String(MAX_READ_SIZE / 1024)}KB. Use startLine/endLine to read a specific range.`;
+        return { success: false, output: msg, error: "file too large" };
+      }
+      case "not_found": {
+        return { success: false, output: result.message, error: result.message };
+      }
+    }
+  }
+
+  emitFileRead(filePath);
+
+  let output = result.numbered;
+  if (result.truncated) {
+    output += `\n\n(File has ${String(result.totalLines)} lines. Showing first ${String(MAX_READ_LINES)}. Use startLine/endLine to read beyond line ${String(result.start + MAX_READ_LINES)})`;
+  }
+  return { success: true, output };
+}
+
+/** Main-thread fallback — used for symbol reads and when worker is unavailable. */
+async function readOnMainThread(filePath: string, args: ReadFileArgs): Promise<ToolResult> {
+  let fileStat: Awaited<ReturnType<typeof statAsync>>;
+  try {
+    fileStat = await statAsync(filePath);
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    const msg =
+      code === "EACCES" || code === "EPERM"
+        ? `Permission denied: ${filePath}`
+        : `File not found: ${filePath}`;
+    return { success: false, output: msg, error: msg };
+  }
+
+  if (fileStat.isDirectory()) {
+    return {
+      success: false,
+      output: `Path is a directory: ${filePath}`,
+      error: `Path is a directory: ${filePath}`,
+    };
+  }
+
+  if (await isBinaryFile(filePath)) {
+    const ext = extname(filePath).toLowerCase();
+    const sizeStr =
+      fileStat.size > 1024 * 1024
+        ? `${(fileStat.size / (1024 * 1024)).toFixed(1)}MB`
+        : `${(fileStat.size / 1024).toFixed(0)}KB`;
+    const hint = binaryHint(ext);
+    return {
+      success: false,
+      output: `Cannot read binary file: "${args.path}" (${ext || "no extension"}, ${sizeStr}).${hint}`,
+      error: "binary",
+    };
+  }
+
+  if (fileStat.size > MAX_READ_SIZE) {
+    const sizeStr =
+      fileStat.size > 1024 * 1024
+        ? `${(fileStat.size / (1024 * 1024)).toFixed(1)}MB`
+        : `${String(Math.round(fileStat.size / 1024))}KB`;
+    return {
+      success: false,
+      output: `File too large (${sizeStr}). Maximum is ${String(MAX_READ_SIZE / 1024)}KB. Use startLine/endLine to read a specific range.`,
+      error: "file too large",
+    };
+  }
+
+  const content = await readBufferContent(filePath);
+  const lines = content.split("\n");
+
+  const start = (args.startLine ?? 1) - 1;
+  const end = args.endLine ?? lines.length;
+  let slice = lines.slice(start, end);
+
+  const totalLines = lines.length;
+  const truncated = slice.length > MAX_READ_LINES;
+  if (truncated) slice = slice.slice(0, MAX_READ_LINES);
+
+  const numbered = slice
+    .map((line: string, i: number) => {
+      const l = line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line;
+      return `${String(start + i + 1).padStart(4)}  ${l}`;
+    })
+    .join("\n");
+
+  emitFileRead(filePath);
+
+  let output = numbered;
+  if (truncated) {
+    output += `\n\n(File has ${String(totalLines)} lines. Showing first ${String(MAX_READ_LINES)}. Use startLine/endLine to read beyond line ${String(start + MAX_READ_LINES)})`;
+  }
+
+  return { success: true, output };
+}
 
 export const readFileTool = {
   name: "read_file",
@@ -42,78 +162,10 @@ export const readFileTool = {
         return { success: false, output: msg, error: msg };
       }
 
-      let fileStat: Awaited<ReturnType<typeof statAsync>>;
-      try {
-        fileStat = await statAsync(filePath);
-      } catch (err: unknown) {
-        const code = (err as NodeJS.ErrnoException).code;
-        const msg =
-          code === "EACCES" || code === "EPERM"
-            ? `Permission denied: ${filePath}`
-            : `File not found: ${filePath}`;
-        return { success: false, output: msg, error: msg };
-      }
-
-      if (fileStat.isDirectory()) {
-        return {
-          success: false,
-          output: `Path is a directory: ${filePath}`,
-          error: `Path is a directory: ${filePath}`,
-        };
-      }
-
-      if (await isBinaryFile(filePath)) {
-        const ext = extname(filePath).toLowerCase();
-        const sizeStr =
-          fileStat.size > 1024 * 1024
-            ? `${(fileStat.size / (1024 * 1024)).toFixed(1)}MB`
-            : `${(fileStat.size / 1024).toFixed(0)}KB`;
-        const hint = binaryHint(ext);
-        return {
-          success: false,
-          output: `Cannot read binary file: "${args.path}" (${ext || "no extension"}, ${sizeStr}).${hint}`,
-          error: "binary",
-        };
-      }
-
-      if (fileStat.size > MAX_READ_SIZE) {
-        const sizeStr =
-          fileStat.size > 1024 * 1024
-            ? `${(fileStat.size / (1024 * 1024)).toFixed(1)}MB`
-            : `${String(Math.round(fileStat.size / 1024))}KB`;
-        return {
-          success: false,
-          output: `File too large (${sizeStr}). Maximum is ${String(MAX_READ_SIZE / 1024)}KB. Use startLine/endLine to read a specific range.`,
-          error: "file too large",
-        };
-      }
-
-      const content = await readBufferContent(filePath);
-      const lines = content.split("\n");
-
-      const start = (args.startLine ?? 1) - 1;
-      const end = args.endLine ?? lines.length;
-      let slice = lines.slice(start, end);
-
-      const totalLines = lines.length;
-      const truncated = slice.length > MAX_READ_LINES;
-      if (truncated) slice = slice.slice(0, MAX_READ_LINES);
-
-      const numbered = slice
-        .map((line: string, i: number) => {
-          const l = line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}...` : line;
-          return `${String(start + i + 1).padStart(4)}  ${l}`;
-        })
-        .join("\n");
-
-      emitFileRead(filePath);
-
-      let output = numbered;
-      if (truncated) {
-        output += `\n\n(File has ${String(totalLines)} lines. Showing first ${String(MAX_READ_LINES)}. Use startLine/endLine to read beyond line ${String(start + MAX_READ_LINES)})`;
-      }
-
-      return { success: true, output };
+      // Offload heavy I/O (stat, binary check, read, line-number) to worker thread.
+      // Security checks (isForbidden) must stay on main thread — they use in-memory state.
+      // Symbol reads (target) also stay on main thread — they need the intelligence router.
+      return await readViaWorker(filePath, args);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, output: msg, error: msg };
