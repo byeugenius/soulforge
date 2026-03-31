@@ -143,6 +143,11 @@ export class IntelligenceClient extends WorkerClient {
       const d = data as { count: number };
       this.onStaleSymbols?.(d.count);
     });
+
+    this.on("index-error", (data) => {
+      const d = data as { message: string };
+      logBackgroundError("Soul Map", d.message);
+    });
   }
 
   // ── Cached Sync Getters ────────────────────────────────────────────
@@ -162,16 +167,25 @@ export class IntelligenceClient extends WorkerClient {
     // Large repos can take 30+ min — stays alive as long as progress is made.
     // Only aborts if no progress for SCAN_IDLE_TIMEOUT (scan is stuck).
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let rejectScan: ((err: Error) => void) | undefined;
     const resetTimer = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         this.off("progress", resetTimer);
+        const err = new Error("Soul map scan stalled — no progress for 2 minutes");
+        logBackgroundError("Soul Map", err.message);
+        rejectScan?.(err);
       }, IntelligenceClient.SCAN_IDLE_TIMEOUT);
     };
     this.on("progress", resetTimer);
     resetTimer();
     try {
-      await this.call<void>("scan");
+      await Promise.race([
+        this.call<void>("scan"),
+        new Promise<never>((_, reject) => {
+          rejectScan = reject;
+        }),
+      ]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logBackgroundError("Soul Map", `Scan failed: ${msg}`);

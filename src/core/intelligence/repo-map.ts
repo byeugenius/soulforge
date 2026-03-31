@@ -107,6 +107,8 @@ export class RepoMap {
   onProgress: ((indexed: number, total: number) => void) | null = null;
   onScanComplete: ((success: boolean) => void) | null = null;
   onStaleSymbols: ((count: number) => void) | null = null;
+  onError: ((message: string) => void) | null = null;
+  private indexErrors = 0;
 
   constructor(cwd: string) {
     this.cwd = cwd;
@@ -443,12 +445,20 @@ export class RepoMap {
 
   private async doScan(): Promise<void> {
     const tick = () => new Promise<void>((r) => setTimeout(r, 1));
+    this.indexErrors = 0;
     try {
-      const allFiles = await collectFiles(this.cwd);
-      const files =
-        this.maxFiles > 0 && allFiles.length > this.maxFiles
-          ? await this.applyFileCap(allFiles)
-          : allFiles;
+      const collected = await collectFiles(this.cwd);
+      if (collected.warning) this.onError?.(collected.warning);
+      const allFiles = collected.files;
+      let files: typeof allFiles;
+      if (this.maxFiles > 0 && allFiles.length > this.maxFiles) {
+        this.onError?.(
+          `Repository has ${String(allFiles.length)} indexable files — indexing top ${String(this.maxFiles)} by recent activity`,
+        );
+        files = await this.applyFileCap(allFiles);
+      } else {
+        files = allFiles;
+      }
 
       const existingFiles = new Map<string, { id: number; mtime_ms: number }>();
       for (const row of this.db
@@ -490,8 +500,13 @@ export class RepoMap {
           if (file) {
             try {
               await this.indexFile(file.absPath, file.relPath, file.mtime, file.language);
-            } catch {
-              // skip files that fail to index
+            } catch (err) {
+              this.indexErrors++;
+              if (this.indexErrors <= 5) {
+                this.onError?.(
+                  `Failed to index ${file.relPath}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
             }
           }
           if (i % 5 === 0) {
@@ -591,8 +606,10 @@ export class RepoMap {
         ),
       ]);
       this.treeSitter = backend;
-    } catch {
-      // tree-sitter unavailable — files will be indexed without AST symbols
+    } catch (err) {
+      this.onError?.(
+        `Tree-sitter init failed: ${err instanceof Error ? err.message : String(err)} — indexing without AST symbols`,
+      );
     }
   }
 
@@ -638,13 +655,19 @@ export class RepoMap {
     let outline: import("./types.js").FileOutline | null = null;
     if (this.treeSitter) {
       try {
-        outline =
-          (await Promise.race([
-            this.treeSitter.getFileOutline(absPath),
-            new Promise<null>((r) => setTimeout(r, 5_000, null)),
-          ])) ?? null;
-      } catch {
-        // skip file on parse error
+        const parsed = await Promise.race([
+          this.treeSitter.getFileOutline(absPath),
+          new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5_000)),
+        ]);
+        if (parsed === "timeout") {
+          this.onError?.(`Tree-sitter parse timeout (5s): ${relPath}`);
+        } else {
+          outline = parsed ?? null;
+        }
+      } catch (err) {
+        this.onError?.(
+          `Tree-sitter parse error on ${relPath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     const symbolCount = outline?.symbols.length ?? 0;
@@ -676,8 +699,11 @@ export class RepoMap {
       const seen = new Set<string>();
       const lines = content.split("\n");
 
+      const MAX_SYMBOLS_PER_FILE = 10_000;
       const tx = this.db.transaction(() => {
+        let symbolCount = 0;
         for (const sym of outline.symbols) {
+          if (symbolCount >= MAX_SYMBOLS_PER_FILE) break;
           const key = `${sym.name}:${String(sym.location.line)}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -703,6 +729,7 @@ export class RepoMap {
             exportedNames.has(sym.name) ? 1 : 0,
             sig,
           );
+          symbolCount++;
         }
       });
       tx();
@@ -723,23 +750,21 @@ export class RepoMap {
           (s) => CONTAINER_KINDS.has(s.kind) && s.end_line > s.line,
         );
         if (containers.length > 0) {
+          // Sort containers by span size (smallest first) so the first match
+          // enclosing a symbol is the tightest container — O(n×m) worst case
+          // but early-exit on first match makes it O(n) for typical code.
+          const sorted = [...containers].sort(
+            (a, b) => a.end_line - a.line - (b.end_line - b.line),
+          );
           const updateQname = this.db.prepare("UPDATE symbols SET qualified_name = ? WHERE id = ?");
           const qTx = this.db.transaction(() => {
             for (const sym of fileSyms) {
-              let enclosing: (typeof containers)[number] | undefined;
-              let bestSpan = Infinity;
-              for (const c of containers) {
+              for (const c of sorted) {
                 if (c.id === sym.id) continue;
                 if (c.line <= sym.line && c.end_line >= sym.end_line) {
-                  const span = c.end_line - c.line;
-                  if (span < bestSpan) {
-                    bestSpan = span;
-                    enclosing = c;
-                  }
+                  updateQname.run(`${c.name}.${sym.name}`, sym.id);
+                  break; // smallest span first → first match is tightest
                 }
-              }
-              if (enclosing) {
-                updateQname.run(`${enclosing.name}.${sym.name}`, sym.id);
               }
             }
           });
@@ -1262,7 +1287,9 @@ export class RepoMap {
       "INSERT INTO symbols (file_id, name, kind, line, end_line, is_exported, signature) VALUES (?, ?, ?, 1, 1, 1, NULL)",
     );
     const expanded = new Set<string>();
+    const starStart = Date.now();
     for (let pass = 0; pass < 10; pass++) {
+      if (Date.now() - starStart > 10_000) break; // 10s safety cap
       const starRefs = this.db
         .query<{ file_id: number; source_file_id: number }, []>(
           "SELECT file_id, source_file_id FROM refs WHERE name = '*' AND source_file_id IS NOT NULL",
@@ -2544,6 +2571,7 @@ export class RepoMap {
    */
   private async buildCallGraph(): Promise<void> {
     const tick = () => new Promise<void>((r) => setTimeout(r, 1));
+    const regexCache = new Map<string, RegExp>();
     this.db.run("DELETE FROM calls");
 
     const filesWithImports = this.db
@@ -2607,11 +2635,15 @@ export class RepoMap {
           const functions = getFunctions.all(file.id);
           if (functions.length === 0) continue;
 
-          const importPatterns = imports.map((imp) => ({
-            name: imp.name,
-            sourceFileId: imp.source_file_id,
-            re: new RegExp(`\\b${imp.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`),
-          }));
+          const importPatterns = imports.map((imp) => {
+            const escaped = imp.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            let re = regexCache.get(imp.name);
+            if (!re) {
+              re = new RegExp(`\\b${escaped}\\b`);
+              regexCache.set(imp.name, re);
+            }
+            return { name: imp.name, sourceFileId: imp.source_file_id, re };
+          });
 
           for (const func of functions) {
             const bodyStart = func.line;
@@ -4339,14 +4371,12 @@ export class RepoMap {
   }
 
   private compactIfNeeded(): void {
-    const bytes = this.dbSizeBytes();
-    if (bytes > 50 * 1024 * 1024) {
-      try {
-        this.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
-        this.db.run("VACUUM");
-      } catch {
-        // compaction is best-effort
-      }
+    // WAL checkpoint only — VACUUM is a synchronous blocking operation that
+    // can hang for 30+ seconds on large DBs, freezing the worker thread.
+    try {
+      this.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+    } catch {
+      // compaction is best-effort
     }
   }
 

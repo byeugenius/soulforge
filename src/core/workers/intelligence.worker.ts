@@ -577,6 +577,9 @@ ctx = createWorkerHandler(
     repoMap.onStaleSymbols = (count) => {
       ctx.emit("stale-symbols", { count });
     };
+    repoMap.onError = (message) => {
+      ctx.emit("index-error", { message });
+    };
 
     // Initialize CodeIntelligenceRouter with all backends
     // This runs the full backend chain in the worker thread,

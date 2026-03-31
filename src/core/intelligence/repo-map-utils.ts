@@ -1,5 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { homedir } from "node:os";
+import { extname, join, resolve } from "node:path";
 import { IGNORED_DIRS } from "../context/file-tree.js";
 import { isForbidden } from "../security/forbidden.js";
 import type { Language, SymbolKind } from "./types.js";
@@ -314,18 +315,58 @@ export function getDirGroup(filePath: string): string | null {
   return parts.length >= 3 ? `${parts[0]}/${parts[1]}` : (parts[0] ?? null);
 }
 
-export async function collectFiles(dir: string, depth = 0): Promise<CollectedFile[]> {
+// Directories that are never valid project roots — scanning them would
+// crawl millions of files. Git repos at these paths are fine (git ls-files
+// scopes the listing), so this only blocks the non-git fallback walk.
+const DANGEROUS_ROOTS = new Set([
+  resolve(homedir()),
+  "/",
+  "/tmp",
+  "/var",
+  "/usr",
+  "/opt",
+  "/home",
+  "/Users",
+]);
+
+export function isDangerousRoot(dir: string): boolean {
+  return DANGEROUS_ROOTS.has(resolve(dir));
+}
+
+export interface CollectResult {
+  files: CollectedFile[];
+  warning?: string;
+}
+
+export async function collectFiles(dir: string, depth = 0): Promise<CollectResult> {
   // Try git ls-files first — respects .gitignore automatically
   if (depth === 0) {
     const gitFiles = await collectFilesViaGit(dir);
-    if (gitFiles) return gitFiles;
+    if (gitFiles) return { files: gitFiles };
+    // Non-git dangerous roots (home dir, /, /tmp, etc.) — don't walk
+    if (isDangerousRoot(dir))
+      return {
+        files: [],
+        warning:
+          "Opened in home directory or system root — no files indexed. Open a project directory instead.",
+      };
   }
-  // Fallback walk with a 60s safety timeout (circular symlinks, huge non-git dirs)
-  const result = await Promise.race([
-    collectFilesWalk(dir, depth),
-    new Promise<CollectedFile[]>((r) => setTimeout(() => r([]), 60_000)),
+  // Fallback walk — shared accumulator so the 60s timeout returns partial results
+  const collected: CollectedFile[] = [];
+  let hitCap = false;
+  const walkDone = collectFilesWalk(dir, depth, undefined, collected).then(() => {
+    hitCap = collected.length >= WALK_FILE_CAP;
+  });
+  const timedOut = await Promise.race([
+    walkDone.then(() => false),
+    new Promise<true>((r) => setTimeout(() => r(true), 60_000)),
   ]);
-  return result;
+  const warning = timedOut
+    ? `Walk timeout — indexed ${String(collected.length)} of possibly more files (60s limit)`
+    : hitCap
+      ? `Large directory — capped file walk at ${String(WALK_FILE_CAP)} files`
+      : undefined;
+  return { files: collected, warning };
 }
 
 /**
@@ -369,17 +410,28 @@ async function collectFilesViaGit(dir: string): Promise<CollectedFile[] | null> 
   }
 }
 
+// Hard cap during walk — stop collecting once we have enough candidates.
+// Prevents scanning millions of files when opened in $HOME or a monorepo root.
+const WALK_FILE_CAP = 50_000;
+
 /** Fallback: manual directory walk for non-git repos. */
-async function collectFilesWalk(dir: string, depth: number): Promise<CollectedFile[]> {
+async function collectFilesWalk(
+  dir: string,
+  depth: number,
+  counter?: { n: number },
+  out?: CollectedFile[],
+): Promise<CollectedFile[]> {
   if (depth > MAX_DEPTH) return [];
-  const files: CollectedFile[] = [];
+  const ctx = counter ?? { n: 0 };
+  const files = out ?? [];
   try {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (ctx.n >= WALK_FILE_CAP) break;
       if (entry.name.startsWith(".") && entry.name !== ".") continue;
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!IGNORED_DIRS.has(entry.name)) {
-          files.push(...(await collectFilesWalk(fullPath, depth + 1)));
+          await collectFilesWalk(fullPath, depth + 1, ctx, files);
         }
       } else if (entry.isFile()) {
         if (isForbidden(fullPath)) continue;
@@ -387,11 +439,14 @@ async function collectFilesWalk(dir: string, depth: number): Promise<CollectedFi
         if (ext in INDEXABLE_EXTENSIONS) {
           try {
             const s = await stat(fullPath);
-            if (s.size < MAX_FILE_SIZE) files.push({ path: fullPath, mtimeMs: s.mtimeMs });
+            if (s.size < MAX_FILE_SIZE) {
+              files.push({ path: fullPath, mtimeMs: s.mtimeMs });
+              ctx.n++;
+            }
           } catch {}
         }
       }
-      if (files.length % 50 === 0) await new Promise<void>((r) => setTimeout(r, 0));
+      if (ctx.n % 50 === 0) await new Promise<void>((r) => setTimeout(r, 0));
     }
   } catch {}
   return files;
