@@ -1967,7 +1967,8 @@ export class RepoMap {
     const pairCounts = new Map<string, number>();
     const commits = logOutput.split("---COMMIT---").filter((s) => s.trim());
 
-    for (const commit of commits) {
+    for (let ci = 0; ci < commits.length; ci++) {
+      const commit = commits[ci] as string;
       const files = commit
         .split("\n")
         .map((l) => l.trim())
@@ -1983,25 +1984,32 @@ export class RepoMap {
           pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
         }
       }
+      if (ci % 50 === 0) this.onProgress?.(-5, -5); // heartbeat
     }
 
     if (pairCounts.size === 0) return;
 
+    this.onProgress?.(-5, -5); // heartbeat before DB insert
     const insert = this.db.prepare(
       "INSERT OR REPLACE INTO cochanges (file_id_a, file_id_b, count) VALUES (?, ?, ?)",
     );
-    const tx = this.db.transaction(() => {
-      for (const [key, count] of pairCounts) {
-        if (count < 2) continue;
-        const [a, b] = key.split("\0") as [string, string];
-        const idA = pathToId.get(a);
-        const idB = pathToId.get(b);
-        if (idA !== undefined && idB !== undefined) {
-          insert.run(idA, idB, count);
+    const BATCH = 5000;
+    const entries = [...pairCounts.entries()].filter(([, count]) => count >= 2);
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH);
+      const tx = this.db.transaction(() => {
+        for (const [key, count] of batch) {
+          const [a, b] = key.split("\0") as [string, string];
+          const idA = pathToId.get(a);
+          const idB = pathToId.get(b);
+          if (idA !== undefined && idB !== undefined) {
+            insert.run(idA, idB, count);
+          }
         }
-      }
-    });
-    tx();
+      });
+      tx();
+      if (i % 10000 === 0) this.onProgress?.(-5, -5); // heartbeat
+    }
   }
 
   private getCoChangePartners(fileIds: Set<number>): Map<number, number> {
