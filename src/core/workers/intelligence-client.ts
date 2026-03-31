@@ -181,7 +181,7 @@ export class IntelligenceClient extends WorkerClient {
     resetTimer();
     try {
       await Promise.race([
-        this.call<void>("scan"),
+        this.callWithTimeout<void>(24 * 60 * 60_000, "scan"),
         new Promise<never>((_, reject) => {
           rejectScan = reject;
         }),
