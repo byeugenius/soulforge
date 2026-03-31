@@ -241,15 +241,13 @@ if (isCompile) {
     + '  echo "Then run: soulforge" >&2\n'
     + '  exit 1\n'
     + 'fi\n'
-    + '# Resolve symlinks (bun/pnpm global installs symlink into ~/.bun/bin/)\n'
+    + '# Resolve symlinks — follow chain (pnpm/bun can nest multiple levels)\n'
     + 'SELF="$0"\n'
-    + 'if [ -L "$SELF" ]; then\n'
-    + '  TARGET="$(readlink "$SELF")"\n'
-    + '  case "$TARGET" in\n'
-    + '    /*) SELF="$TARGET" ;;\n'
-    + '    *)  SELF="$(dirname "$SELF")/$TARGET" ;;\n'
-    + '  esac\n'
-    + 'fi\n'
+    + 'while [ -L "$SELF" ]; do\n'
+    + '  DIR="$(cd "$(dirname "$SELF")" && pwd)"\n'
+    + '  SELF="$(readlink "$SELF")"\n'
+    + '  case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac\n'
+    + 'done\n'
     + 'exec bun "$(cd "$(dirname "$SELF")" && pwd)/index.js" "$@"\n',
   );
   chmodSync("dist/bin.sh", 0o755);
