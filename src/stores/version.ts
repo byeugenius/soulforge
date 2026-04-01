@@ -18,7 +18,7 @@ interface VersionState {
   installMethod: InstallMethod;
   checking: boolean;
 
-  check: () => Promise<void>;
+  check: (force?: boolean) => Promise<void>;
 }
 
 export const useVersionStore = create<VersionState>()((set) => ({
@@ -31,10 +31,10 @@ export const useVersionStore = create<VersionState>()((set) => ({
   installMethod: detectInstallMethod(),
   checking: false,
 
-  check: async () => {
+  check: async (force = false) => {
     set({ checking: true });
     try {
-      const result: VersionCheckResult = await checkForUpdate();
+      const result: VersionCheckResult = await checkForUpdate(force);
       set({
         current: result.current,
         latest: result.latest,

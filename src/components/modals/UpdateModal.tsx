@@ -336,7 +336,11 @@ export function UpdateModal({ visible, onClose, onRestart }: Props) {
   if (!visible) return null;
 
   const upgradeCmd = getUpgradeCommand(installMethod);
-  const canAuto = installMethod !== "binary" && updateAvailable;
+  const canAuto = installMethod !== "binary" && installMethod !== "unknown" && updateAvailable;
+  const isBinary = installMethod === "binary" || installMethod === "unknown";
+  const releaseUrl = latest
+    ? `https://github.com/ProxySoul/soulforge/releases/tag/v${latest}`
+    : "https://github.com/ProxySoul/soulforge/releases";
   const ghostIc = icon("ghost");
   const sparkle = icon("sparkle");
   const checkIc = icon("check");
@@ -734,23 +738,47 @@ export function UpdateModal({ visible, onClose, onRestart }: Props) {
         {/* Upgrade command */}
         <Hr w={iw} bg={bg} fg={t.textFaint} />
         <Gap w={iw} bg={bg} />
-        <PopupRow w={iw}>
-          <text bg={bg} fg={t.textMuted}>
-            {"  "}
-            {icon("terminal")} Upgrade command
-          </text>
-        </PopupRow>
-        <PopupRow w={iw}>
-          <text bg={bg}>
-            <span fg={t.textFaint}>
-              {"    "}
-              {arrowIc}{" "}
-            </span>
-            <span fg={t.brand} attributes={BOLD}>
-              {trunc(upgradeCmd, iw - 10)}
-            </span>
-          </text>
-        </PopupRow>
+        {isBinary ? (
+          <>
+            <PopupRow w={iw}>
+              <text bg={bg} fg={t.textMuted}>
+                {"  "}
+                {icon("globe")} Download from GitHub
+              </text>
+            </PopupRow>
+            <PopupRow w={iw}>
+              <text bg={bg}>
+                <span fg={t.textFaint}>
+                  {"    "}
+                  {arrowIc}{" "}
+                </span>
+                <span fg={t.brand} attributes={BOLD}>
+                  {trunc(releaseUrl, iw - 10)}
+                </span>
+              </text>
+            </PopupRow>
+          </>
+        ) : (
+          <>
+            <PopupRow w={iw}>
+              <text bg={bg} fg={t.textMuted}>
+                {"  "}
+                {icon("terminal")} Upgrade command
+              </text>
+            </PopupRow>
+            <PopupRow w={iw}>
+              <text bg={bg}>
+                <span fg={t.textFaint}>
+                  {"    "}
+                  {arrowIc}{" "}
+                </span>
+                <span fg={t.brand} attributes={BOLD}>
+                  {trunc(upgradeCmd, iw - 10)}
+                </span>
+              </text>
+            </PopupRow>
+          </>
+        )}
         <Gap w={iw} bg={bg} />
 
         {/* Footer */}
@@ -767,7 +795,11 @@ export function UpdateModal({ visible, onClose, onRestart }: Props) {
                 <span fg={t.textFaint}>{"  "}</span>
               </>
             )}
-            <span fg={copied ? t.success : t.textFaint}>{copied ? " ✓ copied" : " <C> copy"}</span>
+            {!isBinary && (
+              <span fg={copied ? t.success : t.textFaint}>
+                {copied ? " ✓ copied" : " <C> copy"}
+              </span>
+            )}
             <span fg={t.textFaint}>{"  "}</span>
             <span fg={t.textFaint}>{"<D>"} dismiss</span>
             <span fg={t.textFaint}>{"  "}</span>
@@ -780,7 +812,9 @@ export function UpdateModal({ visible, onClose, onRestart }: Props) {
               {" "}
               {icon("globe")} {"<G>"}
             </span>
-            <span fg={t.textFaint}> view full changelog on GitHub</span>
+            <span fg={t.textFaint}>
+              {isBinary ? " open release on GitHub" : " view full changelog on GitHub"}
+            </span>
           </text>
         </PopupRow>
       </box>

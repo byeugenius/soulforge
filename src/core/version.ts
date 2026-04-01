@@ -29,11 +29,11 @@ export function detectInstallMethod(): InstallMethod {
     const execPath = process.argv[0] ?? "";
     const moduleUrl = import.meta.url;
 
+    // Homebrew — check before $bunfs since brew distributes compiled binaries
+    if (execPath.includes("/Cellar/") || execPath.includes("/homebrew/")) return "brew";
+
     // Compiled binary (bun --compile)
     if (moduleUrl.includes("$bunfs")) return "binary";
-
-    // Homebrew
-    if (execPath.includes("/Cellar/") || execPath.includes("/homebrew/")) return "brew";
 
     // Check if running from a global node_modules
     const dir = import.meta.dir;
@@ -64,7 +64,7 @@ export function getUpgradeCommand(method?: InstallMethod): string {
     case "bun":
       return `bun update -g ${PKG_NAME}`;
     case "brew":
-      return "brew upgrade soulforge";
+      return "brew update && brew upgrade soulforge";
     case "binary":
       return "Download the latest release from GitHub";
     default:
@@ -85,7 +85,7 @@ export function getUpgradeArgs(method?: InstallMethod): { command: string; args:
     case "bun":
       return { command: "bun", args: ["update", "-g", PKG_NAME] };
     case "brew":
-      return { command: "brew", args: ["upgrade", "soulforge"] };
+      return { command: "sh", args: ["-c", "brew update && brew upgrade soulforge"] };
     case "binary":
       return null;
     default:
@@ -363,20 +363,22 @@ export interface VersionCheckResult {
   updateAvailable: boolean;
 }
 
-export async function checkForUpdate(): Promise<VersionCheckResult> {
+export async function checkForUpdate(force = false): Promise<VersionCheckResult> {
   const current = CURRENT_VERSION;
 
-  // Try cache first
-  const cached = readCache();
-  if (cached) {
-    return {
-      current,
-      latest: cached.latest,
-      changelog: cached.changelog,
-      currentRelease: cached.currentRelease ?? null,
-      changelogError: false,
-      updateAvailable: isNewer(cached.latest, current),
-    };
+  // Try cache first (skip if forced)
+  if (!force) {
+    const cached = readCache();
+    if (cached) {
+      return {
+        current,
+        latest: cached.latest,
+        changelog: cached.changelog,
+        currentRelease: cached.currentRelease ?? null,
+        changelogError: false,
+        updateAvailable: isNewer(cached.latest, current),
+      };
+    }
   }
 
   try {

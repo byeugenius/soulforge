@@ -1,4 +1,5 @@
 import { useUIStore } from "../../stores/ui.js";
+import { useVersionStore } from "../../stores/version.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { sysMsg } from "./utils.js";
 
@@ -12,6 +13,8 @@ function handleDiagnose(_input: string, _ctx: CommandContext): void {
 }
 
 function handleUpdate(_input: string, _ctx: CommandContext): void {
+  // Force fresh check then open modal
+  useVersionStore.getState().check(true);
   useUIStore.getState().openModal("updateModal");
 }
 
