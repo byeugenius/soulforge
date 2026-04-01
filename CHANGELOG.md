@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [1.7.6] — 2026-04-01
+
+### Bug Fixes
+
+- make getModelContextWindow async for accurate context sizes
 ## [1.7.5] — 2026-04-01
 
 ## [1.7.4] — 2026-04-01
