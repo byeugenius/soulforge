@@ -2,6 +2,8 @@
 
 All notable changes to SoulForge are documented here.
 
+## [1.7.5] — 2026-04-01
+
 ## [1.7.4] — 2026-04-01
 
 ### Features
