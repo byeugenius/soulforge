@@ -335,7 +335,8 @@ function detectProjectCommand(command: string): string | null {
 
 const SHELL_DESCRIPTION =
   "[TIER-2] Shell command execution. Use for git operations, package installs, system commands. " +
-  "AVOID for: reading files (use read_file), searching code (use soul_grep), verifying edits (use project). " +
+  "Always use dedicated tools instead: read_file for reading files, soul_grep for searching code (dep param for node_modules/vendor), " +
+  "navigate for definitions/types/references, list_dir for directory listings, project for typecheck/lint/test. " +
   "LIMITATIONS: Output truncated at 30000 chars. Use '&&' to chain commands, not newlines.";
 
 export const shellTool = {

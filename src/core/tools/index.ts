@@ -1163,7 +1163,7 @@ export function buildTools(
           .enum(["diagnostics", "type_info", "outline", "code_actions", "unused", "symbol_diff"])
           .describe(
             "diagnostics=type errors/warnings, type_info=type signature+docs, " +
-              "outline=compact symbol list, code_actions=quick fixes, symbol_diff=before/after exports",
+              "outline=compact symbol list, code_actions=quick fixes, unused=unused symbols in file, symbol_diff=before/after exports",
           ),
         file: z
           .string()

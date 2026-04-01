@@ -176,16 +176,42 @@ async function autoResolveFile(
     // rg not available
   }
 
+  // Tier 4: Find a file that imports the symbol (~50-200ms)
+  // Useful for dependency types (e.g. from node_modules) where the symbol
+  // isn't defined in the project but is imported/used. The LSP can then
+  // resolve the definition from the usage site.
+  try {
+    const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const importPattern = `\\b${escaped}\\b`;
+    const proc = Bun.spawn(
+      ["rg", "--files-with-matches", "--glob", RG_FILE_TYPES, importPattern, "."],
+      {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "ignore",
+      },
+    );
+    const text = await new Response(proc.stdout).text();
+    const importMatches = text
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((p) => resolve(p));
+    if (importMatches.length >= 1) return { resolved: importMatches[0] as string };
+  } catch {
+    // rg not available
+  }
+
   return null;
 }
 
 export const navigateTool = {
   name: "navigate",
   description:
-    "[TIER-1] LSP-powered symbol lookup — prefer over grep for definitions and references. " +
+    "[TIER-1] LSP-powered symbol lookup. Auto-resolves file from symbol name — just pass the symbol. " +
     "Returns file:line locations, caller/callee lists, type hierarchies. " +
-    "Actions: definition, references, hover, symbols, incoming_calls, outgoing_calls. " +
-    "Auto-resolves file from symbol name — no file path needed.",
+    "Works across project and dependency files (node_modules, .d.ts, vendor). " +
+    "Actions: definition, references, symbols, imports, exports, call_hierarchy, implementation, type_hierarchy, workspace_symbols, search_symbols.",
   execute: async (args: NavigateArgs, repoMap?: RepoMapLike): Promise<ToolResult> => {
     try {
       const client = getIntelligenceClient();
@@ -260,7 +286,7 @@ export const navigateTool = {
           if (!tracked) {
             return {
               success: false,
-              output: `No definition backend available — try grep instead`,
+              output: `No definition backend available for this file type. Try navigate(workspace_symbols) to locate the symbol, or read_file to inspect the source directly.`,
               error: "unsupported",
             };
           }
@@ -297,7 +323,7 @@ export const navigateTool = {
           if (!tracked) {
             return {
               success: false,
-              output: `No references backend available — try grep instead`,
+              output: `No references backend available for this file type. Try navigate(workspace_symbols) to locate the symbol, or soul_grep to search for usages.`,
               error: "unsupported",
             };
           }

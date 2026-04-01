@@ -774,7 +774,7 @@ export const projectTool = {
   name: "project",
   description:
     "[TIER-1] Verify after every edit — auto-detected toolchain. " +
-    "Actions: test, build, lint, format, typecheck, list. Optionally target a specific file. " +
+    "Actions: test, build, lint, format, typecheck, run, list. Optionally target a specific file. " +
     "TIPS: Call typecheck after edits to catch errors early. Default timeout 30s, max 120s.",
   execute: async (args: ProjectArgs): Promise<ToolResult> => {
     const cwd = args.cwd ? join(process.cwd(), args.cwd) : process.cwd();
