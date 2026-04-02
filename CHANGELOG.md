@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [1.8.1] — 2026-04-02
+
+### Bug Fixes
+
+- context bar re-renders on window change, status dashboard uses fresh model
 ## [1.8.0] — 2026-04-02
 
 ### Bug Fixes
