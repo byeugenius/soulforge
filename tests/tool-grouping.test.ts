@@ -20,16 +20,16 @@ function pending(name: string, path?: string) {
 
 describe("groupToolCalls", () => {
   it("single tool call stays normal", () => {
-    const groups = groupToolCalls([tc("read_file", true, "a.ts")]);
+    const groups = groupToolCalls([tc("read", true, "a.ts")]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.type).toBe("normal");
   });
 
   it("groups consecutive reads", () => {
     const groups = groupToolCalls([
-      tc("read_file", true, "a.ts"),
-      tc("read_file", true, "b.ts"),
-      tc("read_file", true, "c.ts"),
+      tc("read", true, "a.ts"),
+      tc("read", true, "b.ts"),
+      tc("read", true, "c.ts"),
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.type).toBe("batch");
@@ -68,9 +68,9 @@ describe("groupToolCalls", () => {
 
   it("does NOT merge different kinds across boundaries", () => {
     const groups = groupToolCalls([
-      tc("read_file", true, "a.ts"),
+      tc("read", true, "a.ts"),
       tc("edit_file", true, "a.ts"),
-      tc("read_file", true, "a.ts"),
+      tc("read", true, "a.ts"),
     ]);
     // read → edit → read = 3 separate groups (each is single, so "normal")
     expect(groups).toHaveLength(3);
@@ -79,10 +79,10 @@ describe("groupToolCalls", () => {
 
   it("non-groupable tool breaks batch", () => {
     const groups = groupToolCalls([
-      tc("read_file", true, "a.ts"),
-      tc("read_file", true, "b.ts"),
+      tc("read", true, "a.ts"),
+      tc("read", true, "b.ts"),
       tc("shell"),
-      tc("read_file", true, "c.ts"),
+      tc("read", true, "c.ts"),
     ]);
     expect(groups).toHaveLength(3);
     expect(groups[0]!.type).toBe("batch"); // first 2 reads
@@ -101,11 +101,11 @@ describe("groupToolCalls", () => {
 
   it("meta between batches flushes correctly", () => {
     const groups = groupToolCalls([
-      tc("read_file", true, "a.ts"),
-      tc("read_file", true, "b.ts"),
+      tc("read", true, "a.ts"),
+      tc("read", true, "b.ts"),
       tc("update_plan_step"),
-      tc("read_file", true, "c.ts"),
-      tc("read_file", true, "d.ts"),
+      tc("read", true, "c.ts"),
+      tc("read", true, "d.ts"),
     ]);
     expect(groups).toHaveLength(3);
     expect(groups[0]!.type).toBe("batch"); // reads a, b
@@ -128,8 +128,8 @@ describe("groupToolCalls", () => {
 
   it("pending tool calls are grouped", () => {
     const groups = groupToolCalls([
-      pending("read_file", "a.ts"),
-      pending("read_file", "b.ts"),
+      pending("read", "a.ts"),
+      pending("read", "b.ts"),
     ] as Parameters<typeof groupToolCalls>[0]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.type).toBe("batch");
@@ -151,8 +151,8 @@ describe("groupToolCalls", () => {
 
   it("mixed sequence: reads → shell → edits → grep", () => {
     const groups = groupToolCalls([
-      tc("read_file", true, "a.ts"),
-      tc("read_file", true, "b.ts"),
+      tc("read", true, "a.ts"),
+      tc("read", true, "b.ts"),
       tc("shell"),
       tc("edit_file", true, "a.ts"),
       tc("edit_file", true, "b.ts"),

@@ -264,14 +264,14 @@ describe("shell security — FILE_READ_RE patterns", () => {
 });
 
 const READ_CMD_REDIRECT: Record<string, string> = {
-	cat: "read_file",
-	head: "read_file",
-	tail: "read_file",
-	less: "read_file",
-	more: "read_file",
-	bat: "read_file",
-	tac: "read_file",
-	nl: "read_file",
+	cat: "read",
+	head: "read",
+	tail: "read",
+	less: "read",
+	more: "read",
+	bat: "read",
+	tac: "read",
+	nl: "read",
 	grep: "grep",
 	rg: "grep",
 	ag: "grep",
@@ -289,9 +289,9 @@ function detectReadCommand(command: string): string | null {
 }
 
 describe("detectReadCommand — read tool redirect", () => {
-	it("redirects simple cat/head/tail to read_file", () => {
+	it("redirects simple cat/head/tail to read", () => {
 		for (const cmd of ["cat foo.ts", "head -n 20 bar.py", "tail setup.cfg"]) {
-			expect(detectReadCommand(cmd)).toContain("read_file");
+			expect(detectReadCommand(cmd)).toContain("read");
 		}
 	});
 
@@ -323,7 +323,7 @@ describe("detectReadCommand — read tool redirect", () => {
 	});
 
 	it("handles full path to command", () => {
-		expect(detectReadCommand("/usr/bin/cat foo.ts")).toContain("read_file");
+		expect(detectReadCommand("/usr/bin/cat foo.ts")).toContain("read");
 		expect(detectReadCommand("/usr/bin/grep pattern src/")).toContain("grep");
 	});
 });

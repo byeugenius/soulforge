@@ -3,7 +3,7 @@
  *
  * Categories:
  *   1. Concurrency (SessionManager, MemoryDB)
- *   2. Security bypass (symlinks → forbidden files, read_file forbidden gate)
+ *   2. Security bypass (symlinks → forbidden files, read forbidden gate)
  *   3. Boundary conditions (exact thresholds, off-by-one)
  *   4. Error paths (malformed input, partial failures)
  */
@@ -398,7 +398,7 @@ describe("Security — symlink bypass of forbidden files", () => {
 	});
 });
 
-describe("Security — read_file respects forbidden gate", () => {
+describe("Security — read respects forbidden gate", () => {
 	let dir: string;
 
 	beforeEach(() => {
@@ -410,7 +410,7 @@ describe("Security — read_file respects forbidden gate", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("read_file blocks .env files", async () => {
+	it("read blocks .env files", async () => {
 		const envFile = join(dir, ".env");
 		writeFileSync(envFile, "SECRET=hunter2\nAPI_KEY=abc123");
 
@@ -421,7 +421,7 @@ describe("Security — read_file respects forbidden gate", () => {
 		expect(result.output).not.toContain("abc123");
 	});
 
-	it("read_file blocks .env via symlink", async () => {
+	it("read blocks .env via symlink", async () => {
 		const envFile = join(dir, ".env");
 		writeFileSync(envFile, "SECRET=password123");
 		const link = join(dir, "safe-name.txt");
@@ -432,7 +432,7 @@ describe("Security — read_file respects forbidden gate", () => {
 		expect(result.output).not.toContain("password123");
 	});
 
-	it("read_file blocks credentials.json", async () => {
+	it("read blocks credentials.json", async () => {
 		const creds = join(dir, "credentials.json");
 		writeFileSync(creds, '{"secret":"value"}');
 
@@ -440,7 +440,7 @@ describe("Security — read_file respects forbidden gate", () => {
 		expect(result.success).toBe(false);
 	});
 
-	it("read_file allows normal files", async () => {
+	it("read allows normal files", async () => {
 		const normal = join(dir, "index.ts");
 		writeFileSync(normal, "export const x = 1;");
 
@@ -449,7 +449,7 @@ describe("Security — read_file respects forbidden gate", () => {
 		expect(result.output).toContain("export const x = 1");
 	});
 
-	it("read_file blocks dynamically added session patterns", async () => {
+	it("read blocks dynamically added session patterns", async () => {
 		addSessionPattern("*.supersecret");
 		const secretFile = join(dir, "data.supersecret");
 		writeFileSync(secretFile, "top secret content");
@@ -515,7 +515,7 @@ describe("Boundary — diff matrix guard at 100k", () => {
 	});
 });
 
-describe("Boundary — read_file line cap", () => {
+describe("Boundary — read line cap", () => {
 	let dir: string;
 
 	beforeEach(() => {
@@ -872,7 +872,7 @@ describe("Error paths — SessionManager", () => {
 	});
 });
 
-describe("Error paths — read_file edge cases", () => {
+describe("Error paths — read edge cases", () => {
 	let dir: string;
 
 	beforeEach(() => {

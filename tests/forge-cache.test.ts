@@ -171,8 +171,8 @@ function toolResultMsg(id: string, name: string, output: string): ModelMessage {
 describe("sanitizeMessages cache safety", () => {
 	test("clean messages return the SAME array reference (=== identity)", () => {
 		const messages: ModelMessage[] = [
-			assistantWithToolCall("1", "read_file", { path: "/a.ts" }),
-			toolResultMsg("1", "read_file", "file contents"),
+			assistantWithToolCall("1", "read", { path: "/a.ts" }),
+			toolResultMsg("1", "read", "file contents"),
 		];
 		const result = sanitizeMessages(messages);
 		expect(result).toBe(messages);
@@ -181,7 +181,7 @@ describe("sanitizeMessages cache safety", () => {
 	test("messages with no assistant content are returned as-is", () => {
 		const messages: ModelMessage[] = [
 			{ role: "user", content: [{ type: "text" as const, text: "hello" }] },
-			toolResultMsg("1", "read_file", "output"),
+			toolResultMsg("1", "read", "output"),
 		];
 		const result = sanitizeMessages(messages);
 		expect(result).toBe(messages);
@@ -189,8 +189,8 @@ describe("sanitizeMessages cache safety", () => {
 
 	test("broken tool-call input (string) gets fixed to empty object", () => {
 		const messages: ModelMessage[] = [
-			assistantWithToolCall("1", "read_file", "not an object"),
-			toolResultMsg("1", "read_file", "output"),
+			assistantWithToolCall("1", "read", "not an object"),
+			toolResultMsg("1", "read", "output"),
 		];
 		const result = sanitizeMessages(messages);
 		expect(result).not.toBe(messages);
@@ -202,8 +202,8 @@ describe("sanitizeMessages cache safety", () => {
 
 	test("broken tool-call input (array) gets fixed to empty object", () => {
 		const messages: ModelMessage[] = [
-			assistantWithToolCall("1", "read_file", ["bad", "input"]),
-			toolResultMsg("1", "read_file", "output"),
+			assistantWithToolCall("1", "read", ["bad", "input"]),
+			toolResultMsg("1", "read", "output"),
 		];
 		const result = sanitizeMessages(messages);
 		expect(result).not.toBe(messages);
@@ -213,8 +213,8 @@ describe("sanitizeMessages cache safety", () => {
 
 	test("broken tool-call input (null) gets fixed to empty object", () => {
 		const messages: ModelMessage[] = [
-			assistantWithToolCall("1", "read_file", null),
-			toolResultMsg("1", "read_file", "output"),
+			assistantWithToolCall("1", "read", null),
+			toolResultMsg("1", "read", "output"),
 		];
 		const result = sanitizeMessages(messages);
 		expect(result).not.toBe(messages);
@@ -223,9 +223,9 @@ describe("sanitizeMessages cache safety", () => {
 	});
 
 	test("only dirty messages get new objects, clean ones keep identity", () => {
-		const cleanMsg = assistantWithToolCall("1", "read_file", { path: "/a.ts" });
+		const cleanMsg = assistantWithToolCall("1", "read", { path: "/a.ts" });
 		const dirtyMsg = assistantWithToolCall("2", "grep", "bad string input");
-		const toolMsg = toolResultMsg("1", "read_file", "output");
+		const toolMsg = toolResultMsg("1", "read", "output");
 		const messages: ModelMessage[] = [cleanMsg, dirtyMsg, toolMsg];
 
 		const result = sanitizeMessages(messages);
@@ -242,7 +242,7 @@ describe("sanitizeMessages cache safety", () => {
 				{
 					type: "tool-call" as const,
 					toolCallId: "1",
-					toolName: "read_file",
+					toolName: "read",
 					input: { path: "/a.ts" },
 				},
 				{

@@ -868,7 +868,7 @@ describe("IO Worker — Session Persistence", () => {
       {
         role: "assistant",
         content: [
-          { type: "tool-call", toolCallId: "tc_1", toolName: "read_file", input: { path: "foo.ts" } },
+          { type: "tool-call", toolCallId: "tc_1", toolName: "read", input: { path: "foo.ts" } },
         ],
       },
       {
@@ -877,7 +877,7 @@ describe("IO Worker — Session Persistence", () => {
           {
             type: "tool-result",
             toolCallId: "tc_1",
-            toolName: "read_file",
+            toolName: "read",
             output: { type: "text", value: "const x = 1;\nexport function foo() {}" },
           },
         ],
@@ -890,7 +890,7 @@ describe("IO Worker — Session Persistence", () => {
     expect(tabMsgs).toHaveLength(2);
     expect((tabMsgs![0] as Record<string, unknown>).role).toBe("assistant");
     const content = (tabMsgs![0] as Record<string, unknown>).content as unknown[];
-    expect((content[0] as Record<string, unknown>).toolName).toBe("read_file");
+    expect((content[0] as Record<string, unknown>).toolName).toBe("read");
   });
 
   it("100 sequential save/load cycles without corruption", async () => {

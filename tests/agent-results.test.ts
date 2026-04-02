@@ -24,10 +24,10 @@ function makeResult(text: string, steps: Step[] = []): {
 
 function readStep(file: string, content: string): Step {
   return {
-    toolCalls: [{ toolName: "read_file", args: { path: file } }],
+    toolCalls: [{ toolName: "read", args: { path: file } }],
     toolResults: [
       {
-        toolName: "read_file",
+        toolName: "read",
         input: { path: file },
         output: JSON.stringify({ success: true, output: content }),
       },
@@ -97,8 +97,8 @@ describe("synthesizeDoneFromResults — extractText robustness", () => {
   it("extracts from raw string output (no JSON wrapper)", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "b.ts" } }],
-        toolResults: [{ toolName: "read_file", input: { path: "b.ts" }, output: "raw text content here with enough length" }],
+        toolCalls: [{ toolName: "read", args: { path: "b.ts" } }],
+        toolResults: [{ toolName: "read", input: { path: "b.ts" }, output: "raw text content here with enough length" }],
       },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
@@ -108,10 +108,10 @@ describe("synthesizeDoneFromResults — extractText robustness", () => {
   it("extracts from object output with .value field", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "c.ts" } }],
+        toolCalls: [{ toolName: "read", args: { path: "c.ts" } }],
         toolResults: [
           {
-            toolName: "read_file",
+            toolName: "read",
             input: { path: "c.ts" },
             output: { value: "value field content that is long enough to pass" },
           },
@@ -125,10 +125,10 @@ describe("synthesizeDoneFromResults — extractText robustness", () => {
   it("handles nested object output without producing [object Object]", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "d.ts" } }],
+        toolCalls: [{ toolName: "read", args: { path: "d.ts" } }],
         toolResults: [
           {
-            toolName: "read_file",
+            toolName: "read",
             input: { path: "d.ts" },
             output: { output: { lines: ["a", "b", "c"] } },
           },
@@ -145,8 +145,8 @@ describe("synthesizeDoneFromResults — extractText robustness", () => {
   it("handles null/undefined output gracefully", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "e.ts" } }],
-        toolResults: [{ toolName: "read_file", input: { path: "e.ts" }, output: null }],
+        toolCalls: [{ toolName: "read", args: { path: "e.ts" } }],
+        toolResults: [{ toolName: "read", input: { path: "e.ts" }, output: null }],
       },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
@@ -169,8 +169,8 @@ describe("synthesizeDoneFromResults — stub filtering", () => {
     it(`filters stub: ${stub.slice(0, 40)}...`, () => {
       const result = makeResult("done", [
         {
-          toolCalls: [{ toolName: "read_file", args: { path: "stub.ts" } }],
-          toolResults: [{ toolName: "read_file", input: { path: "stub.ts" }, output: stub }],
+          toolCalls: [{ toolName: "read", args: { path: "stub.ts" } }],
+          toolResults: [{ toolName: "read", input: { path: "stub.ts" }, output: stub }],
         },
       ]);
       const done = synthesizeDoneFromResults(result, [], TASK);
@@ -187,10 +187,10 @@ describe("synthesizeDoneFromResults — stub filtering", () => {
     const content = "This function handles the ← display for the UI component and does more stuff";
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "real.ts" } }],
+        toolCalls: [{ toolName: "read", args: { path: "real.ts" } }],
         toolResults: [
           {
-            toolName: "read_file",
+            toolName: "read",
             input: { path: "real.ts" },
             output: content,
           },
@@ -308,8 +308,8 @@ describe("synthesizeDoneFromResults — fallback when no content", () => {
   it("produces fallback finding with file list when no content extracted", () => {
     const result = makeResult("", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "a.ts" } }],
-        toolResults: [{ toolName: "read_file", input: { path: "a.ts" }, output: "" }],
+        toolCalls: [{ toolName: "read", args: { path: "a.ts" } }],
+        toolResults: [{ toolName: "read", input: { path: "a.ts" }, output: "" }],
       },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
@@ -327,8 +327,8 @@ describe("synthesizeDoneFromResults — fallback when no content", () => {
   it("uses first file path as fallback file name, not agentId", () => {
     const result = makeResult("", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "src/real.ts" } }],
-        toolResults: [{ toolName: "read_file", input: { path: "src/real.ts" }, output: "tiny" }],
+        toolCalls: [{ toolName: "read", args: { path: "src/real.ts" } }],
+        toolResults: [{ toolName: "read", input: { path: "src/real.ts" }, output: "tiny" }],
       },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
@@ -352,7 +352,7 @@ describe("synthesizeDoneFromResults — degenerate inputs", () => {
 
   it("handles undefined args on tool calls", () => {
     const result = makeResult("done", [
-      { toolCalls: [{ toolName: "read_file" }], toolResults: [] },
+      { toolCalls: [{ toolName: "read" }], toolResults: [] },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
     expect(done).toBeDefined();
@@ -361,8 +361,8 @@ describe("synthesizeDoneFromResults — degenerate inputs", () => {
   it("handles tool result with no input", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "a.ts" } }],
-        toolResults: [{ toolName: "read_file", output: "content that is definitely long enough to pass" }],
+        toolCalls: [{ toolName: "read", args: { path: "a.ts" } }],
+        toolResults: [{ toolName: "read", output: "content that is definitely long enough to pass" }],
       },
     ]);
     const done = synthesizeDoneFromResults(result, [], TASK);
@@ -453,7 +453,7 @@ describe("formatDoneResult", () => {
 describe("extractDoneResult", () => {
   it("finds done tool call in last step", () => {
     const result = makeResult("", [
-      { toolCalls: [{ toolName: "read_file", args: { path: "a.ts" } }] },
+      { toolCalls: [{ toolName: "read", args: { path: "a.ts" } }] },
       { toolCalls: [{ toolName: "done", args: { summary: "Found the bug" } }] },
     ]);
     const done = extractDoneResult(result);
@@ -471,7 +471,7 @@ describe("extractDoneResult", () => {
 
   it("returns null when no done call", () => {
     const result = makeResult("", [
-      { toolCalls: [{ toolName: "read_file", args: { path: "a.ts" } }] },
+      { toolCalls: [{ toolName: "read", args: { path: "a.ts" } }] },
     ]);
     expect(extractDoneResult(result)).toBeNull();
   });
@@ -515,10 +515,10 @@ describe("buildFallbackResult", () => {
   it("filters stubs from read contents", () => {
     const result = makeResult("", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: "stale.ts" } }],
+        toolCalls: [{ toolName: "read", args: { path: "stale.ts" } }],
         toolResults: [
           {
-            toolName: "read_file",
+            toolName: "read",
             input: { path: "stale.ts" },
             output: "← file was edited later in this conversation",
           },
@@ -615,10 +615,10 @@ describe("extractPathFromArgs edge cases", () => {
   it("handles args with filePath key", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { filePath: "src/alt.ts" } }],
+        toolCalls: [{ toolName: "read", args: { filePath: "src/alt.ts" } }],
         toolResults: [
           {
-            toolName: "read_file",
+            toolName: "read",
             input: { filePath: "src/alt.ts" },
             output: "content long enough to extract from this file path variant",
           },
@@ -632,7 +632,7 @@ describe("extractPathFromArgs edge cases", () => {
   it("handles numeric path gracefully (no crash)", () => {
     const result = makeResult("done", [
       {
-        toolCalls: [{ toolName: "read_file", args: { path: 42 as unknown as string } }],
+        toolCalls: [{ toolName: "read", args: { path: 42 as unknown as string } }],
         toolResults: [],
       },
     ]);
@@ -643,7 +643,7 @@ describe("extractPathFromArgs edge cases", () => {
 
   it("handles missing args object", () => {
     const result = makeResult("done", [
-      { toolCalls: [{ toolName: "read_file" }], toolResults: [] },
+      { toolCalls: [{ toolName: "read" }], toolResults: [] },
     ]);
     // Should not crash
     const done = synthesizeDoneFromResults(result, [], TASK);

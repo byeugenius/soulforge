@@ -105,7 +105,7 @@ describe("readFileTool", () => {
 		const result = await readFileTool.execute({ path: filePath });
 		expect(result.success).toBe(false);
 		expect(result.output).toContain("too large");
-		expect(result.output).toContain("startLine/endLine");
+		expect(result.output).toContain("ranges:");
 	});
 
 	it("reads empty file without error", async () => {

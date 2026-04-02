@@ -124,9 +124,9 @@ describe("WorkingStateManager", () => {
 });
 
 describe("extractFromToolCall", () => {
-  test("tracks read_file", () => {
+  test("tracks read", () => {
     const wsm = new WorkingStateManager();
-    extractFromToolCall(wsm, "read_file", { path: "src/index.ts" });
+    extractFromToolCall(wsm, "read", { path: "src/index.ts" });
     expect(wsm.getState().files.has("src/index.ts")).toBe(true);
     expect(wsm.getState().files.get("src/index.ts")?.actions[0]?.type).toBe("read");
   });
@@ -194,12 +194,12 @@ describe("extractFromToolResult", () => {
     expect(results[0]?.summary).toContain("5 tests passed");
   });
 
-  test("updates read_file with outline", () => {
+  test("updates read with outline", () => {
     const wsm = new WorkingStateManager();
-    extractFromToolCall(wsm, "read_file", { path: "src/auth.ts" });
+    extractFromToolCall(wsm, "read", { path: "src/auth.ts" });
     extractFromToolResult(
       wsm,
-      "read_file",
+      "read",
       "export function login() {}\nexport function logout() {}\nexport class AuthService {}",
       { path: "src/auth.ts" },
     );
@@ -345,10 +345,10 @@ describe("integration: full extraction cycle", () => {
     extractFromUserMessage(wsm, userMsg("fix the authentication timeout bug in src/auth.ts"));
 
     // Agent reads the file
-    extractFromToolCall(wsm, "read_file", { path: "src/auth.ts" });
+    extractFromToolCall(wsm, "read", { path: "src/auth.ts" });
     extractFromToolResult(
       wsm,
-      "read_file",
+      "read",
       "export function login(creds) {\n  const token = jwt.sign(creds);\n  return token;\n}\nexport function verify(token) {\n  return jwt.verify(token);\n}",
       { path: "src/auth.ts" },
     );

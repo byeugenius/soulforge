@@ -319,7 +319,7 @@ describe("sequential read counter — real audit sequences", () => {
 		for (const t of tools) {
 			if (SEARCH_TOOLS.has(t)) {
 				counter = 0;
-			} else if (t === "read_file") {
+			} else if (t === "read") {
 				counter++;
 				if (counter >= READ_NUDGE_HARD) hard++;
 				else if (counter >= READ_NUDGE_SOFT) soft++;
@@ -329,7 +329,7 @@ describe("sequential read counter — real audit sequences", () => {
 	}
 
 	it("21 consecutive reads hit hard warning (real audit streak)", () => {
-		const tools = Array.from({ length: 21 }, () => "read_file");
+		const tools = Array.from({ length: 21 }, () => "read");
 		const { soft, hard } = simulate(tools);
 		expect(hard).toBeGreaterThan(0);
 		expect(soft).toBeGreaterThan(0);
@@ -337,9 +337,9 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("reads interleaved with soul_grep resets counter", () => {
 		const tools = [
-			"read_file", "read_file", "read_file", "read_file",
+			"read", "read", "read", "read",
 			"soul_grep",
-			"read_file", "read_file", "read_file", "read_file",
+			"read", "read", "read", "read",
 			"soul_grep",
 		];
 		const { soft, hard } = simulate(tools);
@@ -349,9 +349,9 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("glob resets the counter (fixed bug)", () => {
 		const tools = [
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 			"glob",
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 		];
 		const { soft, hard } = simulate(tools);
 		expect(soft).toBe(0);
@@ -360,9 +360,9 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("shell resets the counter (fixed bug)", () => {
 		const tools = [
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 			"shell",
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 		];
 		const { soft, hard } = simulate(tools);
 		expect(soft).toBe(0);
@@ -371,9 +371,9 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("navigate resets the counter", () => {
 		const tools = [
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 			"navigate",
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 		];
 		const { soft, hard } = simulate(tools);
 		expect(soft).toBe(0);
@@ -382,11 +382,11 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("edit_file and update_plan_step do NOT reset counter", () => {
 		const tools = [
-			"read_file", "read_file", "read_file",
+			"read", "read", "read",
 			"edit_file",
-			"read_file", "read_file",
+			"read", "read",
 			"update_plan_step",
-			"read_file", "read_file",
+			"read", "read",
 		];
 		const { soft, hard } = simulate(tools);
 		expect(soft).toBeGreaterThan(0);
@@ -394,7 +394,7 @@ describe("sequential read counter — real audit sequences", () => {
 
 	it("real audit worst-case: 25 reads then search tools", () => {
 		const tools = [
-			...Array.from({ length: 25 }, () => "read_file" as const),
+			...Array.from({ length: 25 }, () => "read" as const),
 			...Array.from({ length: 11 }, () => "soul_grep" as const),
 		];
 		const { hard } = simulate(tools);
@@ -404,9 +404,9 @@ describe("sequential read counter — real audit sequences", () => {
 	it("real audit best-case: even interleaving avoids nudges", () => {
 		const tools: string[] = [];
 		for (let i = 0; i < 6; i++) {
-			tools.push("read_file", "read_file", "soul_grep");
+			tools.push("read", "read", "soul_grep");
 		}
-		tools.push("read_file");
+		tools.push("read");
 		const { soft, hard } = simulate(tools);
 		expect(soft).toBe(0);
 		expect(hard).toBe(0);
@@ -447,8 +447,8 @@ function makeStep(calls: Array<{ toolName: string; input?: unknown }>) {
 describe("detectRepeatedCalls", () => {
 	it("returns null when no repetitions", () => {
 		const steps = [
-			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
-			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "b.ts" } }]),
 			makeStep([{ toolName: "grep", input: { pattern: "foo" } }]),
 		];
 		expect(detectRepeatedCalls(steps)).toBeNull();
@@ -476,9 +476,9 @@ describe("detectRepeatedCalls", () => {
 
 	it("distinguishes different args", () => {
 		const steps = [
-			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
-			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
-			makeStep([{ toolName: "read_file", input: { path: "c.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "b.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "c.ts" } }]),
 		];
 		expect(detectRepeatedCalls(steps)).toBeNull();
 	});
@@ -488,8 +488,8 @@ describe("detectRepeatedCalls", () => {
 			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
 			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
 			makeStep([{ toolName: "grep", input: { pattern: "x" } }]),
-			makeStep([{ toolName: "read_file", input: { path: "a.ts" } }]),
-			makeStep([{ toolName: "read_file", input: { path: "b.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "a.ts" } }]),
+			makeStep([{ toolName: "read", input: { path: "b.ts" } }]),
 		];
 		expect(detectRepeatedCalls(steps, 2)).toBeNull();
 		expect(detectRepeatedCalls(steps, 5)).not.toBeNull();
@@ -515,11 +515,11 @@ describe("detectRepeatedCalls", () => {
 		const steps = [
 			makeStep([
 				{ toolName: "grep", input: { pattern: "x" } },
-				{ toolName: "read_file", input: { path: "a.ts" } },
+				{ toolName: "read", input: { path: "a.ts" } },
 			]),
 			makeStep([
 				{ toolName: "grep", input: { pattern: "x" } },
-				{ toolName: "read_file", input: { path: "b.ts" } },
+				{ toolName: "read", input: { path: "b.ts" } },
 			]),
 			makeStep([
 				{ toolName: "grep", input: { pattern: "x" } },

@@ -241,7 +241,7 @@ describe("buildPreloadedContent", () => {
     expect(result.length).toBeLessThanOrEqual(80_000 + 200); // small header overhead
   });
 
-  it("output format matches read_file style (4-digit padded line numbers)", async () => {
+  it("output format matches read style (4-digit padded line numbers)", async () => {
     const result = await buildPreloadedContent(["small.ts"], TMP);
     const lines = result.split("\n");
     // Find a numbered line

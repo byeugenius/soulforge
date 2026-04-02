@@ -63,11 +63,11 @@ function buildPaddedConversation(
 		const id = `pad-${String(i)}`;
 		msgs.push(
 			assistantToolCall([
-				{ id, name: "read_file", input: { path: `/pad${String(i)}.ts` } },
+				{ id, name: "read", input: { path: `/pad${String(i)}.ts` } },
 			]),
 		);
 		msgs.push(
-			toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+			toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 		);
 	}
 	return msgs;
@@ -98,7 +98,7 @@ function makeSteps(totalTokens: number) {
 }
 
 const TOOLS = {
-	read_file: {},
+	read: {},
 	grep: {},
 	glob: {},
 	edit_file: {},
@@ -142,9 +142,9 @@ describe("pruning rules", () => {
 	it("does not compact when message count <= KEEP_RECENT_MESSAGES", () => {
 		const msgs: ModelMessage[] = [
 			assistantToolCall([
-				{ id: "1", name: "read_file", input: { path: "/a.ts" } },
+				{ id: "1", name: "read", input: { path: "/a.ts" } },
 			]),
-			toolResult([{ id: "1", name: "read_file", output: LONG_CONTENT }]),
+			toolResult([{ id: "1", name: "read", output: LONG_CONTENT }]),
 		];
 		const result = callCompact(msgs);
 		expect(resultText(result, 1)).toBe(LONG_CONTENT);
@@ -153,7 +153,7 @@ describe("pruning rules", () => {
 	it("compacts old tool results", () => {
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -164,7 +164,7 @@ describe("pruning rules", () => {
 	it("preserves recent messages within KEEP_RECENT_MESSAGES window", () => {
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -176,7 +176,7 @@ describe("pruning rules", () => {
 	it("preserves short results (<= 200 chars)", () => {
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: "short",
 		});
@@ -190,10 +190,10 @@ describe("pruning rules", () => {
 // ---------------------------------------------------------------------------
 
 describe("summary formats", () => {
-	it("read_file: exact format with line count", () => {
+	it("read: exact format with line count", () => {
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -201,7 +201,7 @@ describe("summary formats", () => {
 		expect(resultText(result, 1)).toBe("← 100 lines");
 	});
 
-	it("read_file with symbols: exact format", () => {
+	it("read with symbols: exact format", () => {
 		const symbolLookup = (p: string) =>
 			p === "/a.ts"
 				? [
@@ -211,7 +211,7 @@ describe("summary formats", () => {
 				: [];
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -366,13 +366,13 @@ describe("summary formats", () => {
 				assistantToolCall([
 					{
 						id,
-						name: "read_file",
+						name: "read",
 						input: { path: `/p${String(i)}.ts` },
 					},
 				]),
 			);
 			msgs.push(
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 		const result = callCompact(msgs);
@@ -402,13 +402,13 @@ describe("summary formats", () => {
 				assistantToolCall([
 					{
 						id,
-						name: "read_file",
+						name: "read",
 						input: { path: `/p${String(i)}.ts` },
 					},
 				]),
 			);
 			msgs.push(
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 		const result = callCompact(msgs);
@@ -445,7 +445,7 @@ describe("preservation rules", () => {
 		expect(resultText(result, 1)).toBe(LONG_CONTENT);
 	});
 
-	it("multi-part tool result: prunes read_file, keeps edit_file in same message", () => {
+	it("multi-part tool result: prunes read, keeps edit_file in same message", () => {
 		const msgs: ModelMessage[] = [
 			{
 				role: "assistant",
@@ -453,7 +453,7 @@ describe("preservation rules", () => {
 					{
 						type: "tool-call" as const,
 						toolCallId: "r",
-						toolName: "read_file",
+						toolName: "read",
 						input: { path: "/a.ts" },
 					},
 					{
@@ -470,7 +470,7 @@ describe("preservation rules", () => {
 					{
 						type: "tool-result" as const,
 						toolCallId: "r",
-						toolName: "read_file",
+						toolName: "read",
 						output: {
 							type: "text" as const,
 							value: LONG_CONTENT,
@@ -494,13 +494,13 @@ describe("preservation rules", () => {
 				assistantToolCall([
 					{
 						id,
-						name: "read_file",
+						name: "read",
 						input: { path: `/pad${String(i)}.ts` },
 					},
 				]),
 			);
 			msgs.push(
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 
@@ -527,7 +527,7 @@ describe("symbol enrichment", () => {
 
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/big.ts" },
 			output: LONG_CONTENT,
 		});
@@ -545,7 +545,7 @@ describe("symbol enrichment", () => {
 		};
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -553,14 +553,14 @@ describe("symbol enrichment", () => {
 		expect(resultText(result, 1)).toBe("← 100 lines");
 	});
 
-	it("resolves read_file 'file' input key", () => {
+	it("resolves read 'file' input key", () => {
 		const symbolLookup = (p: string) =>
 			p === "/models.ts"
 				? [{ name: "User", kind: "interface", isExported: true }]
 				: [];
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { file: "/models.ts", target: "interface" },
 			output: LONG_CONTENT,
 		});
@@ -577,7 +577,7 @@ describe("symbol enrichment", () => {
 				: [];
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { filePath: "/utils.ts" },
 			output: LONG_CONTENT,
 		});
@@ -595,7 +595,7 @@ describe("symbol enrichment", () => {
 
 		const msgs = buildPaddedConversation({
 			id: "1",
-			name: "read_file",
+			name: "read",
 			input: { path: "/project/src/a.ts" },
 			output: LONG_CONTENT,
 		});
@@ -617,13 +617,13 @@ describe("symbol enrichment", () => {
 					{
 						type: "tool-call" as const,
 						toolCallId: "bad",
-						toolName: "read_file",
+						toolName: "read",
 						input: "/a.ts" as never,
 					},
 				],
 			},
 			toolResult([
-				{ id: "bad", name: "read_file", output: LONG_CONTENT },
+				{ id: "bad", name: "read", output: LONG_CONTENT },
 			]),
 		];
 		for (
@@ -636,13 +636,13 @@ describe("symbol enrichment", () => {
 				assistantToolCall([
 					{
 						id,
-						name: "read_file",
+						name: "read",
 						input: { path: `/pad${String(i)}.ts` },
 					},
 				]),
 			);
 			msgs.push(
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 
@@ -679,10 +679,10 @@ describe("buildPrepareStep — disablePruning", () => {
 		const bigContent = "x".repeat(200_000);
 		const msgs: ModelMessage[] = [
 			{ role: "user", content: [{ type: "text", text: "do stuff" }] },
-			assistantToolCall([{ id: "r1", name: "read_file", input: { path: "/a.ts" } }]),
-			toolResult([{ id: "r1", name: "read_file", output: bigContent }]),
-			assistantToolCall([{ id: "r2", name: "read_file", input: { path: "/b.ts" } }]),
-			toolResult([{ id: "r2", name: "read_file", output: "small" }]),
+			assistantToolCall([{ id: "r1", name: "read", input: { path: "/a.ts" } }]),
+			toolResult([{ id: "r1", name: "read", output: bigContent }]),
+			assistantToolCall([{ id: "r2", name: "read", input: { path: "/b.ts" } }]),
+			toolResult([{ id: "r2", name: "read", output: "small" }]),
 		];
 		const result = callPrepareStep(
 			{ role: "code", allTools: TOOLS, disablePruning: true },
@@ -702,14 +702,14 @@ describe("buildPrepareStep — disablePruning", () => {
 		const bigContent = "x".repeat(400_000);
 		const msgs: ModelMessage[] = [
 			{ role: "user", content: [{ type: "text", text: "do stuff" }] },
-			assistantToolCall([{ id: "r1", name: "read_file", input: { path: "/a.ts" } }]),
-			toolResult([{ id: "r1", name: "read_file", output: bigContent }]),
-			assistantToolCall([{ id: "r2", name: "read_file", input: { path: "/b.ts" } }]),
-			toolResult([{ id: "r2", name: "read_file", output: bigContent }]),
+			assistantToolCall([{ id: "r1", name: "read", input: { path: "/a.ts" } }]),
+			toolResult([{ id: "r1", name: "read", output: bigContent }]),
+			assistantToolCall([{ id: "r2", name: "read", input: { path: "/b.ts" } }]),
+			toolResult([{ id: "r2", name: "read", output: bigContent }]),
 			assistantToolCall([{ id: "r3", name: "grep", input: { pattern: "foo" } }]),
 			toolResult([{ id: "r3", name: "grep", output: "line1\nline2" }]),
-			assistantToolCall([{ id: "r4", name: "read_file", input: { path: "/c.ts" } }]),
-			toolResult([{ id: "r4", name: "read_file", output: "recent" }]),
+			assistantToolCall([{ id: "r4", name: "read", input: { path: "/c.ts" } }]),
+			toolResult([{ id: "r4", name: "read", output: "recent" }]),
 		];
 		const result = callPrepareStep(
 			{ role: "code", allTools: TOOLS, disablePruning: false },
@@ -729,9 +729,9 @@ describe("buildPrepareStep — cache control", () => {
 		const msgs: ModelMessage[] = [
 			{ role: "user", content: [{ type: "text", text: "hello" }] },
 			assistantToolCall([
-				{ id: "1", name: "read_file", input: { path: "/a.ts" } },
+				{ id: "1", name: "read", input: { path: "/a.ts" } },
 			]),
-			toolResult([{ id: "1", name: "read_file", output: "short" }]),
+			toolResult([{ id: "1", name: "read", output: "short" }]),
 		];
 		callPrepareStep(
 			{ role: "explore", allTools: TOOLS },
@@ -789,12 +789,12 @@ describe("buildPrepareStep — input sanitization", () => {
 					{
 						type: "tool-call" as const,
 						toolCallId: "bad",
-						toolName: "read_file",
+						toolName: "read",
 						input: "not-a-dict" as never,
 					},
 				],
 			},
-			toolResult([{ id: "bad", name: "read_file", output: "result" }]),
+			toolResult([{ id: "bad", name: "read", output: "result" }]),
 		];
 		const result = callPrepareStep(
 			{ role: "explore", allTools: TOOLS },
@@ -809,8 +809,8 @@ describe("buildPrepareStep — input sanitization", () => {
 	it("preserves valid dict inputs", () => {
 		const input = { path: "/a.ts" };
 		const msgs: ModelMessage[] = [
-			assistantToolCall([{ id: "ok", name: "read_file", input }]),
-			toolResult([{ id: "ok", name: "read_file", output: "result" }]),
+			assistantToolCall([{ id: "ok", name: "read", input }]),
+			toolResult([{ id: "ok", name: "read", output: "result" }]),
 		];
 		callPrepareStep(
 			{ role: "explore", allTools: TOOLS },
@@ -1318,9 +1318,9 @@ describe("summary formats — real audit tool outputs", () => {
 		expect(text).toStartWith("← feat: fix race condition");
 	});
 
-	it("read_file: includes line count", () => {
+	it("read: includes line count", () => {
 		const msgs = buildPaddedConversation({
-			id: "rf1", name: "read_file",
+			id: "rf1", name: "read",
 			input: { path: "src/hooks/useSocial.ts" },
 			output: READ_FILE_OUTPUT,
 		});
@@ -1366,14 +1366,14 @@ describe("compactOldToolResults with bookkeeping tools", () => {
 			{
 				role: "assistant",
 				content: [
-					{ type: "tool-call" as const, toolCallId: "tc-1", toolName: "read_file", input: { path: "/a.ts" } },
+					{ type: "tool-call" as const, toolCallId: "tc-1", toolName: "read", input: { path: "/a.ts" } },
 					{ type: "tool-call" as const, toolCallId: "ups-1", toolName: "update_plan_step", input: { stepId: "s1", status: "active" } },
 				],
 			},
 			{
 				role: "tool",
 				content: [
-					{ type: "tool-result" as const, toolCallId: "tc-1", toolName: "read_file", output: { type: "text" as const, value: "file content" } as never },
+					{ type: "tool-result" as const, toolCallId: "tc-1", toolName: "read", output: { type: "text" as const, value: "file content" } as never },
 					{ type: "tool-result" as const, toolCallId: "ups-1", toolName: "update_plan_step", output: { type: "text" as const, value: "Step s1: active" } as never },
 				],
 			},
@@ -1381,9 +1381,9 @@ describe("compactOldToolResults with bookkeeping tools", () => {
 		const result = compactOldToolResults(msgs);
 		const assistantContent = result[0]!.content as Array<{ toolName?: string }>;
 		const toolContent = result[1]!.content as Array<{ toolName?: string }>;
-		expect(assistantContent.some(p => p.toolName === "read_file")).toBe(true);
+		expect(assistantContent.some(p => p.toolName === "read")).toBe(true);
 		expect(assistantContent.some(p => p.toolName === "update_plan_step")).toBe(true);
-		expect(toolContent.some(p => p.toolName === "read_file")).toBe(true);
+		expect(toolContent.some(p => p.toolName === "read")).toBe(true);
 		expect(toolContent.some(p => p.toolName === "update_plan_step")).toBe(true);
 	});
 
@@ -1394,14 +1394,14 @@ describe("compactOldToolResults with bookkeeping tools", () => {
 				content: [
 					{ type: "text" as const, text: "Let me update the plan." },
 					{ type: "tool-call" as const, toolCallId: "ups-1", toolName: "update_plan_step", input: { stepId: "s1", status: "done" } },
-					{ type: "tool-call" as const, toolCallId: "rf-1", toolName: "read_file", input: { path: "/b.ts" } },
+					{ type: "tool-call" as const, toolCallId: "rf-1", toolName: "read", input: { path: "/b.ts" } },
 				],
 			},
 			{
 				role: "tool",
 				content: [
 					{ type: "tool-result" as const, toolCallId: "ups-1", toolName: "update_plan_step", output: { type: "text" as const, value: "Step s1: done" } as never },
-					{ type: "tool-result" as const, toolCallId: "rf-1", toolName: "read_file", output: { type: "text" as const, value: "file B" } as never },
+					{ type: "tool-result" as const, toolCallId: "rf-1", toolName: "read", output: { type: "text" as const, value: "file B" } as never },
 				],
 			},
 		];
@@ -1429,8 +1429,8 @@ describe("argsMap — non-object input handling", () => {
 		for (let i = 0; i < Math.ceil(KEEP_RECENT_MESSAGES / 2) + 1; i++) {
 			const id = `pad-${String(i)}`;
 			msgs.push(
-				assistantToolCall([{ id, name: "read_file", input: { path: `/p${String(i)}.ts` } }]),
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				assistantToolCall([{ id, name: "read", input: { path: `/p${String(i)}.ts` } }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 		const result = compactOldToolResults(msgs);
@@ -1452,8 +1452,8 @@ describe("argsMap — non-object input handling", () => {
 		for (let i = 0; i < Math.ceil(KEEP_RECENT_MESSAGES / 2) + 1; i++) {
 			const id = `pad-${String(i)}`;
 			msgs.push(
-				assistantToolCall([{ id, name: "read_file", input: { path: `/p${String(i)}.ts` } }]),
-				toolResult([{ id, name: "read_file", output: LONG_CONTENT }]),
+				assistantToolCall([{ id, name: "read", input: { path: `/p${String(i)}.ts` } }]),
+				toolResult([{ id, name: "read", output: LONG_CONTENT }]),
 			);
 		}
 		const result = compactOldToolResults(msgs);
@@ -1464,7 +1464,7 @@ describe("argsMap — non-object input handling", () => {
 
 describe("compactOldToolResults + stripBookkeepingTools — audit conversation simulation", () => {
 	// Simulates the actual audit conversation from audit_issue.json
-	// 299 tool calls, 6 dispatches, 76 update_plan_step, 98 read_file
+	// 299 tool calls, 6 dispatches, 76 update_plan_step, 98 read
 
 	function makeContent(chars: number): string {
 		const line = "const x = someFunctionCall({ key: 'value', nested: { deep: true } });\n";
@@ -1511,8 +1511,8 @@ describe("compactOldToolResults + stripBookkeepingTools — audit conversation s
 		const [a2, t2] = buildMultiToolStep([
 			{ id: "sg1", name: "soul_grep", input: { pattern: "style={{" }, outputChars: 2000 },
 			{ id: "sg2", name: "soul_grep", input: { pattern: "useState<any>" }, outputChars: 1500 },
-			{ id: "rc1", name: "read_file", input: { target: "function", name: "FeedScreen", file: "app/index.tsx" }, outputChars: 3000 },
-			{ id: "rf1", name: "read_file", input: { path: "hooks/useSocial.ts" }, outputChars: 4000 },
+			{ id: "rc1", name: "read", input: { target: "function", name: "FeedScreen", file: "app/index.tsx" }, outputChars: 3000 },
+			{ id: "rf1", name: "read", input: { path: "hooks/useSocial.ts" }, outputChars: 4000 },
 		]);
 		msgs.push(a2, t2);
 
@@ -1525,7 +1525,7 @@ describe("compactOldToolResults + stripBookkeepingTools — audit conversation s
 			);
 			if (i <= 5) {
 				step3Calls.push(
-					{ id: `rf-${i}`, name: "read_file", input: { path: `src/file${i}.ts` }, outputChars: 2000 },
+					{ id: `rf-${i}`, name: "read", input: { path: `src/file${i}.ts` }, outputChars: 2000 },
 					{ id: `ef-${i}`, name: "edit_file", input: { path: `src/file${i}.ts`, oldString: "x", newString: "y" }, outputChars: 30 },
 				);
 			}
@@ -1535,15 +1535,15 @@ describe("compactOldToolResults + stripBookkeepingTools — audit conversation s
 
 		// Step 4: more reads and edits
 		const [a4, t4] = buildMultiToolStep([
-			{ id: "rf-10", name: "read_file", input: { path: "src/app.tsx" }, outputChars: 3000 },
+			{ id: "rf-10", name: "read", input: { path: "src/app.tsx" }, outputChars: 3000 },
 			{ id: "ef-10", name: "edit_file", input: { path: "src/app.tsx", oldString: "a", newString: "b" }, outputChars: 25 },
-			{ id: "rf-11", name: "read_file", input: { path: "src/utils.ts" }, outputChars: 1500 },
+			{ id: "rf-11", name: "read", input: { path: "src/utils.ts" }, outputChars: 1500 },
 		]);
 		msgs.push(a4, t4);
 
 		// Step 5: recent — should stay in full
 		const [a5, t5] = buildMultiToolStep([
-			{ id: "rf-12", name: "read_file", input: { path: "src/recent.ts" }, outputChars: 2000 },
+			{ id: "rf-12", name: "read", input: { path: "src/recent.ts" }, outputChars: 2000 },
 			{ id: "ef-12", name: "edit_file", input: { path: "src/recent.ts", oldString: "c", newString: "d" }, outputChars: 30 },
 		]);
 		msgs.push(a5, t5);
@@ -1746,11 +1746,11 @@ describe("compactOldToolResults — realistic audit data", () => {
 			]),
 			assistantToolCall([
 				{ id: "grep-1", name: "soul_grep", input: { pattern: "style={{" } },
-				{ id: "read-1", name: "read_file", input: { path: "src/hooks/useSocial.ts" } },
+				{ id: "read-1", name: "read", input: { path: "src/hooks/useSocial.ts" } },
 			]),
 			toolResult([
 				{ id: "grep-1", name: "soul_grep", output: SOUL_GREP_OUTPUT },
-				{ id: "read-1", name: "read_file", output: READ_FILE_OUTPUT },
+				{ id: "read-1", name: "read", output: READ_FILE_OUTPUT },
 			]),
 			// Padding to push old results beyond KEEP_RECENT_MESSAGES
 			assistantToolCall([
@@ -1766,10 +1766,10 @@ describe("compactOldToolResults — realistic audit data", () => {
 				{ id: "edit-2", name: "edit_file", output: "Edit applied successfully" },
 			]),
 			assistantToolCall([
-				{ id: "read-2", name: "read_file", input: { path: "src/app.tsx" } },
+				{ id: "read-2", name: "read", input: { path: "src/app.tsx" } },
 			]),
 			toolResult([
-				{ id: "read-2", name: "read_file", output: "const App = () => <div />;" },
+				{ id: "read-2", name: "read", output: "const App = () => <div />;" },
 			]),
 		];
 		return msgs;
@@ -1794,7 +1794,7 @@ describe("compactOldToolResults — realistic audit data", () => {
 		expect(grepResult.length).toBeLessThan(100);
 	});
 
-	it("prunes old read_file results", () => {
+	it("prunes old read results", () => {
 		const msgs = buildAuditConversation();
 		const pruned = compactOldToolResults(msgs);
 
