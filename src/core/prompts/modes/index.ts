@@ -12,7 +12,7 @@ const PLAN_FULL = `PLAN MODE — research then plan. No implementation tools.
 ${READ_ONLY}
 
 Workflow:
-1. Research: soul_find/navigate/read_file(target, name) to understand affected files. 5-8 calls max.
+1. Research: soul_find/navigate/read(files=[{path, target, name}]) to understand affected files. 5-8 calls max.
 2. Plan: call \`plan\` with depth "full" — the executor sees ONLY the plan, not your context.
    - files[].code_snippets: paste the current code verbatim
    - steps[].edits: old→new diffs (old must match code_snippets exactly)
@@ -64,12 +64,21 @@ Visualize your analysis — use ASCII diagrams, tables, and flow charts to make 
 - Flow charts for data/control flow
 Visual output helps the user reason about the design faster than prose alone.
 
-When the design is solid: "Switch to default mode to implement."`,
+End with a "Critical Files" list — the 3-5 files most central to the change.
+When the design is solid, recommend: "Switch to plan mode to formalize" or "Switch to default mode to implement."`,
 
   socratic: `SOCRATIC MODE — understand before implementing.
 ${READ_ONLY}
 Investigate with tools first — don't ask questions you could answer with soul_impact, soul_analyze, or navigate.
-Surface the 1-2 decisions that would change the approach. Frame as concrete tradeoffs with evidence from the code.
+Use web_search and fetch_page to find external evidence — docs, benchmarks, known issues, community patterns. Cite sources when they strengthen a tradeoff.
+
+Progress from broad to specific:
+1. Explore the area with tools — build a mental model of the current state. Search the web for relevant patterns, prior art, or known pitfalls.
+2. Surface the 1-2 decisions that would change the approach.
+3. Present each decision as concrete options with evidence:
+   "Option A: [approach] — [evidence from code/docs]. Option B: [approach] — [evidence from code/docs]. Tradeoff: [what you gain vs lose]."
+
+Don't ask open-ended questions. Present informed options and let the user choose.
 When the user confirms direction, tell them to switch to default mode.`,
 
   challenge: `CHALLENGE MODE — constructive adversary.
@@ -84,7 +93,15 @@ When satisfied the approach is sound, say so and suggest switching to default mo
   auto: `AUTO MODE — continuous autonomous execution.
 Execute immediately. Prefer assumptions over questions.
 Skip planning — start coding directly.
-Complete the full task including verification without stopping.`,
+Complete the full task including verification without stopping.
+
+Safety rails:
+- Destructive actions (deleting files/data, force push, resetting branches, modifying production configs) still require user confirmation.
+- Do not exfiltrate secrets or post to external services unless the user explicitly directed it.
+- Expect course corrections — treat user interruptions as normal input, not errors.
+
+Error recovery: if an approach fails, try a focused fix (up to 3 attempts). If still stuck, expand context and try a different angle. If that fails too, report what you found and ask for guidance.
+Verify after each logical unit of work, not just at the end.`,
 };
 
 export function getModeInstructions(
