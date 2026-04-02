@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContextManager } from "../../core/context/manager.js";
 import {
   type InstalledSkill,
@@ -16,7 +16,7 @@ import {
 } from "../../core/skills/manager.js";
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, PopupRow, usePopupColors } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 100;
 const CHROME_ROWS = 9;
@@ -36,13 +36,163 @@ interface Props {
   onSystemMessage: (msg: string) => void;
 }
 
-export const SkillSearch = memo(function SkillSearch({
-  visible,
-  contextManager,
-  onClose,
-  onSystemMessage,
-}: Props) {
+function SearchSkillRow({
+  skill,
+  isSelected,
+  isInstalled,
+  isLoaded,
+  innerW,
+}: {
+  skill: SkillSearchResult;
+  isSelected: boolean;
+  isInstalled: boolean;
+  isLoaded: boolean;
+  innerW: number;
+}) {
   const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
+  const bg = isSelected ? popupHl : popupBg;
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={isSelected ? t.brand : t.textMuted}>
+        {isSelected ? "› " : "  "}
+      </text>
+      {isLoaded ? (
+        <text bg={bg} fg={t.info} attributes={TextAttributes.BOLD}>
+          {"● "}
+        </text>
+      ) : isInstalled ? (
+        <text bg={bg} fg={t.success} attributes={TextAttributes.BOLD}>
+          {"✓ "}
+        </text>
+      ) : null}
+      <text
+        bg={bg}
+        fg={isSelected ? t.brand : t.textSecondary}
+        attributes={isSelected ? TextAttributes.BOLD : undefined}
+      >
+        {skill.skillId}
+      </text>
+      <text bg={bg} fg={t.textMuted}>
+        {" "}
+        {skill.source}
+      </text>
+      <text bg={bg} fg={t.textDim}>
+        {" "}
+        {skill.installs.toLocaleString()}↓
+      </text>
+    </PopupRow>
+  );
+}
+
+function InstalledSkillRow({
+  skill,
+  isSelected,
+  isLoaded,
+  innerW,
+}: {
+  skill: InstalledSkill;
+  isSelected: boolean;
+  isLoaded: boolean;
+  innerW: number;
+}) {
+  const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
+  const bg = isSelected ? popupHl : popupBg;
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={isSelected ? t.brand : t.textMuted}>
+        {isSelected ? "› " : "  "}
+      </text>
+      <text
+        bg={bg}
+        fg={isSelected ? t.brand : t.textSecondary}
+        attributes={isSelected ? TextAttributes.BOLD : undefined}
+      >
+        {skill.name}
+      </text>
+      <text bg={bg} fg={t.textMuted}>
+        {" "}
+        {skill.scope === "project" ? "(project)" : "(global)"}
+      </text>
+      {isLoaded && (
+        <text bg={bg} fg={t.info} attributes={TextAttributes.BOLD}>
+          {" "}
+          ●
+        </text>
+      )}
+    </PopupRow>
+  );
+}
+
+function ActiveSkillRow({
+  name,
+  isSelected,
+  innerW,
+}: {
+  name: string;
+  isSelected: boolean;
+  innerW: number;
+}) {
+  const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
+  const bg = isSelected ? popupHl : popupBg;
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={isSelected ? t.brand : t.textMuted}>
+        {isSelected ? "› " : "  "}
+      </text>
+      <text bg={bg} fg={t.info} attributes={TextAttributes.BOLD}>
+        {"● "}
+      </text>
+      <text
+        bg={bg}
+        fg={isSelected ? t.brand : t.textPrimary}
+        attributes={isSelected ? TextAttributes.BOLD : undefined}
+      >
+        {name}
+      </text>
+    </PopupRow>
+  );
+}
+
+function ScopeRow({
+  label,
+  description,
+  isSelected,
+  innerW,
+}: {
+  label: string;
+  description: string;
+  isSelected: boolean;
+  innerW: number;
+}) {
+  const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
+  const bg = isSelected ? popupHl : popupBg;
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={isSelected ? t.brand : t.textMuted}>
+        {isSelected ? "› " : "  "}
+      </text>
+      <text
+        bg={bg}
+        fg={isSelected ? t.brand : t.textSecondary}
+        attributes={isSelected ? TextAttributes.BOLD : undefined}
+      >
+        {label}
+      </text>
+      <text bg={bg} fg={t.textMuted}>
+        {" "}
+        {description}
+      </text>
+    </PopupRow>
+  );
+}
+
+export function SkillSearch({ visible, contextManager, onClose, onSystemMessage }: Props) {
+  const t = useTheme();
+  const { bg: popupBg, hl: popupHl } = usePopupColors();
   const [tab, setTab] = useState<Tab>("search");
   const [query, setQuery] = useState("");
   const [popular, setPopular] = useState<SkillSearchResult[]>([]);
@@ -65,24 +215,32 @@ export const SkillSearch = memo(function SkillSearch({
   const { cursor, setCursor, scrollOffset, adjustScroll, resetScroll } = usePopupScroll(maxVisible);
 
   const filterQuery = query.toLowerCase().trim();
+
   const installedNames = new Set(installed.map((s) => s.name));
+
   const filteredInstalled = filterQuery
     ? installed.filter((s) => s.name.toLowerCase().includes(filterQuery))
     : installed;
+
   const filteredActive = filterQuery
     ? activeSkills.filter((s) => s.toLowerCase().includes(filterQuery))
     : activeSkills;
 
-  // Show popular skills when query is empty, search results when typing
   const displayResults = query.trim() ? results : popular;
 
-  const refreshInstalled = useCallback(() => {
-    setInstalled(listInstalledSkills());
-  }, []);
+  const currentListLen = (() => {
+    if (tab === "search") return displayResults.length;
+    if (tab === "installed") return filteredInstalled.length;
+    return filteredActive.length;
+  })();
 
-  const refreshActive = useCallback(() => {
+  const refreshInstalled = () => {
+    setInstalled(listInstalledSkills());
+  };
+
+  const refreshActive = () => {
     setActiveSkills(contextManager.getActiveSkills());
-  }, [contextManager]);
+  };
 
   useEffect(() => {
     if (visible) {
@@ -92,12 +250,11 @@ export const SkillSearch = memo(function SkillSearch({
       setCursor(0);
       refreshInstalled();
       refreshActive();
-      // Fetch popular skills for the default view
       listPopularSkills()
         .then((r) => setPopular(r))
         .catch(() => {});
     }
-  }, [visible, refreshInstalled, refreshActive, setCursor]);
+  }, [visible, setCursor, refreshActive, refreshInstalled]);
 
   useEffect(() => {
     if (!visible || tab !== "search") return;
@@ -109,7 +266,6 @@ export const SkillSearch = memo(function SkillSearch({
       return;
     }
 
-    // Clear popular once user starts typing — search results take over
     if (popular.length > 0) setPopular([]);
 
     setSearching(true);
@@ -136,15 +292,55 @@ export const SkillSearch = memo(function SkillSearch({
     resetScroll();
     if (tab === "installed") refreshInstalled();
     if (tab === "active") refreshActive();
-  }, [tab, refreshInstalled, refreshActive, resetScroll]);
+  }, [tab, resetScroll, refreshInstalled, refreshActive]);
 
-  const currentList = (): number => {
-    if (tab === "search") return displayResults.length;
-    if (tab === "installed") return filteredInstalled.length;
-    return filteredActive.length;
+  const doInstall = (skill: SkillSearchResult, global: boolean) => {
+    setInstalling(true);
+    installSkill(skill.source, skill.skillId, global)
+      .then((result) => {
+        if (result.installed) {
+          onSystemMessage(
+            `Skill "${result.name ?? skill.name}" installed ${global ? "globally" : "to project"}.`,
+          );
+        } else {
+          onSystemMessage(`Failed to install "${skill.name}": ${result.error ?? "unknown error"}`);
+        }
+        refreshInstalled();
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        onSystemMessage(`Failed to install "${skill.name}": ${msg}`);
+      })
+      .finally(() => setInstalling(false));
   };
 
-  useKeyboard((evt) => {
+  const handleAction = () => {
+    if (tab === "search") {
+      const skill = displayResults[cursor];
+      if (!skill || installing) return;
+      if (isInProject) {
+        setPendingInstall(skill);
+        setScopeCursor(0);
+      } else {
+        doInstall(skill, true);
+      }
+    } else if (tab === "installed") {
+      const skill = filteredInstalled[cursor];
+      if (!skill) return;
+      const content = loadSkill(skill.path);
+      contextManager.addSkill(skill.name, content);
+      onSystemMessage(`Skill "${skill.name}" loaded into AI context.`);
+      refreshActive();
+    } else {
+      const name = filteredActive[cursor];
+      if (!name) return;
+      contextManager.removeSkill(name);
+      onSystemMessage(`Skill "${name}" unloaded from AI context.`);
+      refreshActive();
+    }
+  };
+
+  const handleKeyboard = (evt: import("@opentui/core").KeyEvent) => {
     if (!visible) return;
 
     if (pendingInstall) {
@@ -178,7 +374,7 @@ export const SkillSearch = memo(function SkillSearch({
     }
 
     if (evt.name === "up") {
-      const len = currentList();
+      const len = currentListLen;
       setCursor((prev) => {
         const next = prev > 0 ? prev - 1 : Math.max(0, len - 1);
         adjustScroll(next);
@@ -187,7 +383,7 @@ export const SkillSearch = memo(function SkillSearch({
       return;
     }
     if (evt.name === "down") {
-      const len = currentList();
+      const len = currentListLen;
       setCursor((prev) => {
         const next = prev < len - 1 ? prev + 1 : 0;
         adjustScroll(next);
@@ -201,12 +397,10 @@ export const SkillSearch = memo(function SkillSearch({
       return;
     }
 
-    // Ctrl+D: delete skill from disk (installed tab) or unload (active tab)
     if (evt.ctrl && evt.name === "d") {
       if (tab === "installed") {
         const skill = filteredInstalled[cursor];
         if (skill) {
-          // Unload from context if active
           if (activeSkills.includes(skill.name)) {
             contextManager.removeSkill(skill.name);
           }
@@ -247,57 +441,19 @@ export const SkillSearch = memo(function SkillSearch({
       setQuery((prev) => prev + evt.name);
       resetScroll();
     }
-  });
-
-  const doInstall = (skill: SkillSearchResult, global: boolean) => {
-    setInstalling(true);
-    installSkill(skill.source, skill.skillId, global)
-      .then((result) => {
-        if (result.installed) {
-          onSystemMessage(
-            `Skill "${result.name ?? skill.name}" installed ${global ? "globally" : "to project"}.`,
-          );
-        } else {
-          onSystemMessage(`Failed to install "${skill.name}": ${result.error ?? "unknown error"}`);
-        }
-        refreshInstalled();
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        onSystemMessage(`Failed to install "${skill.name}": ${msg}`);
-      })
-      .finally(() => setInstalling(false));
   };
 
-  const handleAction = () => {
-    if (tab === "search") {
-      const skill = results[cursor];
-      if (!skill || installing) return;
-      if (isInProject) {
-        setPendingInstall(skill);
-        setScopeCursor(0);
-      } else {
-        doInstall(skill, true);
-      }
-    } else if (tab === "installed") {
-      const skill = filteredInstalled[cursor];
-      if (!skill) return;
-      const content = loadSkill(skill.path);
-      contextManager.addSkill(skill.name, content);
-      onSystemMessage(`Skill "${skill.name}" loaded into AI context.`);
-      refreshActive();
-    } else {
-      const name = filteredActive[cursor];
-      if (!name) return;
-      contextManager.removeSkill(name);
-      onSystemMessage(`Skill "${name}" unloaded from AI context.`);
-      refreshActive();
-    }
-  };
+  useKeyboard(handleKeyboard);
 
   if (!visible) return null;
 
   const tabIdx = TABS.indexOf(tab);
+  const resultCountLabel =
+    tab === "search"
+      ? `${displayResults.length}`
+      : tab === "installed"
+        ? `${filteredInstalled.length}`
+        : `${filteredActive.length}`;
 
   return (
     <Overlay>
@@ -309,57 +465,60 @@ export const SkillSearch = memo(function SkillSearch({
         width={popupWidth}
       >
         <PopupRow w={innerW}>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
+          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={popupBg}>
             {"\uDB82\uDD2A"} Skills
           </text>
         </PopupRow>
 
         <PopupRow w={innerW}>
-          {TABS.map((tabItem, i) => (
-            <text key={tabItem} bg={POPUP_BG}>
-              {i > 0 ? (
-                <span fg={t.textFaint} bg={POPUP_BG}>
-                  {" │ "}
+          {TABS.map((tabItem, i) => {
+            const selected = i === tabIdx;
+            return (
+              <text key={tabItem} bg={popupBg}>
+                {i > 0 ? (
+                  <span fg={t.textFaint} bg={popupBg}>
+                    {" │ "}
+                  </span>
+                ) : (
+                  ""
+                )}
+                <span
+                  fg={selected ? t.brand : t.textMuted}
+                  attributes={selected ? TextAttributes.BOLD : undefined}
+                  bg={selected ? popupHl : popupBg}
+                >
+                  {selected ? ` ${TAB_LABELS[tabItem]} ` : ` ${TAB_LABELS[tabItem]} `}
                 </span>
-              ) : (
-                ""
-              )}
-              <span
-                fg={i === tabIdx ? t.brandSecondary : t.textMuted}
-                attributes={i === tabIdx ? TextAttributes.BOLD : undefined}
-                bg={POPUP_BG}
-              >
-                {TAB_LABELS[tabItem]}
-              </span>
-            </text>
-          ))}
+              </text>
+            );
+          })}
         </PopupRow>
 
         <PopupRow w={innerW}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
+          <text fg={t.textFaint} bg={popupBg}>
             {"─".repeat(innerW - 4)}
           </text>
         </PopupRow>
 
-        <PopupRow w={innerW}>
-          <text fg={t.brand} bg={POPUP_BG}>
-            {" "}
+        <PopupRow w={innerW} bg={popupHl}>
+          <text fg={t.textMuted} bg={popupHl}>
+            {"\uD83D\uDD0D "}
           </text>
           {query ? (
             <>
-              <text fg={t.textPrimary} bg={POPUP_BG}>
+              <text fg={t.textPrimary} bg={popupHl}>
                 {query}
               </text>
-              <text fg={t.brandSecondary} bg={POPUP_BG}>
+              <text fg={t.brand} bg={popupHl}>
                 {"█"}
               </text>
             </>
           ) : (
             <>
-              <text fg={t.brandSecondary} bg={POPUP_BG}>
+              <text fg={t.brand} bg={popupHl}>
                 {"█"}
               </text>
-              <text fg={t.textMuted} bg={POPUP_BG}>
+              <text fg={t.textMuted} bg={popupHl}>
                 {tab === "search"
                   ? "type to filter / search skills.sh..."
                   : tab === "installed"
@@ -368,6 +527,9 @@ export const SkillSearch = memo(function SkillSearch({
               </text>
             </>
           )}
+          <text fg={t.textDim} bg={popupHl}>
+            {` (${resultCountLabel})`}
+          </text>
         </PopupRow>
         <PopupRow w={innerW}>
           <text>{""}</text>
@@ -382,62 +544,39 @@ export const SkillSearch = memo(function SkillSearch({
             >
               {searching ? (
                 <PopupRow w={innerW}>
-                  <text fg={t.brand} bg={POPUP_BG}>
+                  <text fg={t.brand} bg={popupBg}>
                     searching...
                   </text>
                 </PopupRow>
               ) : displayResults.length === 0 ? (
                 <PopupRow w={innerW}>
-                  <text fg={t.textMuted} bg={POPUP_BG}>
+                  <text fg={t.textMuted} bg={popupBg}>
                     {query ? "no results" : "loading popular skills..."}
                   </text>
                 </PopupRow>
               ) : (
                 displayResults.slice(scrollOffset, scrollOffset + maxVisible).map((skill, i) => {
                   const idx = scrollOffset + i;
-                  const isActive = idx === cursor;
-                  const bg = isActive ? POPUP_HL : POPUP_BG;
-                  const isInstalled =
-                    installedNames.has(skill.skillId) || installedNames.has(skill.name);
-                  const isLoaded =
-                    activeSkills.includes(skill.skillId) || activeSkills.includes(skill.name);
                   return (
-                    <PopupRow key={skill.id} bg={bg} w={innerW}>
-                      <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                        {isActive ? "› " : "  "}
-                      </text>
-                      {isLoaded ? (
-                        <text bg={bg} fg={t.success}>
-                          ●{" "}
-                        </text>
-                      ) : isInstalled ? (
-                        <text bg={bg} fg={t.success}>
-                          ✓{" "}
-                        </text>
-                      ) : null}
-                      <text
-                        bg={bg}
-                        fg={isActive ? t.brandSecondary : t.textSecondary}
-                        attributes={isActive ? TextAttributes.BOLD : undefined}
-                      >
-                        {skill.skillId}
-                      </text>
-                      <text bg={bg} fg={t.textMuted}>
-                        {" "}
-                        {skill.source}
-                      </text>
-                      <text bg={bg} fg={t.textDim}>
-                        {" "}
-                        {skill.installs.toLocaleString()}↓
-                      </text>
-                    </PopupRow>
+                    <SearchSkillRow
+                      key={skill.id}
+                      skill={skill}
+                      isSelected={idx === cursor}
+                      isInstalled={
+                        installedNames.has(skill.skillId) || installedNames.has(skill.name)
+                      }
+                      isLoaded={
+                        activeSkills.includes(skill.skillId) || activeSkills.includes(skill.name)
+                      }
+                      innerW={innerW}
+                    />
                   );
                 })
               )}
             </box>
             {displayResults.length > maxVisible && (
               <PopupRow w={innerW}>
-                <text fg={t.textMuted} bg={POPUP_BG}>
+                <text fg={t.textMuted} bg={popupBg}>
                   {scrollOffset > 0 ? "↑ " : "  "}
                   {String(cursor + 1)}/{String(displayResults.length)}
                   {scrollOffset + maxVisible < displayResults.length ? " ↓" : ""}
@@ -451,40 +590,28 @@ export const SkillSearch = memo(function SkillSearch({
                   <text>{""}</text>
                 </PopupRow>
                 <PopupRow w={innerW}>
-                  <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
+                  <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={popupBg}>
                     Install "{pendingInstall.skillId}" to:
                   </text>
                 </PopupRow>
-                {(["Project", "Global"] as const).map((label, i) => {
-                  const isActive = i === scopeCursor;
-                  const bg = isActive ? POPUP_HL : POPUP_BG;
-                  return (
-                    <PopupRow key={label} bg={bg} w={innerW}>
-                      <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                        {isActive ? "› " : "  "}
-                      </text>
-                      <text
-                        bg={bg}
-                        fg={isActive ? t.brandSecondary : t.textSecondary}
-                        attributes={isActive ? TextAttributes.BOLD : undefined}
-                      >
-                        {label}
-                      </text>
-                      <text bg={bg} fg={t.textMuted}>
-                        {" "}
-                        {i === 0
-                          ? ".agents/skills/ (this repo)"
-                          : "~/.agents/skills/ (all projects)"}
-                      </text>
-                    </PopupRow>
-                  );
-                })}
+                <ScopeRow
+                  label="Project"
+                  description=".agents/skills/ (this repo)"
+                  isSelected={scopeCursor === 0}
+                  innerW={innerW}
+                />
+                <ScopeRow
+                  label="Global"
+                  description="~/.agents/skills/ (all projects)"
+                  isSelected={scopeCursor === 1}
+                  innerW={innerW}
+                />
               </>
             )}
 
             {installing && (
               <PopupRow w={innerW}>
-                <text fg={t.brand} bg={POPUP_BG}>
+                <text fg={t.brand} bg={popupBg}>
                   installing...
                 </text>
               </PopupRow>
@@ -501,46 +628,28 @@ export const SkillSearch = memo(function SkillSearch({
             >
               {filteredInstalled.length === 0 ? (
                 <PopupRow w={innerW}>
-                  <text fg={t.textMuted} bg={POPUP_BG}>
+                  <text fg={t.textMuted} bg={popupBg}>
                     {query ? "no matching skills" : "no installed skills found"}
                   </text>
                 </PopupRow>
               ) : (
                 filteredInstalled.slice(scrollOffset, scrollOffset + maxVisible).map((skill, i) => {
                   const idx = scrollOffset + i;
-                  const isActive = idx === cursor;
-                  const isLoaded = activeSkills.includes(skill.name);
-                  const bg = isActive ? POPUP_HL : POPUP_BG;
                   return (
-                    <PopupRow key={skill.path} bg={bg} w={innerW}>
-                      <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                        {isActive ? "› " : "  "}
-                      </text>
-                      <text
-                        bg={bg}
-                        fg={isActive ? t.brandSecondary : t.textSecondary}
-                        attributes={isActive ? TextAttributes.BOLD : undefined}
-                      >
-                        {skill.name}
-                      </text>
-                      <text bg={bg} fg={t.textMuted}>
-                        {" "}
-                        {skill.scope === "project" ? "(project)" : "(global)"}
-                      </text>
-                      {isLoaded && (
-                        <text bg={bg} fg={t.success}>
-                          {" "}
-                          ●
-                        </text>
-                      )}
-                    </PopupRow>
+                    <InstalledSkillRow
+                      key={skill.path}
+                      skill={skill}
+                      isSelected={idx === cursor}
+                      isLoaded={activeSkills.includes(skill.name)}
+                      innerW={innerW}
+                    />
                   );
                 })
               )}
             </box>
             {filteredInstalled.length > maxVisible && (
               <PopupRow w={innerW}>
-                <text fg={t.textMuted} bg={POPUP_BG}>
+                <text fg={t.textMuted} bg={popupBg}>
                   {scrollOffset > 0 ? "↑ " : "  "}
                   {String(cursor + 1)}/{String(filteredInstalled.length)}
                   {scrollOffset + maxVisible < filteredInstalled.length ? " ↓" : ""}
@@ -559,35 +668,27 @@ export const SkillSearch = memo(function SkillSearch({
             >
               {filteredActive.length === 0 ? (
                 <PopupRow w={innerW}>
-                  <text fg={t.textMuted} bg={POPUP_BG}>
+                  <text fg={t.textMuted} bg={popupBg}>
                     {query ? "no matching skills" : "no active skills — load from Installed tab"}
                   </text>
                 </PopupRow>
               ) : (
                 filteredActive.slice(scrollOffset, scrollOffset + maxVisible).map((name, i) => {
                   const idx = scrollOffset + i;
-                  const isActive = idx === cursor;
-                  const bg = isActive ? POPUP_HL : POPUP_BG;
                   return (
-                    <PopupRow key={name} bg={bg} w={innerW}>
-                      <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                        {isActive ? "› " : "  "}
-                      </text>
-                      <text
-                        bg={bg}
-                        fg={isActive ? t.brandSecondary : t.success}
-                        attributes={isActive ? TextAttributes.BOLD : undefined}
-                      >
-                        {name}
-                      </text>
-                    </PopupRow>
+                    <ActiveSkillRow
+                      key={name}
+                      name={name}
+                      isSelected={idx === cursor}
+                      innerW={innerW}
+                    />
                   );
                 })
               )}
             </box>
             {filteredActive.length > maxVisible && (
               <PopupRow w={innerW}>
-                <text fg={t.textMuted} bg={POPUP_BG}>
+                <text fg={t.textMuted} bg={popupBg}>
                   {scrollOffset > 0 ? "↑ " : "  "}
                   {String(cursor + 1)}/{String(filteredActive.length)}
                   {scrollOffset + maxVisible < filteredActive.length ? " ↓" : ""}
@@ -601,7 +702,7 @@ export const SkillSearch = memo(function SkillSearch({
           <text>{""}</text>
         </PopupRow>
         <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
+          <text fg={t.textMuted} bg={popupBg}>
             {"↑↓"} nav | {"⏎"}{" "}
             {tab === "search" ? "install" : tab === "installed" ? "load" : "unload"}
             {tab === "installed" ? " | ^D remove" : tab === "active" ? " | ^D unload" : ""}
@@ -611,4 +712,4 @@ export const SkillSearch = memo(function SkillSearch({
       </box>
     </Overlay>
   );
-});
+}

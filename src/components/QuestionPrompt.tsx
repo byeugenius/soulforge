@@ -3,6 +3,7 @@ import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import { icon } from "../core/icons.js";
 import { useTheme } from "../core/theme/index.js";
+import type { ThemeTokens } from "../core/theme/tokens.js";
 import type { PendingQuestion } from "../types/index.js";
 import { Markdown } from "./chat/Markdown.js";
 
@@ -14,6 +15,28 @@ interface Props {
 
 const OTHER_IDX = -1;
 
+function OptionRow({
+  label,
+  isSelected,
+  t,
+}: {
+  label: string;
+  isSelected: boolean;
+  t: ThemeTokens;
+}) {
+  return (
+    <text>
+      <span fg={isSelected ? t.brand : t.textMuted}>{isSelected ? " › " : "   "}</span>
+      <span
+        fg={isSelected ? t.textPrimary : t.textSecondary}
+        attributes={isSelected ? TextAttributes.BOLD : undefined}
+      >
+        {label}
+      </span>
+    </text>
+  );
+}
+
 export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
   const t = useTheme();
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -22,7 +45,7 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
 
   const totalOptions = question.options.length + 1;
 
-  useKeyboard((evt) => {
+  const handleKeyboard = (evt: import("@opentui/core").KeyEvent) => {
     if (!isActive) return;
 
     if (typing) {
@@ -69,7 +92,9 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
       question.resolve("__skipped__");
       evt.stopPropagation();
     }
-  });
+  };
+
+  useKeyboard(handleKeyboard);
 
   const handleInputSubmit = () => {
     const trimmed = inputValue.trim();
@@ -84,21 +109,21 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
       flexDirection="column"
       borderStyle="rounded"
       border={true}
-      borderColor={t.warning}
+      borderColor={t.brand}
       paddingX={1}
       width="100%"
     >
       <box>
-        <text fg={t.warning} attributes={TextAttributes.BOLD}>
+        <text fg={t.brand} attributes={TextAttributes.BOLD}>
           {icon("question")} Question
         </text>
       </box>
-      <box>
+      <box flexDirection="column" paddingBottom={1}>
         <Markdown text={question.question} />
       </box>
       {typing ? (
-        <box flexDirection="row" gap={1}>
-          <text fg={t.warning}>{" ›"}</text>
+        <box flexDirection="row" gap={1} backgroundColor={t.bgInput} paddingX={1}>
+          <text fg={t.brand}>{" ›"}</text>
           <input
             value={inputValue}
             onInput={setInputValue}
@@ -110,31 +135,10 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
         </box>
       ) : (
         <box flexDirection="column">
-          {question.options.map((opt, i) => {
-            const isSelected = i === selectedIdx;
-            return (
-              <text key={opt.value}>
-                <span fg={isSelected ? t.warning : t.textMuted}>{isSelected ? " › " : "   "}</span>
-                <span
-                  fg={isSelected ? "white" : t.textSecondary}
-                  attributes={isSelected ? TextAttributes.BOLD : undefined}
-                >
-                  {opt.label}
-                </span>
-              </text>
-            );
-          })}
-          <text>
-            <span fg={selectedIdx === OTHER_IDX ? t.warning : t.textMuted}>
-              {selectedIdx === OTHER_IDX ? " › " : "   "}
-            </span>
-            <span
-              fg={selectedIdx === OTHER_IDX ? "white" : t.textSecondary}
-              attributes={selectedIdx === OTHER_IDX ? TextAttributes.BOLD : undefined}
-            >
-              Other
-            </span>
-          </text>
+          {question.options.map((opt, i) => (
+            <OptionRow key={opt.value} label={opt.label} isSelected={i === selectedIdx} t={t} />
+          ))}
+          <OptionRow label="Other" isSelected={selectedIdx === OTHER_IDX} t={t} />
           <text fg={t.textDim}>
             {"  "}↑↓ select · ⏎ confirm
             {question.allowSkip ? " · esc skip" : ""}

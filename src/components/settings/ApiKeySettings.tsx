@@ -3,7 +3,7 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { saveGlobalConfig } from "../../config/index.js";
-import { icon } from "../../core/icons.js";
+import { icon, providerIcon } from "../../core/icons.js";
 import {
   deleteSecret,
   getDefaultKeyPriority,
@@ -16,10 +16,11 @@ import {
   setSecret,
 } from "../../core/secrets.js";
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupRow, usePopupColors } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 68;
 const CHROME_ROWS = 12;
+const INPUT_FIELD_WIDTH = 40;
 
 interface ApiKeyState {
   keys: Partial<Record<SecretKey, SecretSources>>;
@@ -36,6 +37,16 @@ const PROVIDER_KEYS: SecretKey[] = [
   "openrouter-api-key",
   "vercel-gateway-api-key",
 ];
+
+const PROVIDER_ICON_MAP: Partial<Record<SecretKey, string>> = {
+  "llmgateway-api-key": "llmgateway",
+  "anthropic-api-key": "anthropic",
+  "openai-api-key": "openai",
+  "google-api-key": "google",
+  "xai-api-key": "xai",
+  "openrouter-api-key": "openrouter",
+  "vercel-gateway-api-key": "vercel_gateway",
+};
 
 function refreshKeys(priority: KeyPriority) {
   return Object.fromEntries(PROVIDER_KEYS.map((k) => [k, getSecretSources(k, priority)]));
@@ -130,6 +141,104 @@ function Hr({ iw }: { iw: number }) {
   );
 }
 
+function ProviderKeyRow({
+  item,
+  sources,
+  isSelected,
+  bg,
+}: {
+  item: KeyItem;
+  sources: SecretSources;
+  isSelected: boolean;
+  bg: string;
+}) {
+  const t = useTheme();
+  const badges = formatBadges(sources);
+  const hasAny = sources.active !== "none";
+  const pIcon = providerIcon(PROVIDER_ICON_MAP[item.id] ?? "");
+
+  return (
+    <>
+      <text bg={bg} fg={isSelected ? t.brand : t.textDim}>
+        {isSelected ? "› " : "  "}
+      </text>
+      <text bg={bg} fg={isSelected ? t.brandAlt : t.textFaint}>
+        {pIcon}{" "}
+      </text>
+      <text
+        bg={bg}
+        fg={isSelected ? "white" : t.textPrimary}
+        attributes={isSelected ? TextAttributes.BOLD : 0}
+      >
+        {item.label}
+      </text>
+      <text bg={bg} fg={hasAny ? t.success : t.textDim}>
+        {" "}
+        {badges}
+      </text>
+    </>
+  );
+}
+
+function RemoveKeyRow({
+  label,
+  isSelected,
+  bg,
+}: {
+  label: string;
+  isSelected: boolean;
+  bg: string;
+}) {
+  const t = useTheme();
+  return (
+    <>
+      <text bg={bg} fg={isSelected ? t.brand : t.textDim}>
+        {isSelected ? "›" : " "}
+        {"     "}
+      </text>
+      <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
+        {label}
+      </text>
+    </>
+  );
+}
+
+function PriorityRow({
+  isSelected,
+  bg,
+  priority,
+  priorityLabel,
+  iw,
+}: {
+  isSelected: boolean;
+  bg: string;
+  priority: KeyPriority;
+  priorityLabel: string;
+  iw: number;
+}) {
+  const t = useTheme();
+  return (
+    <box flexDirection="column">
+      <PopupRow w={iw}>
+        <text bg={POPUP_BG} fg={t.textFaint}>
+          {"─".repeat(iw - 2)}
+        </text>
+      </PopupRow>
+      <PopupRow w={iw}>
+        <text bg={bg} fg={isSelected ? t.brand : t.textDim}>
+          {isSelected ? "› " : "  "}
+        </text>
+        <text bg={bg} fg={isSelected ? "white" : t.textSecondary}>
+          {"Resolution  "}
+        </text>
+        <text bg={bg} fg={priority === "app" ? t.warning : t.info} attributes={TextAttributes.BOLD}>
+          {priorityLabel}
+        </text>
+      </PopupRow>
+    </box>
+  );
+}
+
 export function ApiKeySettings({ visible, onClose }: Props) {
   const renderer = useRenderer();
   const { width: termCols, height: termRows } = useTerminalDimensions();
@@ -138,6 +247,7 @@ export function ApiKeySettings({ visible, onClose }: Props) {
   const maxVisible = Math.max(4, Math.floor((termRows - 2) * 0.8) - CHROME_ROWS);
 
   const t = useTheme();
+  usePopupColors();
   const keys = useApiKeyStore((s) => s.keys);
   const priority = useApiKeyStore((s) => s.priority);
   const refresh = useApiKeyStore((s) => s.refresh);
@@ -145,7 +255,9 @@ export function ApiKeySettings({ visible, onClose }: Props) {
   const [mode, setMode] = useState<"menu" | "input">("menu");
   const [inputValue, setInputValue] = useState("");
   const [inputTarget, setInputTarget] = useState<SecretKey | null>(null);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ text: string; type: "success" | "error" } | null>(
+    null,
+  );
   const [scrollOffset, setScrollOffset] = useState(0);
 
   useEffect(() => {
@@ -173,19 +285,22 @@ export function ApiKeySettings({ visible, onClose }: Props) {
     };
   }, [visible, mode, renderer]);
 
-  const menuItems: MenuItem[] = [];
-  for (const k of KEY_ITEMS) {
-    const sources = keys[k.id];
-    if (!sources) continue;
-    menuItems.push({ type: "key", item: k, sources });
-    if (sources.keychain || sources.file) {
-      menuItems.push({ type: "remove", label: `Remove ${k.label}`, keyId: k.id });
+  const menuItems = (() => {
+    const items: MenuItem[] = [];
+    for (const k of KEY_ITEMS) {
+      const sources = keys[k.id];
+      if (!sources) continue;
+      items.push({ type: "key", item: k, sources });
+      if (sources.keychain || sources.file) {
+        items.push({ type: "remove", label: `Remove ${k.label}`, keyId: k.id });
+      }
     }
-  }
-  menuItems.push({ type: "priority" });
+    items.push({ type: "priority" });
+    return items;
+  })();
 
-  const flash = (msg: string) => {
-    setStatusMsg(msg);
+  const flash = (msg: string, type: "success" | "error") => {
+    setStatusMsg({ text: msg, type });
     setTimeout(() => setStatusMsg(null), 3000);
   };
 
@@ -201,7 +316,7 @@ export function ApiKeySettings({ visible, onClose }: Props) {
     useApiKeyStore.setState({ priority: next });
     refresh();
     saveGlobalConfig({ keyPriority: next });
-    flash(`Priority: ${next === "env" ? "env vars first" : "app keys first"}`);
+    flash(`Priority: ${next === "env" ? "env vars first" : "app keys first"}`, "success");
   };
 
   const handleConfirmInput = () => {
@@ -215,9 +330,9 @@ export function ApiKeySettings({ visible, onClose }: Props) {
         result.storage === "keychain"
           ? "OS keychain"
           : (result.path ?? "~/.soulforge/secrets.json");
-      flash(`Saved to ${where}`);
+      flash(`Saved to ${where}`, "success");
     } else {
-      flash("Failed to save key");
+      flash("Failed to save key", "error");
     }
     refresh();
     setMode("menu");
@@ -228,9 +343,9 @@ export function ApiKeySettings({ visible, onClose }: Props) {
   const handleRemoveKey = (keyId: SecretKey) => {
     const result = deleteSecret(keyId);
     if (result.success) {
-      flash(`Removed from ${result.storage}`);
+      flash(`Removed from ${result.storage}`, "success");
     } else {
-      flash("Key not found");
+      flash("Key not found", "error");
     }
     refresh();
   };
@@ -239,7 +354,7 @@ export function ApiKeySettings({ visible, onClose }: Props) {
   const effectiveScrollOffset = Math.min(scrollOffset, Math.max(0, menuItems.length - maxVisible));
   const visibleItems = menuItems.slice(effectiveScrollOffset, effectiveScrollOffset + maxVisible);
 
-  useKeyboard((evt) => {
+  const handleKeyboard = (evt: import("@opentui/core").KeyEvent) => {
     if (!visible) return;
 
     if (mode === "input") {
@@ -292,7 +407,9 @@ export function ApiKeySettings({ visible, onClose }: Props) {
         handleRemoveKey(item.keyId);
       }
     }
-  });
+  };
+
+  useKeyboard(handleKeyboard);
 
   if (!visible) return null;
 
@@ -308,6 +425,10 @@ export function ApiKeySettings({ visible, onClose }: Props) {
       inputValue.length > 0
         ? `${"*".repeat(Math.max(0, inputValue.length - 4))}${inputValue.slice(-4)}`
         : "";
+    const displayField =
+      masked.length > INPUT_FIELD_WIDTH
+        ? masked.slice(masked.length - INPUT_FIELD_WIDTH)
+        : masked.padEnd(INPUT_FIELD_WIDTH);
 
     return (
       <Overlay>
@@ -352,10 +473,10 @@ export function ApiKeySettings({ visible, onClose }: Props) {
 
           <PopupRow w={innerW}>
             <text bg={t.bgPopupHighlight} fg={t.brandAlt}>
-              {masked || " "}
+              {displayField}
             </text>
-            <text bg={t.bgPopupHighlight} fg={t.brandSecondary}>
-              _
+            <text bg={t.bgPopupHighlight} fg={t.brand}>
+              {"▎"}
             </text>
           </PopupRow>
 
@@ -396,70 +517,39 @@ export function ApiKeySettings({ visible, onClose }: Props) {
 
         <Hr iw={innerW} />
 
-        {/* Provider list + priority */}
         {visibleItems.map((mi, idx) => {
           const absoluteIdx = effectiveScrollOffset + idx;
           const isSelected = absoluteIdx === clampedCursor;
           const bg = isSelected ? POPUP_HL : POPUP_BG;
 
-          // Separator before priority
           if (mi.type === "priority") {
             return (
-              <box key="priority-group" flexDirection="column">
-                <PopupRow w={innerW}>
-                  <text bg={POPUP_BG} fg={t.textFaint}>
-                    {"─".repeat(innerW - 2)}
-                  </text>
-                </PopupRow>
-                <PopupRow w={innerW}>
-                  <text bg={bg} fg={isSelected ? "white" : t.textSecondary}>
-                    {isSelected ? "› " : "  "}
-                    {"Resolution  "}
-                  </text>
-                  <text
-                    bg={bg}
-                    fg={priority === "app" ? t.warning : t.info}
-                    attributes={TextAttributes.BOLD}
-                  >
-                    {priorityLabel}
-                  </text>
-                </PopupRow>
-              </box>
+              <PriorityRow
+                key="priority-group"
+                isSelected={isSelected}
+                bg={bg}
+                priority={priority}
+                priorityLabel={priorityLabel}
+                iw={innerW}
+              />
             );
           }
 
           if (mi.type === "remove") {
             return (
               <PopupRow key={`rm-${mi.keyId}`} w={innerW}>
-                <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
-                  {isSelected ? "›" : " "}
-                  {"     "}
-                  {mi.label}
-                </text>
+                <RemoveKeyRow label={mi.label} isSelected={isSelected} bg={bg} />
               </PopupRow>
             );
           }
 
-          const sources = mi.sources;
-          const item = mi.item;
-          const badges = formatBadges(sources);
-          const hasAny = sources.active !== "none";
-
           return (
-            <PopupRow key={item.id} w={innerW}>
-              <text bg={bg} fg={isSelected ? "white" : t.textPrimary}>
-                {isSelected ? "› " : "  "}
-                {item.label}
-              </text>
-              <text bg={bg} fg={hasAny ? t.success : t.textDim}>
-                {" "}
-                {badges}
-              </text>
+            <PopupRow key={mi.item.id} w={innerW}>
+              <ProviderKeyRow item={mi.item} sources={mi.sources} isSelected={isSelected} bg={bg} />
             </PopupRow>
           );
         })}
 
-        {/* Detail for selected provider */}
         {(() => {
           const selected = menuItems[clampedCursor];
           if (selected?.type === "key" && selected.item.url) {
@@ -491,14 +581,13 @@ export function ApiKeySettings({ visible, onClose }: Props) {
 
         {statusMsg && (
           <PopupRow w={innerW}>
-            <text bg={POPUP_BG} fg={t.warning}>
+            <text bg={POPUP_BG} fg={statusMsg.type === "success" ? t.success : t.error}>
               {" "}
-              {statusMsg}
+              {statusMsg.text}
             </text>
           </PopupRow>
         )}
 
-        {/* Footer */}
         <Hr iw={innerW} />
 
         <PopupRow w={innerW}>

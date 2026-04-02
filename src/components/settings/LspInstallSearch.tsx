@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   clearPathCache,
   downloadRegistry,
@@ -19,7 +19,14 @@ import { clearProbeCache } from "../../core/intelligence/backends/lsp/server-reg
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import type { AppConfig } from "../../types/index.js";
-import { type ConfigScope, Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import {
+  type ConfigScope,
+  Overlay,
+  POPUP_BG,
+  POPUP_HL,
+  PopupRow,
+  usePopupColors,
+} from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 110;
 const CHROME_ROWS = 10;
@@ -87,7 +94,67 @@ function langLabel(pkg: MasonPackage): string {
   return `${pkg.languages.slice(0, 2).join(", ")} +${pkg.languages.length - 2}`;
 }
 
-export const LspInstallSearch = memo(function LspInstallSearch({
+interface PackageRowProps {
+  status: PackageStatus;
+  isActive: boolean;
+  isDisabled: boolean;
+  isRecommended: boolean;
+  innerW: number;
+}
+
+function PackageRow({ status, isActive, isDisabled, isRecommended, innerW }: PackageRowProps) {
+  const t = useTheme();
+  const bg = isActive ? POPUP_HL : POPUP_BG;
+  const src = sourceLabel(status);
+  const method = methodLabel(status);
+  const lang = langLabel(status.pkg);
+  const missingToolchain = status.requiresToolchain && !status.toolchainAvailable;
+
+  const nameFg = isDisabled ? t.textMuted : isActive ? t.brandSecondary : t.textSecondary;
+
+  const statusBadge = status.installed ? (
+    <text bg={bg} fg={t.success}>
+      {" "}
+      {src}
+    </text>
+  ) : isRecommended ? (
+    <text bg={bg} fg={t.info}>
+      {" "}
+      {"★ recommended"}
+    </text>
+  ) : method ? (
+    <text bg={bg} fg={missingToolchain ? t.error : t.textFaint}>
+      {" "}
+      {method}
+    </text>
+  ) : null;
+
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
+        {isActive ? "› " : "  "}
+      </text>
+      <text bg={bg} fg={nameFg} attributes={isActive ? TextAttributes.BOLD : undefined}>
+        {status.pkg.name}
+      </text>
+      {lang ? (
+        <text bg={bg} fg={t.textMuted}>
+          {" "}
+          {lang}
+        </text>
+      ) : null}
+      {statusBadge}
+      {isDisabled && (
+        <text bg={bg} fg={t.error}>
+          {" "}
+          [disabled]
+        </text>
+      )}
+    </PopupRow>
+  );
+}
+
+export function LspInstallSearch({
   visible,
   cwd,
   onClose,
@@ -98,6 +165,7 @@ export const LspInstallSearch = memo(function LspInstallSearch({
   initialTab = "installed",
 }: Props) {
   const t = useTheme();
+  const pc = usePopupColors();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
@@ -120,19 +188,16 @@ export const LspInstallSearch = memo(function LspInstallSearch({
   const innerW = popupWidth - 2;
   const { cursor, setCursor, scrollOffset, adjustScroll, resetScroll } = usePopupScroll(maxVisible);
 
-  // Async refresh — defers the heavy checkPackageStatus calls off the first paint
-  const refreshAll = useCallback(async () => {
+  const refreshAll = async () => {
     setRegistryLoading(true);
-    // Yield to let the modal paint first
     await new Promise((r) => setTimeout(r, 16));
     const statuses = getAllPackageStatus();
     setAllStatus(statuses);
     setRegistryLoaded(statuses.length > 0);
     setRecommended(getRecommendedPackages(cwd));
     setRegistryLoading(false);
-  }, [cwd]);
+  };
 
-  // Load registry on open
   useEffect(() => {
     if (!visible) return;
     setTab(initialTab);
@@ -141,14 +206,12 @@ export const LspInstallSearch = memo(function LspInstallSearch({
     setCategoryFilter("All");
     setPendingToggle(null);
 
-    // Try local first
     const localPkgs = loadRegistry();
     if (localPkgs.length > 0) {
       refreshAll();
       return;
     }
 
-    // Download if not available
     if (!downloadAttemptedRef.current) {
       downloadAttemptedRef.current = true;
       setRegistryLoading(true);
@@ -159,20 +222,17 @@ export const LspInstallSearch = memo(function LspInstallSearch({
           setRegistryLoading(false);
         });
     }
-  }, [visible, refreshAll, onSystemMessage, resetScroll, initialTab]);
+  }, [visible, onSystemMessage, resetScroll, initialTab, refreshAll]);
 
-  // Filter logic
   const filterQuery = query.toLowerCase().trim();
 
-  const filteredList = useMemo(() => {
+  const filteredList = (() => {
     let list = allStatus;
 
-    // Category filter
     if (categoryFilter !== "All") {
       list = list.filter((s) => s.pkg.categories.includes(categoryFilter as PackageCategory));
     }
 
-    // Text search
     if (filterQuery) {
       list = list.filter(
         (s) =>
@@ -183,9 +243,9 @@ export const LspInstallSearch = memo(function LspInstallSearch({
     }
 
     return list;
-  }, [allStatus, categoryFilter, filterQuery]);
+  })();
 
-  const installedList = useMemo(() => {
+  const installedList = (() => {
     let list = allStatus.filter((s) => s.installed);
     if (filterQuery) {
       list = list.filter(
@@ -195,9 +255,9 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       );
     }
     return list;
-  }, [allStatus, filterQuery]);
+  })();
 
-  const disabledList = useMemo(() => {
+  const disabledList = (() => {
     let list = allStatus.filter((s) => disabledServers.includes(s.pkg.name));
     if (filterQuery) {
       list = list.filter(
@@ -207,23 +267,25 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       );
     }
     return list;
-  }, [allStatus, disabledServers, filterQuery]);
+  })();
 
-  const filteredRecommended = useMemo(() => {
+  const filteredRecommended = (() => {
     if (!filterQuery) return recommended;
     return recommended.filter(
       (s) =>
         s.pkg.name.toLowerCase().includes(filterQuery) ||
         s.pkg.languages.some((l) => l.toLowerCase().includes(filterQuery)),
     );
-  }, [recommended, filterQuery]);
+  })();
 
-  const currentItems = (): PackageStatus[] => {
+  const currentItems = ((): PackageStatus[] => {
     if (tab === "search") return filteredList;
     if (tab === "installed") return installedList;
     if (tab === "disabled") return disabledList;
     return filteredRecommended;
-  };
+  })();
+
+  const recommendedNames = new Set(recommended.map((s) => s.pkg.name));
 
   const doInstall = async (status: PackageStatus) => {
     if (installing) return;
@@ -292,20 +354,20 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       setInstalling(false);
     }
   };
+
   const toggleDisabled = (pkgName: string, scope: ConfigScope) => {
-    const isDisabled = disabledServers.includes(pkgName);
-    const updated = isDisabled
+    const isDisabledPkg = disabledServers.includes(pkgName);
+    const updated = isDisabledPkg
       ? disabledServers.filter((n) => n !== pkgName)
       : [...disabledServers, pkgName];
     saveToScope({ disabledLspServers: updated }, scope);
     clearProbeCache();
-    onSystemMessage(isDisabled ? `${pkgName} enabled` : `${pkgName} disabled (${scope})`);
+    onSystemMessage(isDisabledPkg ? `${pkgName} enabled` : `${pkgName} disabled (${scope})`);
   };
 
-  useKeyboard((evt) => {
+  const handleKeyboard = (evt: { name?: string; ctrl?: boolean; meta?: boolean }) => {
     if (!visible) return;
 
-    // Scope picker sub-modal
     if (pendingToggle) {
       if (evt.name === "escape") {
         setPendingToggle(null);
@@ -342,7 +404,6 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       return;
     }
 
-    // Cycle category filter with Ctrl+F
     if (evt.name === "f" && evt.ctrl) {
       const idx = CATEGORY_FILTERS.indexOf(categoryFilter);
       setCategoryFilter(CATEGORY_FILTERS[(idx + 1) % CATEGORY_FILTERS.length] as CategoryFilter);
@@ -351,7 +412,7 @@ export const LspInstallSearch = memo(function LspInstallSearch({
     }
 
     if (evt.name === "up") {
-      const len = currentItems().length;
+      const len = currentItems.length;
       setCursor((prev) => {
         const next = prev > 0 ? prev - 1 : Math.max(0, len - 1);
         adjustScroll(next);
@@ -360,7 +421,7 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       return;
     }
     if (evt.name === "down") {
-      const len = currentItems().length;
+      const len = currentItems.length;
       setCursor((prev) => {
         const next = prev < len - 1 ? prev + 1 : 0;
         adjustScroll(next);
@@ -369,14 +430,11 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       return;
     }
 
-    // Enter = install (search/recommended) or toggle (installed/disabled)
     if (evt.name === "return") {
-      const items = currentItems();
-      const item = items[cursor];
+      const item = currentItems[cursor];
       if (!item) return;
 
       if (tab === "installed" || tab === "disabled") {
-        // Toggle enable/disable
         if (isInProject) {
           setPendingToggle(item);
           setScopeCursor(0);
@@ -384,16 +442,13 @@ export const LspInstallSearch = memo(function LspInstallSearch({
           toggleDisabled(item.pkg.name, "global");
         }
       } else {
-        // Install
         doInstall(item);
       }
       return;
     }
 
-    // Ctrl+D = toggle disable on any tab
     if (evt.name === "d" && evt.ctrl) {
-      const items = currentItems();
-      const item = items[cursor];
+      const item = currentItems[cursor];
       if (!item) return;
       if (isInProject) {
         setPendingToggle(item);
@@ -404,10 +459,8 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       return;
     }
 
-    // Ctrl+U = uninstall soulforge-installed package
     if (evt.name === "u" && evt.ctrl) {
-      const items = currentItems();
-      const item = items[cursor];
+      const item = currentItems[cursor];
       if (!item) return;
       doUninstall(item);
       return;
@@ -429,61 +482,14 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       setQuery((prev) => prev + evt.name);
       resetScroll();
     }
-  });
+  };
+
+  useKeyboard(handleKeyboard);
 
   if (!visible) return null;
 
   const tabIdx = TABS.indexOf(tab);
-  const items = currentItems();
-
-  const renderRow = (status: PackageStatus, i: number) => {
-    const idx = scrollOffset + i;
-    const isActive = idx === cursor;
-    const bg = isActive ? POPUP_HL : POPUP_BG;
-    const isDisabled = disabledServers.includes(status.pkg.name);
-    const src = sourceLabel(status);
-    const method = methodLabel(status);
-    const lang = langLabel(status.pkg);
-    const missingToolchain = status.requiresToolchain && !status.toolchainAvailable;
-
-    return (
-      <PopupRow key={status.pkg.name} bg={bg} w={innerW}>
-        <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-          {isActive ? "› " : "  "}
-        </text>
-        <text
-          bg={bg}
-          fg={isDisabled ? t.textMuted : isActive ? t.brandSecondary : t.textSecondary}
-          attributes={isActive ? TextAttributes.BOLD : undefined}
-        >
-          {status.pkg.name}
-        </text>
-        {lang && (
-          <text bg={bg} fg={t.textMuted}>
-            {" "}
-            {lang}
-          </text>
-        )}
-        {src ? (
-          <text bg={bg} fg={t.success}>
-            {" "}
-            {src}
-          </text>
-        ) : method ? (
-          <text bg={bg} fg={missingToolchain ? t.error : t.textMuted}>
-            {" "}
-            {method}
-          </text>
-        ) : null}
-        {isDisabled && (
-          <text bg={bg} fg={t.error}>
-            {" "}
-            [disabled]
-          </text>
-        )}
-      </PopupRow>
-    );
-  };
+  const visibleItems = currentItems.slice(scrollOffset, scrollOffset + maxVisible);
 
   return (
     <Overlay>
@@ -507,24 +513,27 @@ export const LspInstallSearch = memo(function LspInstallSearch({
         </PopupRow>
 
         <PopupRow w={innerW}>
-          {TABS.map((tabItem, i) => (
-            <text key={tabItem} bg={POPUP_BG}>
-              {i > 0 ? (
-                <span fg={t.textFaint} bg={POPUP_BG}>
-                  {" │ "}
+          {TABS.map((tabItem, i) => {
+            const active = i === tabIdx;
+            return (
+              <text key={tabItem} bg={POPUP_BG}>
+                {i > 0 ? (
+                  <span fg={t.textFaint} bg={POPUP_BG}>
+                    {" │ "}
+                  </span>
+                ) : (
+                  ""
+                )}
+                <span
+                  fg={active ? t.brandSecondary : t.textMuted}
+                  attributes={active ? TextAttributes.BOLD : undefined}
+                  bg={active ? pc.hl : POPUP_BG}
+                >
+                  {active ? ` ${TAB_LABELS[tabItem]} ` : TAB_LABELS[tabItem]}
                 </span>
-              ) : (
-                ""
-              )}
-              <span
-                fg={i === tabIdx ? t.brandSecondary : t.textMuted}
-                attributes={i === tabIdx ? TextAttributes.BOLD : undefined}
-                bg={POPUP_BG}
-              >
-                {TAB_LABELS[tabItem]}
-              </span>
-            </text>
-          ))}
+              </text>
+            );
+          })}
         </PopupRow>
 
         <PopupRow w={innerW}>
@@ -533,25 +542,25 @@ export const LspInstallSearch = memo(function LspInstallSearch({
           </text>
         </PopupRow>
 
-        <PopupRow w={innerW}>
-          <text fg={t.brand} bg={POPUP_BG}>
-            {" "}
+        <PopupRow bg={pc.hl} w={innerW}>
+          <text fg={t.brand} bg={pc.hl}>
+            {"🔍 "}
           </text>
           {query ? (
             <>
-              <text fg={t.textPrimary} bg={POPUP_BG}>
+              <text fg={t.textPrimary} bg={pc.hl}>
                 {query}
               </text>
-              <text fg={t.brandSecondary} bg={POPUP_BG}>
+              <text fg={t.brandSecondary} bg={pc.hl}>
                 {"█"}
               </text>
             </>
           ) : (
             <>
-              <text fg={t.brandSecondary} bg={POPUP_BG}>
+              <text fg={t.brandSecondary} bg={pc.hl}>
                 {"█"}
               </text>
-              <text fg={t.textMuted} bg={POPUP_BG}>
+              <text fg={t.textMuted} bg={pc.hl}>
                 {tab === "search"
                   ? "type to search 576+ packages..."
                   : tab === "installed"
@@ -561,6 +570,14 @@ export const LspInstallSearch = memo(function LspInstallSearch({
                       : "type to filter recommended..."}
               </text>
             </>
+          )}
+          <text fg={t.textFaint} bg={pc.hl}>
+            {`  ${String(currentItems.length)} results`}
+          </text>
+          {tab === "search" && categoryFilter !== "All" && (
+            <text fg={t.info} bg={pc.hl}>
+              {`  [${categoryFilter}]`}
+            </text>
           )}
         </PopupRow>
         <PopupRow w={innerW}>
@@ -582,29 +599,39 @@ export const LspInstallSearch = memo(function LspInstallSearch({
         ) : (
           <box
             flexDirection="column"
-            height={Math.min(items.length || 1, maxVisible)}
+            height={Math.min(currentItems.length || 1, maxVisible)}
             overflow="hidden"
           >
-            {items.length === 0 ? (
+            {currentItems.length === 0 ? (
               <PopupRow w={innerW}>
                 <text fg={t.textMuted} bg={POPUP_BG}>
                   {query ? "no matching packages" : "no packages"}
                 </text>
               </PopupRow>
             ) : (
-              items
-                .slice(scrollOffset, scrollOffset + maxVisible)
-                .map((status, i) => renderRow(status, i))
+              visibleItems.map((status, i) => {
+                const idx = scrollOffset + i;
+                return (
+                  <PackageRow
+                    key={status.pkg.name}
+                    status={status}
+                    isActive={idx === cursor}
+                    isDisabled={disabledServers.includes(status.pkg.name)}
+                    isRecommended={recommendedNames.has(status.pkg.name)}
+                    innerW={innerW}
+                  />
+                );
+              })
             )}
           </box>
         )}
 
-        {items.length > maxVisible && (
+        {currentItems.length > maxVisible && (
           <PopupRow w={innerW}>
             <text fg={t.textMuted} bg={POPUP_BG}>
               {scrollOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(items.length)}
-              {scrollOffset + maxVisible < items.length ? " ↓" : ""}
+              {String(cursor + 1)}/{String(currentItems.length)}
+              {scrollOffset + maxVisible < currentItems.length ? " ↓" : ""}
             </text>
           </PopupRow>
         )}
@@ -661,4 +688,4 @@ export const LspInstallSearch = memo(function LspInstallSearch({
       </box>
     </Overlay>
   );
-});
+}
