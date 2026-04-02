@@ -286,14 +286,14 @@ interface ShellArgs {
 }
 
 const READ_CMD_REDIRECT: Record<string, string> = {
-  cat: "read_file",
-  head: "read_file",
-  tail: "read_file",
-  less: "read_file",
-  more: "read_file",
-  bat: "read_file",
-  tac: "read_file",
-  nl: "read_file",
+  cat: "read",
+  head: "read",
+  tail: "read",
+  less: "read",
+  more: "read",
+  bat: "read",
+  tac: "read",
+  nl: "read",
   grep: "grep",
   rg: "grep",
   ag: "grep",
@@ -335,7 +335,7 @@ function detectProjectCommand(command: string): string | null {
 
 const SHELL_DESCRIPTION =
   "[TIER-2] Shell command execution. Use for git operations, package installs, system commands. " +
-  "Always use dedicated tools instead: read_file for reading files, soul_grep for searching code (dep param for node_modules/vendor), " +
+  "Always use dedicated tools instead: read for reading files, soul_grep for searching code (dep param for node_modules/vendor), " +
   "navigate for definitions/types/references, list_dir for directory listings, project for typecheck/lint/test. " +
   "LIMITATIONS: Output truncated at 30000 chars. Use '&&' to chain commands, not newlines.";
 

@@ -418,7 +418,7 @@ export class AgentBus {
         const parts = JSON.parse(k) as string[];
         if (!this.keyMatchesFile(parts, filePath)) continue;
         if (
-          parts[0] === "read_file" &&
+          parts[0] === "read" &&
           entry.agentId === editingAgentId &&
           parts[1] === filePath &&
           parts[3]
@@ -459,7 +459,7 @@ export class AgentBus {
     this._fileReadRecords.push({
       agentId,
       path,
-      tool: detail?.tool ?? "read_file",
+      tool: detail?.tool ?? "read",
       target: detail?.target,
       name: detail?.name,
       startLine: detail?.startLine,
@@ -803,8 +803,8 @@ export class AgentBus {
         const parts = JSON.parse(key) as string[];
         const [tool, ...rest] = parts;
         switch (tool) {
-          case "read_file":
-            summaries.push(`read_file ${rest.join(" ")}`);
+          case "read":
+            summaries.push(`read ${rest.join(" ")}`);
             break;
           case "navigate":
             summaries.push(`navigate ${rest.join(" ")}`);

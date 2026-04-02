@@ -126,7 +126,7 @@ With `--json`, a single JSON object is written to stdout after the agent complet
     "output": 1456,
     "cacheRead": 6100
   },
-  "toolCalls": ["soul_analyze", "read_file", "read_file"],
+  "toolCalls": ["soul_analyze", "read", "read"],
   "duration": 12345
 }
 ```

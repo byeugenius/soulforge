@@ -28,7 +28,7 @@ const MIN_SYMBOL_LEN = 3;
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const READ_CODE_TARGETS = new Set(["function", "class", "type", "interface", "variable", "enum"]);
 
-/** Map repo-map kind to read_file target. Returns null if no direct mapping. */
+/** Map repo-map kind to read target. Returns null if no direct mapping. */
 function kindToTarget(kind: string): string | null {
   if (READ_CODE_TARGETS.has(kind)) return kind;
   if (kind === "method") return "function";
@@ -116,7 +116,7 @@ export async function tryInterceptGlob(
   const fileList = matches.map((p: string) => `  ${relative(cwd, p)}`).join("\n");
   const output =
     `SOUL MAP — ${String(matches.length)} indexed file${matches.length === 1 ? "" : "s"} match "${args.pattern}":\n${fileList}\n` +
-    `Use read_file on these paths directly — dispatch is not needed. Glob was skipped.`;
+    `Use read on these paths directly — dispatch is not needed. Glob was skipped.`;
 
   return { intercepted: true, success: true, output, repoMapHit: true };
 }
@@ -176,7 +176,7 @@ export async function tryInterceptDiscoverPattern(
   }
 
   parts.push(
-    "\nUse read_file on these paths directly — dispatch is not needed for reading indexed files.",
+    "\nUse read on these paths directly — dispatch is not needed for reading indexed files.",
   );
 
   return {
@@ -216,8 +216,8 @@ export async function tryInterceptGrep(
 
     const bestTarget = kindToTarget(bestMatch.kind);
     const readHint = bestTarget
-      ? `read_file(${bestTarget}, "${symbolName}", "${bestRel}")`
-      : `read_file("${bestRel}")`;
+      ? `read(files=[{path:"${bestRel}", target:"${bestTarget}", name:"${symbolName}"}])`
+      : `read(files=[{path:"${bestRel}"}])`;
 
     const output =
       exactMatches.length === 1
@@ -225,7 +225,7 @@ export async function tryInterceptGrep(
           `Use ${readHint} to read it directly. ` +
           `Grep was skipped — the soul map already knows this symbol's location.`
         : `SOUL MAP — "${symbolName}" found in ${String(exactMatches.length)} files:\n${matchList}\n` +
-          `Use read_file with the correct file path. Grep was skipped.`;
+          `Use read with the correct file path. Grep was skipped.`;
 
     return { intercepted: true, success: true, output, repoMapHit: true };
   }
@@ -236,7 +236,7 @@ export async function tryInterceptGrep(
     const matchList = formatSubstringMatches(substringMatches, cwd);
     const output =
       `SOUL MAP — no exact symbol "${symbolName}", but ${String(substringMatches.length)} symbol${substringMatches.length === 1 ? "" : "s"} contain it:\n${matchList}\n` +
-      `Use read_file with the correct symbol name and file path. Grep was skipped.`;
+      `Use read with the correct symbol name and file path. Grep was skipped.`;
 
     return { intercepted: true, success: true, output, repoMapHit: true };
   }
@@ -267,8 +267,8 @@ export async function tryInterceptNavigate(
     const bestRel = relative(cwd, bestMatch.path);
     const bestTarget = kindToTarget(bestMatch.kind);
     const readHint = bestTarget
-      ? `read_file(${bestTarget}, "${symbolName}", "${bestRel}")`
-      : `read_file("${bestRel}")`;
+      ? `read(files=[{path:"${bestRel}", target:"${bestTarget}", name:"${symbolName}"}])`
+      : `read(files=[{path:"${bestRel}"}])`;
 
     const output =
       exactMatches.length === 1
@@ -276,7 +276,7 @@ export async function tryInterceptNavigate(
           `To read the source: ${readHint}. ` +
           `For definitions, references, or call hierarchy, use navigate(definition/references/call_hierarchy) with file="${bestRel}".`
         : `SOUL MAP — "${symbolName}" found in ${String(exactMatches.length)} files:\n${matchList}\n` +
-          `Use read_file to inspect source, or navigate(definition/references) with the correct file for LSP lookups.`;
+          `Use read to inspect source, or navigate(definition/references) with the correct file for LSP lookups.`;
 
     return { intercepted: true, success: true, output, repoMapHit: true };
   }
@@ -287,7 +287,7 @@ export async function tryInterceptNavigate(
     const matchList = formatSubstringMatches(substringMatches, cwd);
     const output =
       `SOUL MAP — no exact symbol "${symbolName}", but ${String(substringMatches.length)} symbol${substringMatches.length === 1 ? "" : "s"} contain it:\n${matchList}\n` +
-      `Use read_file to inspect source, or navigate(definition) with the correct symbol and file.`;
+      `Use read to inspect source, or navigate(definition) with the correct symbol and file.`;
 
     return { intercepted: true, success: true, output, repoMapHit: true };
   }

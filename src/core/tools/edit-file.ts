@@ -255,7 +255,7 @@ export const editFileTool = {
   name: "edit_file",
   description:
     "[TIER-1] Edit a file by replacing content. Read first, then provide path, oldString, newString. " +
-    "Provide lineStart (1-indexed from read_file output) for reliable line-anchored matching — " +
+    "Provide lineStart (1-indexed from read output) for reliable line-anchored matching — " +
     "the range is derived from oldString line count. Without lineStart, falls back to string matching (fails if ambiguous). " +
     "Empty oldString creates a new file. Use multi_edit for multiple changes to the same file. " +
     "Edits are applied immediately.",
@@ -419,7 +419,7 @@ export const editFileTool = {
       const result = await applyEdit(filePath, content, updated, editLine, "", args.tabId);
       if (result.success) {
         result.output +=
-          "\n⚠ lineStart not provided — pass lineStart from read_file output to make edits escape-proof.";
+          "\n⚠ lineStart not provided — pass lineStart from read output to make edits escape-proof.";
       }
       return result;
     } catch (err: unknown) {

@@ -14,7 +14,7 @@ The Soul Map is live, always fresh, and your primary source of truth. It has eve
 
 1. PLAN from the Soul Map — identify files, symbols, blast radius. Zero tool calls.
 2. DISCOVER with parallel soul_find/soul_grep/navigate calls — small results, fast. If the Soul Map already answers the question, skip this step entirely.
-3. READ targets in one parallel batch — use read_file with Soul Map line numbers for precise ranges. One batch, one round trip.
+3. READ targets in one parallel batch — use read with Soul Map line numbers for precise ranges. One batch, one round trip.
 4. IMPLEMENT with edit tools. Use multi_edit for same-file changes.
 5. VERIFY with project (typecheck/lint/test). Report the actual result.
 

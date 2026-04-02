@@ -169,7 +169,7 @@ Each step: capture path map → sanitize inputs → inject peer findings → che
 Step 1+: semantic pruning (stale reads for later-edited files, canceled plans, old edit args stripped)
      ↓
 Step 3+: age-based tool result summarization (rolling window, last 4 messages full, older → one-line summaries)
-  - read_file/read_code: "[pruned] 245 lines — exports: Foo, Bar" (symbols from repo map)
+  - read/read_code: "[pruned] 245 lines — exports: Foo, Bar" (symbols from repo map)
   - grep: "[pruned] 42 matches"  |  glob: "[pruned] 25 files"
   - edit_file/write_file/create_file: always preserved
      ↓
@@ -212,7 +212,7 @@ Built on SoulForge's AgentBus and dispatch infrastructure to improve subagent ou
 
 **De-Sloppify Pass** — `runDesloppify()` runs a cleanup code agent after code agents finish, only when: (1) a `desloppifyModel` is configured, (2) code agents ran, and (3) files were actually edited. The cleanup agent runs in fresh context (never wrote the code it reviews) and removes: tests of language features, redundant type checks, console.log, commented-out code, over-defensive error handling. The "two agents > one constrained agent" concept is from [Everything Claude Code](https://github.com/affaan-m/everything-claude-code).
 
-**Dispatch Cache** — `wrapReadFileWithDispatchCache()` in forge.ts wraps the parent's `read_file` tool. When the parent reads a file that a subagent already read (stored in `SharedCacheRef`), it gets a cache hit instead of disk I/O.
+**Dispatch Cache** — `wrapReadFileWithDispatchCache()` in forge.ts wraps the parent's `read` tool. When the parent reads a file that a subagent already read (stored in `SharedCacheRef`), it gets a cache hit instead of disk I/O.
 
 **Done Tool Contracts** — Explore and code done tools demand pasteable code, not prose descriptions. "The parent agent ONLY sees what you put here — your tool results are invisible to it." If the parent has to re-read files, the done call failed.
 

@@ -474,7 +474,7 @@ Question: "Fix the bug in acquireFileRead"
 
   Tier 0 — Soul Map locates it                          Cost: 0 tokens
   Tier 1 — navigate(definition) → line 125              Cost: ~100 tokens
-  Tier 2 — read_file(target: function, name:            Cost: ~400 tokens
+  Tier 2 — read(target: function, name:            Cost: ~400 tokens
             acquireFileRead) → reads just that function
   Edit: multi_edit with fix                              Cost: ~200 tokens
   DONE. Read 1 function, not the 858-line file.

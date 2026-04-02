@@ -66,7 +66,7 @@ export function buildInteractiveTools(
                 .array(
                   z.object({
                     lines: z.string().describe("Line range, e.g. '10-45' or 'full'"),
-                    code: z.string().describe("Exact current code copied from read_file output"),
+                    code: z.string().describe("Exact current code copied from read output"),
                   }),
                 )
                 .nullable()
@@ -138,7 +138,7 @@ export function buildInteractiveTools(
           return {
             output:
               `Plan rejected — ${String(fileCount)} file${fileCount === 1 ? "" : "s"} doesn't need a plan. ` +
-              "Edit files directly with read_file → multi_edit. Plans are for 7+ files or when the user explicitly asks (/plan mode).",
+              "Edit files directly with read → multi_edit. Plans are for 7+ files or when the user explicitly asks (/plan mode).",
           };
         }
 

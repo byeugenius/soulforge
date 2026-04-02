@@ -466,7 +466,7 @@ export function createForgeAgent({
     "navigate",
     "analyze",
     // TIER-1: Core read/edit
-    "read_file",
+    "read",
     "edit_file",
     "multi_edit",
     "project",
@@ -576,17 +576,12 @@ export function createForgeAgent({
 
   const cachedReadFile =
     sharedCacheRef && agentFeatures?.dispatchCache !== false
-      ? wrapReadFileWithDispatchCache(
-          directTools.read_file,
-          sharedCacheRef,
-          cwd,
-          canUseCodeExecution,
-        )
-      : directTools.read_file;
+      ? wrapReadFileWithDispatchCache(directTools.read, sharedCacheRef, cwd, canUseCodeExecution)
+      : directTools.read;
 
   const allTools = {
     ...orderedTools,
-    read_file: cachedReadFile,
+    read: cachedReadFile,
     ...subagentTools,
     ...(interactive ? buildInteractiveTools(interactive, { cwd, sessionId, forgeMode }) : {}),
   };
@@ -664,39 +659,44 @@ export function createForgeAgent({
 }
 
 function wrapReadFileWithDispatchCache(
-  _original: ReturnType<typeof buildTools>["read_file"],
+  _original: ReturnType<typeof buildTools>["read"],
   cacheRef: SharedCacheRef,
   projectCwd?: string,
   codeExecution?: boolean,
 ) {
   const cwdPrefix = projectCwd ? (projectCwd.endsWith("/") ? projectCwd : `${projectCwd}/`) : null;
 
+  // The main read tool in index.ts handles batch mode (files array, ranges, etc.).
+  // This wrapper ONLY intercepts single-file full reads for dispatch cache hits.
+  // Everything else passes through to the real tool.
   return tool({
     description: readFileTool.description,
-    inputSchema: SCHEMAS.readFile.pick({ path: true, startLine: true, endLine: true }),
+    inputSchema: SCHEMAS.readFile,
     providerOptions: codeExecution ? PROGRAMMATIC_PROVIDER_OPTS : undefined,
     execute: async (args) => {
-      const cache = cacheRef.current;
-      if (cache) {
-        let normalized = normalizePath(args.path);
-        if (cwdPrefix && normalized.startsWith(cwdPrefix)) {
-          normalized = normalized.slice(cwdPrefix.length);
-        }
-        let cached = cache.files.get(normalized);
-        if (cached != null) {
-          for (let depth = 0; depth < 5 && cached.startsWith('{"success":'); depth++) {
-            try {
-              const parsed = JSON.parse(cached) as { success?: boolean; output?: string };
-              if (typeof parsed.success === "boolean" && typeof parsed.output === "string") {
-                cached = parsed.output;
-              } else break;
-            } catch {
-              break;
-            }
-          }
+      const specs = Array.isArray(args.files) ? args.files : args.files ? [args.files] : [];
 
-          const isFullRead = args.startLine == null && args.endLine == null;
-          if (isFullRead) {
+      // Only intercept single-file full reads (no ranges, no target, no multi-file)
+      if (specs.length === 1 && !specs[0]?.ranges?.length && !specs[0]?.target) {
+        const filePath = specs[0]?.path ?? "";
+        const cache = cacheRef.current;
+        if (cache && filePath) {
+          let normalized = normalizePath(filePath);
+          if (cwdPrefix && normalized.startsWith(cwdPrefix)) {
+            normalized = normalized.slice(cwdPrefix.length);
+          }
+          let cached = cache.files.get(normalized);
+          if (cached != null) {
+            for (let depth = 0; depth < 5 && cached.startsWith('{"success":'); depth++) {
+              try {
+                const parsed = JSON.parse(cached) as { success?: boolean; output?: string };
+                if (typeof parsed.success === "boolean" && typeof parsed.output === "string") {
+                  cached = parsed.output;
+                } else break;
+              } catch {
+                break;
+              }
+            }
             const lines = cached.split("\n");
             const numbered = lines
               .map((line: string, i: number) => `${String(i + 1).padStart(4)}  ${line}`)
@@ -708,7 +708,30 @@ function wrapReadFileWithDispatchCache(
           }
         }
       }
-      return readFileTool.execute(args);
+
+      // Pass through: execute each file spec against the raw readFileTool
+      const outputs: string[] = [];
+      const multiFile = specs.length > 1;
+      for (const spec of specs) {
+        if (multiFile) outputs.push(`── ${spec.path} ──`);
+        if (spec.ranges && spec.ranges.length > 0) {
+          for (const r of spec.ranges) {
+            const result = await readFileTool.execute({
+              path: spec.path,
+              startLine: r.start,
+              endLine: r.end,
+            });
+            outputs.push(result.output);
+          }
+        } else {
+          const result = await readFileTool.execute({
+            path: spec.path,
+            ...(spec.target ? { target: spec.target, name: spec.name } : {}),
+          });
+          outputs.push(result.output);
+        }
+      }
+      return { success: true, output: outputs.join("\n\n") };
     },
   });
 }

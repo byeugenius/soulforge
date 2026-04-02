@@ -6,7 +6,7 @@ Graph-powered code intelligence — multi-agent coding with codebase-aware AI.
 
 - **Runtime**: Bun (not Node.js)
 - **Language**: TypeScript (strict mode)
-- **TUI**: Ink (React for CLIs) via OpenTUI
+- **TUI**: OpenTUI (React for terminal UIs)
 - **LLM**: Vercel AI SDK (multi-provider)
 - **Editor**: Neovim (embedded via msgpack-RPC)
 - **Linter/Formatter**: Biome
@@ -72,7 +72,7 @@ Graph-powered code intelligence — multi-agent coding with codebase-aware AI.
 
 - `src/core/agents/forge.ts` — main Forge agent (createForgeAgent)
 - `src/core/context/manager.ts` — ContextManager (system prompt, repo map, memory)
-- `src/core/tools/` — all 30+ tools (read_file, edit_file, shell, soul_*, etc.)
+- `src/core/tools/` — all 30+ tools (read, edit_file, shell, soul_*, etc.)
 - `src/core/llm/` — provider registry, model resolution, provider options
 - `src/core/llm/providers/custom.ts` — config-driven custom provider builder
 - `src/core/intelligence/` — LSP, ts-morph, tree-sitter, regex fallback chain
@@ -90,7 +90,7 @@ Graph-powered code intelligence — multi-agent coding with codebase-aware AI.
 
 ### Tool Suite
 
-**Intelligence tools (use first):** `navigate`, `analyze`, `read_file` (with target/name), `soul_find`, `soul_grep`, `soul_analyze`, `soul_impact`
+**Intelligence tools (use first):** `navigate`, `analyze`, `read` (with files/ranges/target), `soul_find`, `soul_grep`, `soul_analyze`, `soul_impact`
 
 **Edit tools:** `edit_file`, `write_file`, `create_file`, `rename_symbol`, `move_symbol`, `refactor`
 

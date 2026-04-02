@@ -43,7 +43,7 @@ const SUMMARY_MAX_LEN = 500;
 const BUDGET_OVERHEAD = 50;
 const MIN_CONTENT_LEN = 20;
 
-const READ_TOOLS = new Set(["read_file", "navigate", "soul_analyze"]);
+const READ_TOOLS = new Set(["read", "navigate", "soul_analyze"]);
 const EDIT_TOOLS = new Set(["edit_file", "write_file", "create_file"]);
 const SEARCH_TOOLS = new Set(["grep", "glob", "soul_grep", "soul_find", "soul_impact"]);
 
@@ -157,7 +157,7 @@ export function buildFallbackResult(
 
 /**
  * Auto-synthesize a DoneToolResult from the agent's tool results when done wasn't called.
- * Extracts actual code from read_file results so the parent gets usable content.
+ * Extracts actual code from read results so the parent gets usable content.
  * This guarantees 100% done results — the parent ALWAYS gets structured output.
  */
 export function synthesizeDoneFromResults(
@@ -178,7 +178,7 @@ export function synthesizeDoneFromResults(
     budget -= detail.length + BUDGET_OVERHEAD;
   }
 
-  // 2. Collect files from ALL tool calls (not just read_file)
+  // 2. Collect files from ALL tool calls (not just read)
   for (const step of result.steps) {
     for (const tc of step.toolCalls ?? []) {
       const args = tc.args as Record<string, unknown> | undefined;
@@ -258,7 +258,7 @@ export function formatDoneResult(done: DoneToolResult): string {
         const loc = f.lineNumbers ? `:${f.lineNumbers}` : "";
         const detail =
           f.detail.length > PER_FINDING_DISPLAY_CAP
-            ? `${f.detail.slice(0, PER_FINDING_DISPLAY_CAP)} [${String(f.detail.length - PER_FINDING_DISPLAY_CAP)} chars omitted — use read_file for full content]`
+            ? `${f.detail.slice(0, PER_FINDING_DISPLAY_CAP)} [${String(f.detail.length - PER_FINDING_DISPLAY_CAP)} chars omitted — use read for full content]`
             : f.detail;
         return `  ${f.file}${loc}: ${detail}`;
       }),
@@ -322,12 +322,12 @@ export async function writeAgentContext(
     for (const tc of step.toolCalls ?? []) {
       const args = tc.args as Record<string, unknown> | undefined;
       const name = tc.toolName;
-      if (name === "read_file") {
+      if (name === "read") {
         const path = args?.path ?? args?.file ?? "";
         const start = args?.startLine ? ` lines ${String(args.startLine)}` : "";
         const end = args?.endLine ? `-${String(args.endLine)}` : "";
         const target = args?.target ? ` (${String(args.target)}: ${String(args.name ?? "")})` : "";
-        toolStubs.push(`[read_file] ${String(path)}${start}${end}${target}`);
+        toolStubs.push(`[read] ${String(path)}${start}${end}${target}`);
       } else if (name === "edit_file" || name === "multi_edit") {
         toolStubs.push(`[${name}] ${String(args?.path ?? "")}`);
       } else if (name === "grep" || name === "soul_grep") {

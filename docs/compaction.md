@@ -193,7 +193,7 @@ The one-turn cost is the **cache invalidation**: the old prefix cache is gone, s
 
 The WSM tracks state across these slot categories: task, plan, files, decisions, failures, discoveries, environment, toolResults, userRequirements, assistantNotes. When **≥15 slots are populated** across all categories, the state is considered rich enough and the LLM gap-fill pass is skipped entirely.
 
-This session filled slots from ~60 tool calls (read_file, edit_file, project, navigate, rename_symbol, soul_grep, web_search, git, shell) — well above the threshold. Sessions with fewer tool calls (e.g. mostly discussion) would trigger the 2K-token gap-fill to capture reasoning that only existed in prose.
+This session filled slots from ~60 tool calls (read, edit_file, project, navigate, rename_symbol, soul_grep, web_search, git, shell) — well above the threshold. Sessions with fewer tool calls (e.g. mostly discussion) would trigger the 2K-token gap-fill to capture reasoning that only existed in prose.
 
 ### V1 comparison
 

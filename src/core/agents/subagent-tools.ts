@@ -8,6 +8,7 @@ import { logBackgroundError } from "../../stores/errors.js";
 import type { AgentFeatures } from "../../types/index.js";
 import { getWorkspaceCoordinator } from "../coordination/WorkspaceCoordinator.js";
 import { getModelContextWindow } from "../llm/models.js";
+import { supportsProgrammaticToolCalling } from "../llm/provider-options.js";
 import { isForbidden } from "../security/forbidden.js";
 
 import { getActiveTaskTab } from "../tools/task-list.js";
@@ -75,10 +76,13 @@ const CODE_BLOCKED = new Set(["dispatch"]);
 
 /** Wrap forge tools with role-based execute guards for miniforges.
  *  Tool definitions (description + schema) stay identical → same cache prefix.
- *  Only the execute function changes — it's local, never sent to the API. */
+ *  Only the execute function changes — it's local, never sent to the API.
+ *  When stripProgrammatic is true, removes providerOptions (allowedCallers)
+ *  from tools — models like Haiku don't support programmatic tool calling. */
 function guardForgeTools(
   forgeTools: Record<string, unknown>,
   role: "explore" | "investigate" | "code",
+  stripProgrammatic?: boolean,
 ): Record<string, unknown> {
   const blocked = role === "code" ? CODE_BLOCKED : EXPLORE_BLOCKED;
   const guarded: Record<string, unknown> = {};
@@ -89,20 +93,29 @@ function guardForgeTools(
     if (blocked.has(name)) {
       // Spread the original tool object to preserve description + schema for cache,
       // then override execute to reject at runtime.
+      const base = stripProgrammatic ? stripProviderOptions(t as object) : (t as object);
       guarded[name] = {
-        ...(t as object),
+        ...base,
         execute: async () => ({ success: false, error: rejectMsg(name) }),
       };
     } else {
-      guarded[name] = t;
+      guarded[name] = stripProgrammatic ? stripProviderOptions(t as object) : t;
     }
   }
   return guarded;
 }
 
+function stripProviderOptions(t: object): object {
+  if ("providerOptions" in t) {
+    const { providerOptions: _, ...rest } = t as Record<string, unknown>;
+    return rest;
+  }
+  return t;
+}
+
 function formatToolArgs(toolCall: { toolName: string; input?: unknown }): string {
   const a = (toolCall.input ?? {}) as Record<string, unknown>;
-  if (toolCall.toolName === "read_file" && a.path) return String(a.path);
+  if (toolCall.toolName === "read" && a.path) return String(a.path);
   if (toolCall.toolName === "grep" && a.pattern) return `/${String(a.pattern)}/`;
   if (toolCall.toolName === "glob" && a.pattern) return String(a.pattern);
   if (toolCall.toolName === "shell" && a.command) {
@@ -266,9 +279,11 @@ export async function createAgent(
       ? ("investigate" as const)
       : ("explore" as const)
     : ("code" as const);
+  // Strip programmatic tool calling (allowedCallers) for models that don't support it (e.g. Haiku)
+  const stripProgrammatic = !supportsProgrammaticToolCalling(modelId);
   const forgeToolsGuarded =
     useMiniForge && models.forgeTools
-      ? guardForgeTools(models.forgeTools as Record<string, unknown>, agentRole)
+      ? guardForgeTools(models.forgeTools as Record<string, unknown>, agentRole, stripProgrammatic)
       : undefined;
 
   const opts = {
@@ -504,7 +519,7 @@ export function buildSubagentTools(models: SubagentModels) {
               .string()
               .min(10)
               .describe(
-                "Why dispatch instead of direct reads? Must justify why this requires parallel agents rather than sequential read_file calls.",
+                "Why dispatch instead of direct reads? Must justify why this requires parallel agents rather than sequential read calls.",
               ),
           })
           .describe(
@@ -648,13 +663,13 @@ export function buildSubagentTools(models: SubagentModels) {
                 fileList.push(`  \`${f}\``);
               }
               for (const f of onDiskOnly) {
-                fileList.push(`  \`${f}\` (not in Soul Map — use read_file)`);
+                fileList.push(`  \`${f}\` (not in Soul Map — use read)`);
               }
               return (
                 `⛔ dispatch [rejected → read directly]\n` +
                 `You only need ${String(totalFiles)} file(s) — read them directly:\n` +
                 fileList.join("\n") +
-                `\nUse read_file with target + name for specific symbols or read_file for full files. Dispatch is for 7+ files or parallel edits.`
+                `\nUse read with target + name for specific symbols or read for full files. Dispatch is for 7+ files or parallel edits.`
               );
             }
           }
@@ -735,7 +750,7 @@ export function buildSubagentTools(models: SubagentModels) {
                 const cachedList = cached.map((f) => `\`${f}\``).join(", ");
                 const missingHint =
                   missing.length > 0
-                    ? ` Files not yet read: ${missing.map((f) => `\`${f}\``).join(", ")}. Use read_file for these ${String(missing.length)} files directly.`
+                    ? ` Files not yet read: ${missing.map((f) => `\`${f}\``).join(", ")}. Use read for these ${String(missing.length)} files directly.`
                     : "";
                 const actionHint = hasCodeTask
                   ? "Set force: true only if you need agents to EDIT these files."
@@ -757,7 +772,7 @@ export function buildSubagentTools(models: SubagentModels) {
                 .join("\n");
               return (
                 `⛔ dispatch [rejected → repeat dispatch]\nThis is dispatch #${String(turnDispatchCount + 1)} this turn. Previous dispatch(es):\n${prev}\n` +
-                `Act on these results before dispatching again. If they lack what you need, use read_file/soul_grep for targeted follow-up. ` +
+                `Act on these results before dispatching again. If they lack what you need, use read/soul_grep for targeted follow-up. ` +
                 `Set force: true only after confirming previous results genuinely lack the specific information you need.`
               );
             }
@@ -901,7 +916,7 @@ export function buildSubagentTools(models: SubagentModels) {
               ) {
                 const fileList = [...uniqueFiles].map((f) => `\`${f}\``).join(", ");
                 return (
-                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — read directly with read_file. ` +
+                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — read directly with read. ` +
                   `Dispatch is for parallel work across ${String(MAX_EXPLORE_FILES + 1)}+ files or when agents need to EDIT. ` +
                   `Set force: true only if you need agents to do multi-step research beyond simple reads.`
                 );
@@ -1122,7 +1137,7 @@ export function buildSubagentTools(models: SubagentModels) {
           bus.onCacheEvent = (agentId, type, path, sourceAgentId) => {
             emitSubagentStep({
               parentToolCallId: toolCallId,
-              toolName: type === "invalidate" ? "edit_file" : "read_file",
+              toolName: type === "invalidate" ? "edit_file" : "read",
               args: path,
               state: type === "wait" ? "running" : "done",
               agentId,

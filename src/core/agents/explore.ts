@@ -13,11 +13,11 @@ export function exploreBase(): string {
 
 Use the cheapest tool first:
 1. soul_find, soul_grep(count), soul_impact, navigate, analyze — free, instant
-2. read_file(target, name) — extract one symbol, not the whole file
-3. read_file full, grep — only when 1-2 didn't answer
+2. read(files=[{path, target, name}]) — extract one symbol, not the whole file
+3. read(files=[{path}]), grep — only when 1-2 didn't answer
 
 Workflow:
-- Paths given → read_file(target, name) for each
+- Paths given → read(files=[{path, target, name}]) for each
 - Keywords only → soul_find or navigate(definition), then read hits
 - Data flow → soul_impact + navigate(references)
 After reading targets, trace callers via navigate(references). Flag disconnects.

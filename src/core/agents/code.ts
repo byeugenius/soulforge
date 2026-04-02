@@ -14,7 +14,7 @@ export function codeBase(hasPreloadedFiles: boolean): string {
 
 Target file contents are preloaded below and up-to-date. Proceed directly with multi_edit — one call per file.
 - Use the preloaded line numbers for lineStart in your edits
-- Use read_file only for files not listed in the preloaded section
+- Use read only for files not listed in the preloaded section
 - On edit failure: re-read once, retry with exact text from that read
 - Compound tools: rename_symbol, move_symbol, refactor — do the complete job
 
@@ -22,7 +22,7 @@ OUTPUT: Concise summary of what changed. Name files and modifications.`;
   }
   return `Code agent. Make specific edits. Target files and changes are in the task.
 
-Workflow: read_file → multi_edit → done. 3 steps typical, 5 max.
+Workflow: read → multi_edit → done. 3 steps typical, 5 max.
 - Read each target file ONCE in full, plan all changes, apply with multi_edit in ONE call per file
 - On edit failure: re-read once, retry with exact text from that read
 - Compound tools: rename_symbol, move_symbol, refactor — do the complete job
