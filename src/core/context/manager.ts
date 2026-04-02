@@ -17,7 +17,7 @@ import {
   getModeInstructions,
   type PromptBuilderOptions,
 } from "../prompts/index.js";
-import { buildForbiddenContext } from "../security/forbidden.js";
+// buildForbiddenContext removed from system prompt — gates enforce at tool level
 import { emitFileEdited, onFileEdited, onFileRead } from "../tools/file-events.js";
 import { IntelligenceClient } from "../workers/intelligence-client.js";
 // extractConversationTerms removed — FTS boosting was noisy
@@ -969,14 +969,10 @@ export class ContextManager {
   buildSystemPrompt(modelIdOverride?: string): string {
     const opts: PromptBuilderOptions = {
       modelId: modelIdOverride || this.lastActiveModel,
-      cwd: this.cwd,
       hasRepoMap: this.isRepoMapReady(),
       hasSymbols: this.isRepoMapReady() && this.repoMap.getStatsCached().symbols > 0,
       forgeMode: this.forgeMode,
-      projectInfo: this.projectInfoCache?.info ?? null,
-      projectInstructions: this.projectInstructions,
-      forbiddenContext: buildForbiddenContext(),
-      memoryContext: this.memoryManager.buildMemoryIndex(),
+      projectInstructions: this.projectInstructions || null,
     };
     return buildPrompt(opts);
   }
@@ -1125,11 +1121,10 @@ export class ContextManager {
 
     for (const check of checks) {
       try {
-        const content = await readFile(join(this.cwd, check.file), "utf-8");
-        const truncated = content.length > 500 ? `${content.slice(0, 500)}\n...` : content;
+        await readFile(join(this.cwd, check.file), "utf-8");
         const toolchain = this.detectToolchain();
         const profileStr = this.buildProfileString();
-        const info = `${check.label} (${check.file}):\n${truncated}${toolchain ? `\nToolchain: ${toolchain}` : ""}${profileStr}`;
+        const info = `${check.label}${toolchain ? ` · Toolchain: ${toolchain}` : ""}${profileStr}`;
         this.projectInfoCache = { info, at: now };
         return info;
       } catch {}

@@ -53,12 +53,11 @@ describe("family prompt content", () => {
     }
   });
 
-  test("all family prompts mention search tools", () => {
+  test("all family prompts mention soul tools", () => {
     for (const prompt of [OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
-      expect(prompt).toContain("Task tool");
+      expect(prompt).toContain("soul tools");
     }
-    // Claude prompt uses different phrasing (soul_grep/soul_find via shared rules)
-    expect(CLAUDE_PROMPT).toContain("soul tools");
+    expect(CLAUDE_PROMPT).toContain("soul_find");
   });
 
   test("all family prompts mention conciseness", () => {
@@ -73,8 +72,8 @@ describe("family prompt content", () => {
     }
   });
 
-  test("claude prompt has user-preferences section", () => {
-    expect(CLAUDE_PROMPT).toContain("user-preferences");
+  test("claude prompt has workflow section", () => {
+    expect(CLAUDE_PROMPT).toContain("<workflow>");
   });
 
   test("openai prompt has agent framing", () => {
@@ -91,15 +90,11 @@ describe("family prompt content", () => {
 function baseOpts(overrides?: Partial<PromptBuilderOptions>): PromptBuilderOptions {
   return {
     modelId: "anthropic/claude-sonnet-4-6",
-    cwd: "/test/project",
     hasRepoMap: false,
     hasSymbols: false,
     forgeMode: "default",
     contextPercent: 50,
-    projectInfo: null,
     projectInstructions: null,
-    forbiddenContext: null,
-    memoryContext: null,
     ...overrides,
   };
 }
@@ -108,7 +103,7 @@ describe("buildSystemPrompt assembly", () => {
   test("includes family prompt for the model", () => {
     const prompt = buildSystemPrompt(baseOpts());
     expect(prompt).toContain("Forge");
-    expect(prompt).toContain("user-preferences"); // claude-specific
+    expect(prompt).toContain("<workflow>"); // claude-specific
   });
 
   test("includes tool guidance when repo map is ready", () => {
@@ -120,29 +115,14 @@ describe("buildSystemPrompt assembly", () => {
   test("includes no-map guidance when repo map not ready", () => {
     const prompt = buildSystemPrompt(baseOpts({ hasRepoMap: false }));
     expect(prompt).toContain("minimize the number of steps");
-    // Soul Map is mentioned in the claude family prompt itself, so it appears regardless
-      // The key difference is no-map guidance lacks the Decision flow section
-      expect(prompt).not.toContain("Decision flow");
+    expect(prompt).not.toContain("Decision flow");
   });
 
-  test("includes project cwd", () => {
+  test("does not include cwd, projectInfo, forbidden, or memory", () => {
     const prompt = buildSystemPrompt(baseOpts());
-    expect(prompt).toContain("/test/project");
-  });
-
-  test("includes project info when provided", () => {
-    const prompt = buildSystemPrompt(baseOpts({ projectInfo: "Node.js project" }));
-    expect(prompt).toContain("Node.js project");
-  });
-
-  test("includes forbidden context when provided", () => {
-    const prompt = buildSystemPrompt(baseOpts({ forbiddenContext: ".env is forbidden" }));
-    expect(prompt).toContain(".env is forbidden");
-  });
-
-  test("includes memory context when provided", () => {
-    const prompt = buildSystemPrompt(baseOpts({ memoryContext: "3 memories stored" }));
-    expect(prompt).toContain("3 memories stored");
+    expect(prompt).not.toContain("Project cwd");
+    expect(prompt).not.toContain("Forbidden");
+    expect(prompt).not.toContain("Memory:");
   });
 
   test("includes mode overlay when not default", () => {
@@ -168,7 +148,7 @@ describe("buildSystemPrompt assembly", () => {
   test("uses correct family for different models", () => {
     const claude = buildSystemPrompt(baseOpts({ modelId: "anthropic/claude-opus-4" }));
     const openai = buildSystemPrompt(baseOpts({ modelId: "openai/gpt-4o" }));
-    expect(claude).toContain("user-preferences"); // claude-specific
+    expect(claude).toContain("<workflow>"); // claude-specific
     expect(openai).toContain("keep going until"); // openai-specific
   });
 });

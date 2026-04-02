@@ -42,17 +42,11 @@ export function getPromptForModel(modelId: string): string {
 
 export interface PromptBuilderOptions {
   modelId: string;
-  cwd: string;
   hasRepoMap: boolean;
   hasSymbols: boolean;
   forgeMode: ForgeMode;
   contextPercent?: number;
-
-  // Dynamic sections (null = omit)
-  projectInfo: string | null;
   projectInstructions: string | null;
-  forbiddenContext: string | null;
-  memoryContext: string | null;
 }
 
 /**
@@ -86,20 +80,12 @@ export function buildSystemPrompt(opts: PromptBuilderOptions): string {
     parts.push(TOOL_GUIDANCE_NO_MAP);
   }
 
-  // ── DYNAMIC SECTION (changes per project/session) ──
+  // ── DYNAMIC SECTION ──
 
-  // 3. Project context
-  parts.push(`Project cwd: ${opts.cwd}`);
-  if (opts.projectInfo) parts.push(opts.projectInfo);
+  // Project instructions (SOULFORGE.md, CLAUDE.md, etc.)
   if (opts.projectInstructions) parts.push(opts.projectInstructions);
 
-  // 4. Forbidden files
-  if (opts.forbiddenContext) parts.push("", opts.forbiddenContext);
-
-  // 5. Memory
-  if (opts.memoryContext) parts.push(`Memory: ${opts.memoryContext}`);
-
-  // 6. Mode overlay
+  // Mode overlay
   const modeInstructions = getModeInstructions(opts.forgeMode, {
     contextPercent: opts.contextPercent,
   });
