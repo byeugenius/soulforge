@@ -332,9 +332,15 @@ export class IntelligenceClient extends WorkerClient {
     return this._symbolCache.get(relPath) ?? [];
   }
 
-  async getFileSymbolRanges(
-    relPath: string,
-  ): Promise<Array<{ name: string; kind: string; line: number; endLine: number | null }>> {
+  async getFileSymbolRanges(relPath: string): Promise<
+    Array<{
+      name: string;
+      qualifiedName: string | null;
+      kind: string;
+      line: number;
+      endLine: number | null;
+    }>
+  > {
     return this.call("getFileSymbolRanges", relPath);
   }
 
@@ -481,6 +487,13 @@ export class IntelligenceClient extends WorkerClient {
     }>
   > {
     return this.call("getFileDuplicates", relPath);
+  }
+
+  async getCalleesForSymbol(
+    relPath: string,
+    symbolName: string,
+  ): Promise<Array<{ calleeName: string }>> {
+    return this.call("getCalleesForSymbol", relPath, symbolName);
   }
 
   async getCallees(symbolId: number): Promise<

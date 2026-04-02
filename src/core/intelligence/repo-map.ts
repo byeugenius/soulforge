@@ -3242,12 +3242,25 @@ export class RepoMap {
       }));
   }
 
-  getFileSymbolRanges(
-    relPath: string,
-  ): Array<{ name: string; kind: string; line: number; endLine: number | null }> {
+  getFileSymbolRanges(relPath: string): Array<{
+    name: string;
+    qualifiedName: string | null;
+    kind: string;
+    line: number;
+    endLine: number | null;
+  }> {
     return this.db
-      .query<{ name: string; kind: string; line: number; end_line: number | null }, [string]>(
-        `SELECT s.name, s.kind, s.line, s.end_line
+      .query<
+        {
+          name: string;
+          qualified_name: string | null;
+          kind: string;
+          line: number;
+          end_line: number | null;
+        },
+        [string]
+      >(
+        `SELECT s.name, s.qualified_name, s.kind, s.line, s.end_line
          FROM symbols s JOIN files f ON f.id = s.file_id
          WHERE f.path = ?
            AND s.kind IN ('interface','type','class','function','enum','method','constant')
@@ -3256,7 +3269,13 @@ export class RepoMap {
          LIMIT 20`,
       )
       .all(relPath)
-      .map((r) => ({ name: r.name, kind: r.kind, line: r.line, endLine: r.end_line }));
+      .map((r) => ({
+        name: r.name,
+        qualifiedName: r.qualified_name,
+        kind: r.kind,
+        line: r.line,
+        endLine: r.end_line,
+      }));
   }
 
   /** Legacy single-result lookup. Returns the best match absolute path or null. */
@@ -4214,6 +4233,21 @@ export class RepoMap {
       calleeLine: r.callee_line,
       callLine: r.call_line,
     }));
+  }
+
+  /** Get callees for a symbol by name + file path (resolves symbol ID internally) */
+  getCalleesForSymbol(relPath: string, symbolName: string): Array<{ calleeName: string }> {
+    const rows = this.db
+      .query<{ callee_name: string }, [string, string]>(
+        `SELECT DISTINCT c.callee_name
+         FROM calls c
+         JOIN symbols s ON s.id = c.caller_symbol_id
+         JOIN files f ON f.id = s.file_id
+         WHERE s.name = ? AND f.path = ?
+         ORDER BY c.line`,
+      )
+      .all(symbolName, relPath);
+    return rows.map((r) => ({ calleeName: r.callee_name }));
   }
 
   /** Get class/object methods via qualified_name */

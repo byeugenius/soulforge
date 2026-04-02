@@ -33,6 +33,7 @@ async function buildSymbolOutline(
   filePath: string,
   cutoffLine: number,
   totalLines: number,
+  symbolName?: string,
 ): Promise<string> {
   try {
     const client = getIntelligenceClient();
@@ -40,16 +41,44 @@ async function buildSymbolOutline(
     const cwd = process.cwd();
     const rel = filePath.startsWith(cwd) ? filePath.slice(cwd.length + 1) : filePath;
     const symbols = await client.getFileSymbolRanges(rel);
-    if (!symbols || symbols.length === 0) return "";
 
-    const beyond = symbols.filter((s) => s.line > cutoffLine);
-    if (beyond.length === 0) return "";
+    const parts: string[] = [];
 
-    const lines = beyond.map((s) => {
-      const range = s.endLine ? `:${String(s.line)}-${String(s.endLine)}` : `:${String(s.line)}`;
-      return `  ${range} ${s.kind} ${s.name}`;
-    });
-    return `\n... ${String(totalLines - cutoffLine)} more lines. Symbols below:\n${lines.join("\n")}\nUse ranges:[{start:N, end:M}] to read specific sections.`;
+    // Callees: if we know the symbol name, show what it calls (from calls table)
+    if (symbolName) {
+      try {
+        const callees = await client.getCalleesForSymbol(rel, symbolName);
+        if (callees && callees.length > 0) {
+          const top = callees.slice(0, 10).map((c) => c.calleeName);
+          const remaining = callees.length - top.length;
+          const suffix = remaining > 0 ? `, +${String(remaining)} more` : "";
+          parts.push(`Calls: ${top.join(", ")}${suffix}`);
+        }
+      } catch {}
+    }
+
+    // Symbols beyond the cutoff
+    if (symbols && symbols.length > 0) {
+      const beyond = symbols.filter((s) => s.line > cutoffLine);
+      if (beyond.length > 0) {
+        parts.push(
+          `Symbols below:\n${beyond
+            .map((s) => {
+              const range = s.endLine
+                ? `:${String(s.line)}-${String(s.endLine)}`
+                : `:${String(s.line)}`;
+              const label = s.qualifiedName ?? s.name;
+              return `  ${range} ${s.kind} ${label}`;
+            })
+            .join("\n")}`,
+        );
+      }
+    }
+
+    if (parts.length === 0) return "";
+
+    parts.push("Use ranges:[{start:N, end:M}] to read specific sections.");
+    return `\n... ${String(totalLines - cutoffLine)} more lines.\n${parts.join("\n")}`;
   } catch {
     return `\n... ${String(totalLines - cutoffLine)} more lines. Use ranges to read specific sections.`;
   }
@@ -337,10 +366,16 @@ async function readSymbolFromFile(filePath: string, args: ReadFileArgs): Promise
     const totalSymbolLines = contentLines.length;
     const remaining = totalSymbolLines - SMART_TRUNCATE_LINES;
     // Try file-level outline first (works for top-level symbols)
-    const outline = await buildSymbolOutline(filePath, cutoffLine, block.location.endLine ?? symbolStart + totalSymbolLines);
+    const outline = await buildSymbolOutline(
+      filePath,
+      cutoffLine,
+      block.location.endLine ?? symbolStart + totalSymbolLines,
+      name,
+    );
     // If no outline (symbol is a large function with nested locals), suggest analyze(outline)
-    const suffix = outline
-      || `\n... ${String(remaining)} more lines. Use analyze(action:'outline', file:'${filePath}') for nested symbols, or ranges:[{start:N, end:M}] for specific sections.`;
+    const suffix =
+      outline ||
+      `\n... ${String(remaining)} more lines. Use analyze(action:'outline', file:'${filePath}') for nested symbols, or ranges:[{start:N, end:M}] for specific sections.`;
     return {
       success: true,
       output: `${header} — ${filePath}:${range} (${String(totalSymbolLines)} lines, showing first ${String(SMART_TRUNCATE_LINES)})\n\n${truncated}${suffix}`,

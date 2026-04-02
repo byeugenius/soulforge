@@ -183,6 +183,8 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
     ),
   getFileDuplicates: (relPath: unknown) => requireRepoMap().getFileDuplicates(relPath as string),
   getCallees: (symbolId: unknown) => requireRepoMap().getCallees(symbolId as number),
+  getCalleesForSymbol: (relPath: unknown, symbolName: unknown) =>
+    requireRepoMap().getCalleesForSymbol(relPath as string, symbolName as string),
   getCallers: (name: unknown, filePath: unknown) =>
     requireRepoMap().getCallers(name as string, filePath as string | undefined),
   getClassMembers: (className: unknown) => requireRepoMap().getClassMembers(className as string),

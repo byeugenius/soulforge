@@ -31,7 +31,7 @@ export function wrapWithBusCache(
     if (repoMap) {
       try {
         symbols = (await repoMap.getFileSymbolRanges(path)).map((s) => ({
-          name: s.name,
+          name: s.qualifiedName ?? s.name,
           kind: s.kind,
           line: s.line,
           endLine: s.endLine,
