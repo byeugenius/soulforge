@@ -32,10 +32,10 @@ export const ollama: ProviderDefinition = {
   },
 
   fallbackModels: [
-    { id: "llama3.1", name: "Llama 3.1" },
-    { id: "codellama", name: "Code Llama" },
-    { id: "mistral", name: "Mistral" },
+    { id: "llama3.3", name: "Llama 3.3" },
+    { id: "qwen3", name: "Qwen 3" },
     { id: "deepseek-coder-v2", name: "DeepSeek Coder v2" },
+    { id: "mistral", name: "Mistral" },
   ],
 
   async checkAvailability() {
@@ -50,12 +50,15 @@ export const ollama: ProviderDefinition = {
   },
 
   contextWindows: [
+    ["llama3.3", 131_072],
     ["llama3.1:70b", 128_000],
     ["llama3.1", 128_000],
     ["codellama", 16_000],
     ["deepseek-coder", 128_000],
     ["deepseek", 128_000],
-    ["mistral", 32_000],
-    ["qwen", 32_000],
+    ["mistral", 128_000],
+    ["qwen3", 131_072],
+    ["qwen2.5", 128_000],
+    ["qwen", 128_000],
   ],
 };

@@ -7,7 +7,7 @@ interface OpenAIModel {
   context_window?: number;
 }
 
-const OPENAI_PREFIXES = ["gpt-4", "gpt-3.5", "o1", "o3", "chatgpt"];
+const OPENAI_PREFIXES = ["gpt-4", "gpt-5", "gpt-3.5", "o1", "o3", "o4", "chatgpt"];
 
 export const openai: ProviderDefinition = {
   id: "openai",
@@ -41,13 +41,16 @@ export const openai: ProviderDefinition = {
   },
 
   fallbackModels: [
+    { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-4o", name: "GPT-4o" },
     { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "o4-mini", name: "o4 Mini" },
     { id: "o3-mini", name: "o3 Mini" },
-    { id: "o1", name: "o1" },
   ],
 
   contextWindows: [
+    ["gpt-5", 400_000],
+    ["gpt-4.1", 1_048_576],
     ["gpt-4o-mini", 128_000],
     ["gpt-4o", 128_000],
     ["gpt-4-turbo", 128_000],
@@ -55,8 +58,11 @@ export const openai: ProviderDefinition = {
     ["gpt-4", 8_192],
     ["gpt-3.5-turbo-16k", 16_000],
     ["gpt-3.5", 4_096],
+    ["o4-mini", 200_000],
+    ["o3-pro", 200_000],
     ["o3-mini", 200_000],
     ["o3", 200_000],
+    ["o1-pro", 200_000],
     ["o1-mini", 128_000],
     ["o1", 200_000],
   ],

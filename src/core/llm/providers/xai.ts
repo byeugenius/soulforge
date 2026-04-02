@@ -39,11 +39,16 @@ export const xai: ProviderDefinition = {
   },
 
   fallbackModels: [
+    { id: "grok-4", name: "Grok 4" },
     { id: "grok-3", name: "Grok 3" },
     { id: "grok-3-mini", name: "Grok 3 Mini" },
   ],
 
   contextWindows: [
+    ["grok-4-fast", 2_000_000],
+    ["grok-4.1", 2_000_000],
+    ["grok-4.20", 2_000_000],
+    ["grok-4", 256_000],
     ["grok-3", 131_072],
     ["grok-2", 131_072],
     ["grok", 131_072],
