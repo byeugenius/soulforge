@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,8 +30,22 @@ export function detectInstallMethod(): InstallMethod {
     const execPath = process.argv[0] ?? "";
     const moduleUrl = import.meta.url;
 
-    // Homebrew — check before $bunfs since brew distributes compiled binaries
+    // Homebrew — brew wraps the binary via ~/.soulforge/bin/soulforge so
+    // argv[0] and import.meta.url are unreliable. Use multiple signals:
+    //   1. `which soulforge` resolves to the brew symlink (all versions)
+    //   2. argv[0]/execPath directly contains a Cellar/homebrew path
+    //   3. HOMEBREW_PREFIX is set AND binary lives in ~/.soulforge/bin (brew-specific install dir)
+    try {
+      const which = execFileSync("which", ["soulforge"], { encoding: "utf8" }).trim();
+      if (which.includes("homebrew") || which.includes("Cellar")) return "brew";
+    } catch {}
+
     if (execPath.includes("/Cellar/") || execPath.includes("/homebrew/")) return "brew";
+
+    // HOMEBREW_PREFIX is always set for brew users; combined with the binary
+    // living under ~/.soulforge/bin/ it uniquely identifies a brew install.
+    const homebrewPrefix = process.env.HOMEBREW_PREFIX ?? process.env.HOMEBREW_CELLAR ?? "";
+    if (homebrewPrefix && moduleUrl.includes("/.soulforge/bin/")) return "brew";
 
     // Compiled binary (bun --compile)
     if (moduleUrl.includes("$bunfs")) return "binary";
