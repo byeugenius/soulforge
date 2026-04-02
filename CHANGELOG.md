@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [1.8.3] — 2026-04-02
+
+### Bug Fixes
+
+- stall watchdog uses first-content detection, not first stream event
 ## [1.8.2] — 2026-04-02
 
 ### Bug Fixes
