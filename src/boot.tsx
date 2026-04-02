@@ -392,9 +392,14 @@ if (!getVendoredPath("lazygit")) {
 status("Reaching out to the LLM gods…", "Negotiating API keys…");
 const { checkProviders } = await import("./core/llm/provider.js");
 const { checkPrerequisites } = await import("./core/setup/prerequisites.js");
+const { fetchGroupedModels } = await import("./core/llm/models.js");
 const [bootProviders, bootPrereqs] = await Promise.all([
   checkProviders(),
   Promise.resolve(checkPrerequisites()),
+  // Pre-warm model metadata caches (no API keys needed) so context windows
+  // are available immediately when the user selects a model.
+  fetchGroupedModels("openrouter").catch(() => {}),
+  fetchGroupedModels("llmgateway").catch(() => {}),
 ]);
 
 status("Kicking the neurons awake…", "Waking the tree-sitter…");
