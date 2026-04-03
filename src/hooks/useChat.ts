@@ -48,6 +48,7 @@ import {
 import { getIOClient } from "../core/workers/io-client.js";
 import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
+import { useRepoMapStore } from "../stores/repomap.js";
 import { accumulateModelUsage, useStatusBarStore } from "../stores/statusbar.js";
 import { useToolsStore } from "../stores/tools.js";
 import type {
@@ -1674,28 +1675,76 @@ export function useChat({
         };
 
         if (!contextManager.isRepoMapReady()) {
-          const indexHintId = crypto.randomUUID();
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: indexHintId,
-              role: "assistant",
-              content: "Soul Map indexing… will proceed when ready.",
-              timestamp: Date.now(),
-            },
-          ]);
           setIsLoading(true);
-          const ready = await contextManager.waitForRepoMap(120_000, abortController.signal);
-          setMessages((prev) => prev.filter((m) => m.id !== indexHintId));
-          if (abortController.signal.aborted) return;
-          if (!ready) {
+
+          const answer = await new Promise<string>((resolve) => {
+            const questionId = crypto.randomUUID();
+            const warning =
+              "\n\nProceeding without it will significantly reduce capabilities — no soul tools (search, impact analysis, structural queries), no surgical file reads.";
+
+            const updateQuestion = () => {
+              const s = useRepoMapStore.getState();
+              const progress = s.scanProgress || "starting…";
+              const stats =
+                s.files > 0 ? ` (${String(s.files)} files, ${String(s.symbols)} symbols)` : "";
+              const error = s.scanError ? `\n⚠ ${s.scanError}` : "";
+              setPendingQuestion((prev) =>
+                prev?.id === questionId
+                  ? {
+                      ...prev,
+                      question: `**Soul Map indexing:** ${progress}${stats}${error}${warning}`,
+                    }
+                  : prev,
+              );
+            };
+
+            const cleanup = () => {
+              clearInterval(progressTimer);
+              clearInterval(readyPoller);
+            };
+
+            setPendingQuestion({
+              id: questionId,
+              question: `**Soul Map indexing:** starting…${warning}`,
+              options: [{ label: "Proceed without Soul Map", value: "skip" }],
+              allowSkip: false,
+              resolve: (answer) => {
+                cleanup();
+                setPendingQuestion(null);
+                resolve(answer);
+              },
+            });
+
+            const progressTimer = setInterval(updateQuestion, 500);
+
+            const readyPoller = setInterval(() => {
+              if (contextManager.isRepoMapReady()) {
+                cleanup();
+                setPendingQuestion(null);
+                resolve("ready");
+              }
+            }, 200);
+
+            abortController.signal.addEventListener(
+              "abort",
+              () => {
+                cleanup();
+                resolve("abort");
+              },
+              { once: true },
+            );
+          });
+
+          if (answer === "abort" || abortController.signal.aborted) return;
+
+          if (answer === "skip") {
             setMessages((prev) => [
               ...prev,
               {
                 id: crypto.randomUUID(),
                 role: "system",
                 content:
-                  "⚠ Soul Map not ready — proceeding without soul tools. Dispatch agents will have limited capabilities.",
+                  "⚠ Proceeding without Soul Map — soul tools unavailable, dispatch agents will have limited capabilities.",
                 timestamp: Date.now(),
               },
             ]);
