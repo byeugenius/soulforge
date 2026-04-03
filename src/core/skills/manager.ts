@@ -65,18 +65,25 @@ export async function installSkill(
     stderr: "pipe",
   });
 
-  // Timeout
-  const timeout = setTimeout(() => {
-    try {
-      proc.kill();
-    } catch {}
-  }, INSTALL_TIMEOUT);
-
-  const exitCode = await proc.exited;
-  clearTimeout(timeout);
-
-  const stderr = await new Response(proc.stderr).text();
-  const stdout = await new Response(proc.stdout).text();
+  // Read streams concurrently with proc.exited to avoid pipe-buffer deadlock.
+  // Without concurrent reads, if the child writes enough to fill the OS pipe buffer (~64KB),
+  // it blocks waiting for the parent to drain — while the parent blocks on proc.exited. Deadlock.
+  let installTimeout: ReturnType<typeof setTimeout> | undefined;
+  const [exitCode, stderr, stdout] = await Promise.race([
+    Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+      new Response(proc.stdout).text(),
+    ]).finally(() => clearTimeout(installTimeout)),
+    new Promise<never>((_, reject) => {
+      installTimeout = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {}
+        reject(new Error(`Skill install timed out after ${INSTALL_TIMEOUT / 1000}s`));
+      }, INSTALL_TIMEOUT);
+    }),
+  ]);
 
   if (exitCode !== 0) {
     // Extract useful error, cap output

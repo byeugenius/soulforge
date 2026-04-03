@@ -17,7 +17,6 @@ export interface MultiAgentState {
   totalAgents: number;
   agents: Map<string, AgentInfo>;
   findingCount: number;
-  miniForge?: boolean;
 }
 
 export function shortModelId(modelId: string): string {
@@ -53,7 +52,10 @@ export function applyMultiAgentEvent(
         if (info.state === "pending") s.agents.delete(key);
       }
     }
-    return { ...s, totalAgents: newTotal, miniForge: event.miniForge };
+    return {
+      ...s,
+      totalAgents: newTotal,
+    };
   }
   if (event.type === "agent-start" && event.agentId) {
     // Remove seed entry if it exists (seed IDs may differ from runtime IDs)

@@ -79,7 +79,6 @@ const NERD: Record<string, string> = {
   gear: "󰣖",
   gauge: "󰊕",
   cache: "󰑮",
-  trivial: "󰓅",
   cleanup: "󰤌",
   investigate: "\uDB80\uDF50",
   key: "\uF084",
@@ -98,6 +97,11 @@ const NERD: Record<string, string> = {
   worker_restart: "󰑓",
   image: "󰋩",
   smithy: "󰈸",
+  read_only: "\uDB80\uDE29",
+  edit: "\uF044",
+  web: "\uF0AC",
+  review: "\uDB80\uDF50",
+  compact_task: "󰁜",
 };
 
 const ASCII: Record<string, string> = {
@@ -179,7 +183,6 @@ const ASCII: Record<string, string> = {
   gear: "⚙",
   gauge: "◎",
   cache: "⚡",
-  trivial: "↯",
   cleanup: "♻",
   investigate: "◎",
   key: "⚷",
@@ -198,6 +201,11 @@ const ASCII: Record<string, string> = {
   worker_restart: "⚡↻",
   image: "🖼",
   smithy: "⚒",
+  read_only: "◎",
+  edit: "✎",
+  web: "⊕",
+  review: "◎",
+  compact_task: "↕",
 };
 
 let _nerdFont: boolean | null = null;

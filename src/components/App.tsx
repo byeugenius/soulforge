@@ -91,14 +91,13 @@ const ABORT_ON_LOADING = new Set([
 ]);
 
 const DEFAULT_TASK_ROUTER: TaskRouter = {
-  coding: null,
-  exploration: null,
+  spark: null,
+  ember: null,
   webSearch: null,
-  compact: null,
-  semantic: null,
-  trivial: null,
   desloppify: null,
   verify: null,
+  compact: null,
+  semantic: null,
   default: null,
 };
 

@@ -31,6 +31,21 @@
       "sourceType": "github",
       "computedHash": "65fa9c0f8b3bc9e6d3eb8d22f91f4688b37703781a19dd0daa68d8cae243d295"
     },
+    "product-hunt-launch": {
+      "source": "manojbajaj95/claude-gtm-plugin",
+      "sourceType": "github",
+      "computedHash": "534d822f58f9401b27956fb3f372e4603883d699f42516389e6fc1cab6c5dd34"
+    },
+    "social-media-content": {
+      "source": "svenja-dev/claude-code-skills",
+      "sourceType": "github",
+      "computedHash": "609931d479019cd7e102bce314c160c6c3517b58c4c935784257b99c0e6f3e9d"
+    },
+    "twitter-x-posts": {
+      "source": "kostja94/marketing-skills",
+      "sourceType": "github",
+      "computedHash": "5f6d086cc0592838a59aad606d73cdbb6c27f1f23129a5701f5fb000983d1768"
+    },
     "zustand-state-management": {
       "source": "smithery.ai",
       "sourceType": "well-known",

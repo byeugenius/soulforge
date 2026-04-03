@@ -57,12 +57,12 @@ const EDIT_PAIRS: [string, string][] = [
 ];
 
 const DISPATCH_PAIRS: [string, string][] = [
-  ["Summoning mini forges…", "Mini forges delivered"],
-  ["Lighting little forges…", "Little forges completed"],
   ["Splitting into sparks…", "Sparks reunited"],
   ["Deploying the swarm…", "Swarm returned"],
-  ["Forking the flame…", "Flames merged"],
+  ["Lighting the embers…", "Embers cooled"],
   ["Rallying the anvils…", "Anvils reported back"],
+  ["Spawning doppelgangers…", "Doppelgangers merged"],
+  ["Dispatching agents…", "Agents returned"],
 ];
 
 export interface LockInTool {

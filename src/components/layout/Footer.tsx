@@ -263,7 +263,7 @@ export function Footer() {
   if (phase === "glitch-out" || phase === "glitch-in") {
     const g =
       hintAvail > 0 && glitchText.length > hintAvail
-        ? glitchText.slice(0, hintAvail - 1) + "…"
+        ? `${glitchText.slice(0, hintAvail - 1)}…`
         : glitchText;
     return (
       <box flexDirection="row" justifyContent="center" paddingX={1} width="100%">
@@ -289,7 +289,7 @@ export function Footer() {
             const raw = hl ? segment.h : segment;
             let seg = raw;
             if (seg.length > charBudget) {
-              seg = seg.slice(0, charBudget) + "…";
+              seg = `${seg.slice(0, charBudget)}…`;
               charBudget = 0;
             } else {
               charBudget -= seg.length;
