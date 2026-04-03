@@ -38,49 +38,49 @@ const ROWS: ListRow[] = [
   {
     kind: "slot",
     key: "default",
-    label: "Default",
+    label: `${icon("model")} Default`,
     hint: "Fallback for background tasks when no specific model is set",
   },
-  // ── Dispatch Agents ──
+  // ── Dispatch ──
   {
     kind: "section",
-    title: "Dispatch Agents",
-    subtitle: "Models for parallel subagents spawned by dispatch",
+    title: "Dispatch",
+    subtitle: "Models for parallel subagents",
   },
   {
     kind: "slot",
-    key: "coding",
-    label: "Code Agent",
-    hint: "Writes & edits code",
+    key: "spark",
+    label: `${icon("read_only")} Explore`,
+    hint: "Read-only agents — searches, reads, analyzes (doppelganger)",
   },
   {
     kind: "slot",
-    key: "exploration",
-    label: "Explore Agent",
-    hint: "Reads, searches & investigates",
+    key: "ember",
+    label: `${icon("edit")} Code`,
+    hint: "Edit agents — reads files, makes changes",
   },
   {
     kind: "slot",
     key: "webSearch",
-    label: "Web Agent",
+    label: `${icon("web")} Web`,
     hint: "Searches the web & fetches pages",
   },
+  // ── Post-Dispatch ──
   {
-    kind: "slot",
-    key: "trivial",
-    label: "Quick Tasks",
-    hint: "Fast/cheap model for simple single-file tasks",
+    kind: "section",
+    title: "Post-Dispatch",
+    subtitle: "Quality checks after code agents finish",
   },
   {
     kind: "slot",
     key: "desloppify",
-    label: "Cleanup Pass",
+    label: `${icon("cleanup")} Cleanup`,
     hint: "Post-dispatch polish & style fixes",
   },
   {
     kind: "slot",
     key: "verify",
-    label: "Review Pass",
+    label: `${icon("review")} Review`,
     hint: "Adversarial review after code agents",
   },
 
@@ -93,13 +93,13 @@ const ROWS: ListRow[] = [
   {
     kind: "slot",
     key: "compact",
-    label: "Compaction",
+    label: `${icon("compact_task")} Compaction`,
     hint: "Summarizes old context when conversation grows long",
   },
   {
     kind: "slot",
     key: "semantic",
-    label: "Soul Map",
+    label: `${icon("repomap")} Soul Map`,
     hint: "Generates symbol summaries for the repo map",
   },
 ];

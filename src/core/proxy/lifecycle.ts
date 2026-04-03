@@ -56,20 +56,97 @@ function saveInstalledProxyVersion(version: string): void {
   writeFileSync(VERSION_FILE, version);
 }
 
+// Marker stamped into the config so we know perf defaults were applied.
+// Bump the version when defaults change — the old block is replaced.
+const PERF_MARKER_PREFIX = "# soulforge-perf-defaults";
+const PERF_MARKER_VERSION = 1;
+const PERF_MARKER = `${PERF_MARKER_PREFIX} v${String(PERF_MARKER_VERSION)}`;
+
+// Top-level YAML keys our perf block introduces.
+// Go's yaml.v3 rejects duplicate keys, so we must skip if any already exist.
+const PERF_KEYS = [
+  "request-retry",
+  "max-retry-interval",
+  "max-retry-credentials",
+  "streaming",
+  "nonstream-keepalive-interval",
+];
+
+const PERF_BLOCK = [
+  PERF_MARKER,
+  "request-retry: 1",
+  "max-retry-interval: 10",
+  "max-retry-credentials: 2",
+  "streaming:",
+  "  keepalive-seconds: 15",
+  "  bootstrap-retries: 1",
+  "nonstream-keepalive-interval: 30",
+].join("\n");
+
+/**
+ * Check whether any of our perf keys already exist as top-level YAML keys.
+ * A top-level key is a non-indented, non-comment line starting with `key:`.
+ */
+function hasConflictingKeys(content: string): boolean {
+  for (const line of content.split("\n")) {
+    if (line.length === 0 || line[0] === "#" || line[0] === " " || line[0] === "\t") continue;
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim();
+    if (PERF_KEYS.includes(key)) return true;
+  }
+  return false;
+}
+
 function ensureConfig(): void {
-  if (existsSync(PROXY_CONFIG_PATH)) return;
   mkdirSync(PROXY_CONFIG_DIR, { recursive: true });
-  writeFileSync(
-    PROXY_CONFIG_PATH,
-    [
-      "host: 127.0.0.1",
-      "port: 8317",
-      'auth-dir: "~/.cli-proxy-api"',
-      "api-keys:",
-      '  - "soulforge"',
-      "",
-    ].join("\n"),
-  );
+
+  if (!existsSync(PROXY_CONFIG_PATH)) {
+    writeFileSync(
+      PROXY_CONFIG_PATH,
+      [
+        "host: 127.0.0.1",
+        "port: 8317",
+        'auth-dir: "~/.cli-proxy-api"',
+        "api-keys:",
+        '  - "soulforge"',
+        "",
+        PERF_BLOCK,
+        "",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  // Existing config — stamp or upgrade the perf block
+  try {
+    const existing = readFileSync(PROXY_CONFIG_PATH, "utf-8");
+
+    if (existing.includes(PERF_MARKER)) return; // current version already applied
+
+    // Strip any older perf block (different version) before appending the new one
+    let cleaned = existing;
+    if (existing.includes(PERF_MARKER_PREFIX)) {
+      const lines = existing.split("\n");
+      const start = lines.findIndex((l) => l.startsWith(PERF_MARKER_PREFIX));
+      if (start !== -1) {
+        // Remove from marker to next blank line or EOF
+        let end = start + 1;
+        while (end < lines.length && lines[end]!.trim() !== "") end++;
+        lines.splice(start, end - start);
+        cleaned = lines.join("\n");
+      }
+    }
+
+    // If the user already set any of our keys manually, don't inject — would
+    // create duplicate YAML keys and crash Go's yaml.v3 parser.
+    if (hasConflictingKeys(cleaned)) return;
+
+    const sep = cleaned.endsWith("\n") ? "" : "\n";
+    writeFileSync(PROXY_CONFIG_PATH, `${cleaned}${sep}\n${PERF_BLOCK}\n`);
+  } catch {
+    // Don't block startup if config is unreadable
+  }
 }
 
 function commandExists(cmd: string): boolean {
