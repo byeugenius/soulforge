@@ -1,5 +1,3 @@
-import { readFile as fsReadFile } from "node:fs/promises";
-import { isAbsolute as pathIsAbsolute, resolve as pathResolve } from "node:path";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
 import { tool } from "ai";
@@ -9,23 +7,23 @@ import type { AgentFeatures } from "../../types/index.js";
 import { getWorkspaceCoordinator } from "../coordination/WorkspaceCoordinator.js";
 import { getModelContextWindow } from "../llm/models.js";
 import { supportsProgrammaticToolCalling } from "../llm/provider-options.js";
-import { isForbidden } from "../security/forbidden.js";
 
 import { getActiveTaskTab } from "../tools/task-list.js";
 import type { IntelligenceClient } from "../workers/intelligence-client.js";
 import { AgentBus, type AgentTask, normalizePath, type SharedCache } from "./agent-bus.js";
 import { cleanupDispatchDir, type DispatchOutput, type DoneToolResult } from "./agent-results.js";
 import {
-  detectTaskTier,
+  classifyTask,
   MAX_CONCURRENT_AGENTS,
   runAgentTask,
   selectModel,
   sleep,
   stripContextManagement,
 } from "./agent-runner.js";
-import { runDesloppify, runEvaluator, runVerifier } from "./agent-verification.js";
+import { runDesloppify, runVerifier } from "./agent-verification.js";
 import { createCodeAgent } from "./code.js";
 import { createExploreAgent } from "./explore.js";
+import { isApiExportEnabled } from "./step-utils.js";
 import { emitAgentStats, emitMultiAgentEvent, emitSubagentStep } from "./subagent-events.js";
 
 export interface SharedCacheRef {
@@ -35,10 +33,11 @@ export interface SharedCacheRef {
 
 export interface SubagentModels {
   defaultModel: LanguageModel;
-  explorationModel?: LanguageModel;
-  codingModel?: LanguageModel;
+  /** Model for ⚡ spark agents — explore/investigate. */
+  sparkModel?: LanguageModel;
+  /** Model for 🔥 ember agents — code edits. */
+  emberModel?: LanguageModel;
   webSearchModel?: LanguageModel;
-  trivialModel?: LanguageModel;
   desloppifyModel?: LanguageModel;
   verifyModel?: LanguageModel;
   providerOptions?: ProviderOptions;
@@ -53,11 +52,13 @@ export interface SubagentModels {
   disablePruning?: boolean;
   tabId?: string;
   forgeInstructions?: string;
-  /** Forge tool definitions — shared with miniforges for cache prefix hits. */
+  /** Forge tool definitions — shared with sparks for cache prefix hits. */
   forgeTools?: Record<string, unknown>;
+  /** Mutable ref to the parent forge's conversation messages — used for doppelganger mode. */
+  parentMessagesRef?: { current: import("@ai-sdk/provider-utils").ModelMessage[] | null };
 }
 
-// Tools that explore/investigate miniforges must not execute.
+// Tools that explore/investigate sparks must not execute.
 // Definitions are still sent (same as forge) for cache prefix hits.
 const EXPLORE_BLOCKED = new Set([
   "edit_file",
@@ -71,17 +72,24 @@ const EXPLORE_BLOCKED = new Set([
   "shell",
 ]);
 
-// Tools that code miniforges must not execute (prevent nested dispatch).
+// Tools that code sparks must not execute (prevent nested dispatch).
 const CODE_BLOCKED = new Set(["dispatch"]);
 
-/** Wrap forge tools with role-based execute guards for miniforges.
- *  Tool definitions (description + schema) stay identical → same cache prefix.
- *  Only the execute function changes — it's local, never sent to the API.
- *  When stripProgrammatic is true, removes providerOptions (allowedCallers)
- *  from tools — models like Haiku don't support programmatic tool calling. */
+/** Wrap forge tools with role-based execute guards for sparks.
+ *  Tool definitions (description + schema) stay byte-identical → same cache prefix.
+ *  Blocked/unsupported tools keep their schema but execute rejects at runtime.
+ *  When stripProgrammatic is true, programmatic-only tools (web_fetch, code_execution)
+ *  are also execute-blocked — models like Haiku don't support them. */
+const PROGRAMMATIC_ONLY_TOOLS = new Set([
+  "web_fetch",
+  "code_execution",
+  "computer",
+  "str_replace_based_edit_tool",
+]);
+
 function guardForgeTools(
   forgeTools: Record<string, unknown>,
-  role: "explore" | "investigate" | "code",
+  role: "explore" | "code",
   stripProgrammatic?: boolean,
 ): Record<string, unknown> {
   const blocked = role === "code" ? CODE_BLOCKED : EXPLORE_BLOCKED;
@@ -90,27 +98,18 @@ function guardForgeTools(
     `${name} is not available in ${role} mode. Use report_finding to suggest changes instead.`;
 
   for (const [name, t] of Object.entries(forgeTools)) {
-    if (blocked.has(name)) {
+    if (blocked.has(name) || (stripProgrammatic && PROGRAMMATIC_ONLY_TOOLS.has(name))) {
       // Spread the original tool object to preserve description + schema for cache,
       // then override execute to reject at runtime.
-      const base = stripProgrammatic ? stripProviderOptions(t as object) : (t as object);
       guarded[name] = {
-        ...base,
+        ...(t as object),
         execute: async () => ({ success: false, error: rejectMsg(name) }),
       };
     } else {
-      guarded[name] = stripProgrammatic ? stripProviderOptions(t as object) : t;
+      guarded[name] = t;
     }
   }
   return guarded;
-}
-
-function stripProviderOptions(t: object): object {
-  if ("providerOptions" in t) {
-    const { providerOptions: _, ...rest } = t as Record<string, unknown>;
-    return rest;
-  }
-  return t;
 }
 
 function formatToolArgs(toolCall: { toolName: string; input?: unknown }): string {
@@ -245,13 +244,13 @@ export async function createAgent(
   const useExplore =
     task.role === "explore" || task.role === "investigate" || models.readOnly === true;
   const { model } = selectModel(task, models);
-  const tier = detectTaskTier(task);
+  const tier = classifyTask(task, models);
   const modelId =
     typeof model === "object" && "modelId" in model ? String(model.modelId) : "unknown";
 
-  // miniForge: share forge system prompt for prefix cache hits across all providers.
-  // Trivial tier uses a cheaper model (different cache namespace), so skip.
-  const useMiniForge = models.forgeInstructions != null && tier !== "trivial";
+  // Spark: same model as parent → share forge system prompt + tools for cache prefix hits.
+  // Ember: different model or code role → lean tools, lean prompt, no cache sharing overhead.
+  const useSpark = models.forgeInstructions != null && tier === "spark";
 
   // Always strip context management — subagent models (e.g. Haiku) may not support it
   let subagentProviderOptions = stripContextManagement(models.providerOptions);
@@ -269,20 +268,16 @@ export async function createAgent(
   }
 
   const contextWindow = await getModelContextWindow(modelId);
-  const forgeInstructions = useMiniForge ? models.forgeInstructions : undefined;
+  const forgeInstructions = useSpark ? models.forgeInstructions : undefined;
 
-  // miniForge: use forge's tool definitions (guarded by role) for cache prefix hits.
+  // Spark mode: use forge's tool definitions (guarded by role) for cache prefix hits.
   // Tool definitions (description + schema) are byte-identical to the main forge →
-  // the [tools + system] prefix is a cache HIT on every miniforge's first step.
-  const agentRole = useExplore
-    ? task.role === "investigate"
-      ? ("investigate" as const)
-      : ("explore" as const)
-    : ("code" as const);
+  // the [tools + system] prefix is a cache HIT on every spark's first step.
+  const agentRole = useExplore ? ("explore" as const) : ("code" as const);
   // Strip programmatic tool calling (allowedCallers) for models that don't support it (e.g. Haiku)
   const stripProgrammatic = !supportsProgrammaticToolCalling(modelId);
   const forgeToolsGuarded =
-    useMiniForge && models.forgeTools
+    useSpark && models.forgeTools
       ? guardForgeTools(models.forgeTools as Record<string, unknown>, agentRole, stripProgrammatic)
       : undefined;
 
@@ -298,15 +293,47 @@ export async function createAgent(
     repoMap: models.repoMap,
     contextWindow,
     disablePruning: models.disablePruning,
-    role: agentRole === "code" ? ("explore" as const) : agentRole,
     tabId: models.tabId,
     forgeInstructions,
     forgeTools: forgeToolsGuarded,
   };
-  const hasPreloadedFiles = !useExplore && task.task.includes("--- Preloaded file contents");
-  const agent = useExplore
-    ? createExploreAgent(model, opts)
-    : createCodeAgent(model, { ...opts, hasPreloadedFiles });
+  const agent = useExplore ? createExploreAgent(model, opts) : createCodeAgent(model, opts);
+
+  if (isApiExportEnabled() && task.agentId) {
+    const toolNames = forgeToolsGuarded
+      ? Object.keys(forgeToolsGuarded)
+      : useExplore
+        ? ["(explore defaults)"]
+        : ["(code defaults)"];
+    const configData = {
+      agent: task.agentId,
+      role: agentRole,
+      tier,
+      model: modelId,
+      spark: useSpark,
+      contextWindow,
+      task: task.task,
+      targetFiles: task.targetFiles,
+      toolCount: toolNames.length,
+      tools: toolNames,
+      systemPromptChars: forgeInstructions?.length ?? 0,
+      systemPromptTokens: forgeInstructions ? Math.ceil(forgeInstructions.length / 4) : 0,
+      providerOptions: subagentProviderOptions
+        ? Object.fromEntries(
+            Object.entries(subagentProviderOptions).map(([k, v]) => [
+              k,
+              v && typeof v === "object" ? Object.keys(v as Record<string, unknown>) : v,
+            ]),
+          )
+        : null,
+    };
+    import("node:fs").then(({ mkdirSync, writeFileSync }) => {
+      const dir = `${process.cwd()}/.soulforge/api-export/subagents/${task.agentId}`;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/config.json`, JSON.stringify(configData, null, 2), "utf-8");
+    });
+  }
+
   return { agent, modelId, tier };
 }
 
@@ -374,82 +401,19 @@ export function normalizeTargetPath(f: string): string {
   return normalizePath(parseTargetFileRange(f).path);
 }
 
-const PRELOAD_FULL_FILE_MAX_LINES = 500;
-const PRELOAD_TOTAL_MAX_CHARS = 80_000;
-
-/** @internal — exported for testing */
-export async function buildPreloadedContent(targetFiles: string[], cwd: string): Promise<string> {
-  const sections: string[] = [];
-  let totalChars = 0;
-
-  for (const tf of targetFiles) {
-    if (totalChars >= PRELOAD_TOTAL_MAX_CHARS) break;
-
-    const parsed = parseTargetFileRange(tf);
-    const norm = normalizePath(parsed.path);
-    if (!norm.includes(".")) continue;
-
-    const abs = pathIsAbsolute(norm) ? norm : pathResolve(cwd, norm);
-    if (isForbidden(abs)) continue;
-
-    let raw: string;
-    try {
-      raw = await fsReadFile(abs, "utf-8");
-    } catch {
-      continue;
-    }
-
-    const allLines = raw.split("\n");
-    let start: number;
-    let end: number;
-    let rangeLabel: string;
-
-    if (parsed.startLine != null) {
-      start = Math.max(1, parsed.startLine);
-      end = Math.min(parsed.endLine ?? start + 50, allLines.length);
-      rangeLabel = `${norm}:${String(start)}-${String(end)}`;
-    } else {
-      if (allLines.length > PRELOAD_FULL_FILE_MAX_LINES) continue;
-      start = 1;
-      end = allLines.length;
-      rangeLabel = norm;
-    }
-
-    const slice = allLines.slice(start - 1, end);
-    const numbered = slice.map((line, i) => `${String(start + i).padStart(4)}  ${line}`).join("\n");
-
-    const section = `── ${rangeLabel} ──\n${numbered}`;
-    if (totalChars + section.length > PRELOAD_TOTAL_MAX_CHARS) continue;
-
-    sections.push(section);
-    totalChars += section.length;
-  }
-
-  if (sections.length === 0) return "";
-  return (
-    "\n\n--- Preloaded file contents (fresh and up-to-date — proceed directly with edits) ---\n" +
-    sections.join("\n\n")
-  );
-}
-
 export function buildSubagentTools(models: SubagentModels) {
   const cacheRef: SharedCacheRef = models.sharedCacheRef ?? {
     current: undefined,
     updateFile() {},
   };
 
-  let turnDispatchCount = 0;
-  let lastDispatchHadCode = false;
-  const turnDispatchSummaries: string[] = [];
-
   return {
     dispatch: tool({
       description:
-        "Dispatch parallel subagents for multi-file tasks. " +
-        "Use when: 7+ files, or 2+ independent tasks that can run in parallel. " +
-        "For ≤6 files, prefer direct read/edit instead. " +
-        "Each task MUST name specific files and symbols. Split by file ownership. " +
-        "Roles: explore (read-only), investigate (broad analysis), code (edits).",
+        "Dispatch parallel agents for multi-file tasks that benefit from parallelism. " +
+        "YOU pre-digest tasks — look up files and symbols in the Soul Map first, then give agents exact paths, line ranges, and what to do. " +
+        "Agents are cheap but have limited context — write surgical directives, not research briefs. " +
+        "Don't dispatch single-topic questions you can answer with 1-2 reads yourself.",
       inputSchema: z.object({
         tasks: z
           .array(
@@ -457,31 +421,31 @@ export function buildSubagentTools(models: SubagentModels) {
               task: z
                 .string()
                 .describe(
-                  "What the agent should do — extraction instructions referencing the target files and symbols",
+                  "Surgical directive — include exact file paths, line ranges, symbol names from the Soul Map. " +
+                    "The agent can't see your conversation — everything it needs must be here.",
                 ),
-              targetFiles: z
+              files: z
                 .array(z.string())
+                .optional()
                 .describe(
-                  "Exact file paths from the Soul Map that this task targets. " +
-                    "Supports optional line ranges: 'path/file.ts:100-200'. " +
-                    "Web search tasks use ['web'].",
+                  "Target file paths with line ranges from the Soul Map (e.g. 'src/foo.ts:100-200'). " +
+                    "Agents read these first. Web search tasks use ['web'].",
                 ),
               role: z
                 .enum(["explore", "code", "investigate"])
                 .optional()
                 .describe(
-                  "Agent role (default: explore). " +
-                    "explore = targeted extraction, investigate = broad cross-cutting analysis (scans with soul_grep/soul_analyze/grep), code = edits",
+                  "Default: explore. " +
+                    "explore = read-only research (investigate is an alias). " +
+                    "code = makes edits.",
                 ),
               returnFormat: z
                 .enum(["summary", "code", "files", "full", "verdict"])
+                .optional()
                 .describe(
-                  "What you need back from this agent. " +
-                    "summary: concise findings + reasoning, no code blocks. " +
-                    "code: pasteable code snippets with file paths and line numbers. " +
-                    "files: file paths only with one-line descriptions of what was found/changed. " +
-                    "full: complete analysis with code, reasoning, and all details. " +
-                    "verdict: yes/no answer with brief justification (for validation tasks).",
+                  "What you need back. Default: summary. " +
+                    "summary: concise findings. code: pasteable snippets with line numbers. " +
+                    "files: paths only. full: complete analysis. verdict: yes/no with justification.",
                 ),
               id: z.string().optional().describe("Unique ID (auto-generated if omitted)"),
               taskId: z
@@ -496,37 +460,7 @@ export function buildSubagentTools(models: SubagentModels) {
           )
           .min(1)
           .max(8)
-          .describe("Agent tasks to dispatch (system max 8, 3 concurrent when possible)"),
-        objective: z
-          .string()
-          .optional()
-          .describe("High-level objective (useful for multi-agent coordination)"),
-        force: z
-          .boolean()
-          .optional()
-          .describe(
-            "Override all dispatch validation (per-turn dispatch limit, file overlap between agents, investigation quality, ≤4 file rejection, web task limit). Only set true AFTER reviewing all previous dispatch results and confirming they lack the specific information you need.",
-          ),
-        contract: z
-          .object({
-            filesNeeded: z
-              .array(z.string())
-              .min(1)
-              .describe(
-                "ALL file paths you need across all tasks. Must be exact paths from the Soul Map. The system verifies these exist before approving dispatch.",
-              ),
-            reason: z
-              .string()
-              .min(10)
-              .describe(
-                "Why dispatch instead of direct reads? Must justify why this requires parallel agents rather than sequential read calls.",
-              ),
-          })
-          .describe(
-            "REQUIRED. List every file you need and justify why dispatch is necessary. " +
-              "The system verifies files against the Soul Map and rejects hallucinated paths. " +
-              "If you need ≤6 files, the system will tell you to read them directly.",
-          ),
+          .describe("Spark/ember tasks (max 8, 3 concurrent)"),
       }),
       execute: async (rawArgs, { abortSignal, toolCallId }) => {
         const bus = new AgentBus(cacheRef.current);
@@ -538,164 +472,102 @@ export function buildSubagentTools(models: SubagentModels) {
         let dependentWarning = "";
         try {
           const WEB_MARKER = "web";
+          const warnings: string[] = [];
+          const repoMap = models.repoMap;
+          const cwd = process.cwd();
 
-          // Contract verification — validate files against Soul Map before proceeding
-          if (!rawArgs.contract && !rawArgs.force) {
-            return (
-              "⛔ dispatch [rejected → no contract]\n" +
-              "Provide a contract listing ALL files you need (contract.filesNeeded) and why dispatch is needed (contract.reason). " +
-              "The system verifies files against the Soul Map before approving. " +
-              "If you need ≤6 files, read them directly instead of dispatching."
-            );
-          }
-          if (rawArgs.contract && !rawArgs.force) {
-            const contract = rawArgs.contract;
-            const repoMap = models.repoMap;
-            const verified: string[] = [];
-            const hallucinated: string[] = [];
-            const onDiskOnly: string[] = [];
-            const symbolCache = new Map<
-              string,
-              Awaited<ReturnType<IntelligenceClient["getFileSymbolRanges"]>>
-            >();
-            const cwd = process.cwd();
+          // ── Normalize: map new schema (files) to internal (targetFiles) ──
+          let args = {
+            ...rawArgs,
+            tasks: rawArgs.tasks.map((t) => ({
+              ...t,
+              targetFiles: t.files ?? [],
+            })),
+          };
 
-            for (const file of contract.filesNeeded) {
-              const norm = normalizePath(file);
-              if (norm === "web") continue;
+          // ── File validation: verify against Soul Map, auto-correct, warn ──
+          for (const t of args.tasks) {
+            const isWebTask =
+              t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
+            if (isWebTask) continue;
 
-              // Tier 1: Soul Map (most reliable — has symbols, line ranges)
-              if (repoMap) {
-                const symbols = await repoMap.getFileSymbolRanges(norm);
-                symbolCache.set(norm, symbols);
-                if (symbols.length > 0) {
-                  verified.push(norm);
-                  continue;
-                }
-              }
-
-              // Tier 2: disk existence (for config files, files outside repo map, no repo map)
-              const { existsSync } = require("node:fs") as typeof import("node:fs");
-              const { resolve: resolvePath, isAbsolute } =
-                require("node:path") as typeof import("node:path");
-              const abs = isAbsolute(norm) ? norm : resolvePath(cwd, norm);
-              if (existsSync(abs)) {
-                onDiskOnly.push(norm);
+            const corrected: string[] = [];
+            for (const f of t.targetFiles) {
+              const norm = normalizeTargetPath(f);
+              if (!norm.includes(".")) {
+                corrected.push(f);
                 continue;
               }
 
-              hallucinated.push(norm);
-            }
+              // Check Soul Map first, then disk
+              let exists = false;
+              if (repoMap) {
+                const symbols = await repoMap.getFileSymbolRanges(norm);
+                if (symbols.length > 0) exists = true;
+              }
+              if (!exists) {
+                const { existsSync } = require("node:fs") as typeof import("node:fs");
+                const { resolve: resolvePath, isAbsolute } =
+                  require("node:path") as typeof import("node:path");
+                const abs = isAbsolute(norm) ? norm : resolvePath(cwd, norm);
+                if (existsSync(abs)) exists = true;
+              }
 
-            // Reject hallucinated files
-            if (hallucinated.length > 0) {
-              return (
-                `⛔ dispatch [rejected → hallucinated files]\n` +
-                `${String(hallucinated.length)} file(s) in your contract don't exist:\n` +
-                hallucinated.map((f) => `  ✗ \`${f}\``).join("\n") +
-                `\nCheck the Soul Map for correct paths. Use soul_find if you're unsure of a filename.`
-              );
+              if (exists) {
+                corrected.push(f);
+              } else {
+                warnings.push(
+                  `⚠️ File not found: \`${norm}\` — spark/ember will use tools to locate it`,
+                );
+                corrected.push(f); // Keep it — the agent has tools to handle missing files
+              }
             }
+            t.targetFiles = corrected;
+          }
 
-            // Completeness check: all targetFiles across tasks must be in the contract
-            const contractSet = new Set([...verified, ...onDiskOnly]);
-            const missingFromContract: string[] = [];
-            for (const t of rawArgs.tasks) {
+          // ── Dependent warning: check if code targets have importers not in the dispatch ──
+          if (repoMap) {
+            const allCodeFiles = args.tasks
+              .filter((t) => t.role === "code")
+              .flatMap((t) => t.targetFiles.map(normalizeTargetPath));
+            const allTargetSet = new Set(
+              args.tasks.flatMap((t) => t.targetFiles.map(normalizeTargetPath)),
+            );
+            if (allCodeFiles.length > 0) {
+              const missingDeps: string[] = [];
+              for (const f of allCodeFiles) {
+                const importers = await repoMap.getFileDependents(f);
+                for (const imp of importers.slice(0, 5)) {
+                  if (!allTargetSet.has(imp.path)) {
+                    missingDeps.push(`\`${imp.path}\` imports \`${f}\``);
+                  }
+                }
+              }
+              if (missingDeps.length > 0) {
+                const depList = [...new Set(missingDeps)].slice(0, 5).join("\n  ");
+                dependentWarning = `\n\n⚠️ Files that import your targets (may need updates if exports/signatures changed):\n  ${depList}`;
+              }
+            }
+          }
+
+          // ── Cross-tab awareness: warn about conflicts, don't block ──
+          const currentTabId = getActiveTaskTab();
+          if (currentTabId) {
+            const wc = getWorkspaceCoordinator();
+            for (const t of args.tasks) {
+              if (t.role !== "code") continue;
               for (const f of t.targetFiles) {
                 const norm = normalizeTargetPath(f);
-                if (norm === "web" || !norm.includes(".")) continue;
-                if (!contractSet.has(norm)) missingFromContract.push(norm);
-              }
-            }
-            if (missingFromContract.length > 0) {
-              return (
-                `⛔ dispatch [rejected → incomplete contract]\n` +
-                `Tasks reference files not listed in contract.filesNeeded:\n` +
-                [...new Set(missingFromContract)].map((f) => `  ✗ \`${f}\``).join("\n") +
-                `\nAdd ALL files to the contract so the system can verify completeness.`
-              );
-            }
-
-            // Completeness check: for code tasks, collect missing dependents as a warning
-            // Skip files not in the repo map index — they were likely just created
-            if (repoMap) {
-              const codeFiles = rawArgs.tasks
-                .filter((t) => t.role === "code")
-                .flatMap((t) => t.targetFiles.map(normalizePath));
-              if (codeFiles.length > 0) {
-                const missingDeps: string[] = [];
-                for (const f of codeFiles) {
-                  if (!verified.includes(f)) continue;
-                  const importers = await repoMap.getFileDependents(f);
-                  for (const imp of importers.slice(0, 5)) {
-                    if (!contractSet.has(imp.path) && !codeFiles.includes(imp.path)) {
-                      missingDeps.push(`\`${imp.path}\` imports \`${f}\``);
-                    }
-                  }
+                if (!norm.includes(".")) continue;
+                const conflicts = wc.getConflicts(currentTabId, [norm]);
+                for (const c of conflicts) {
+                  warnings.push(`⚠️ \`${f}\` is being edited by Tab "${c.ownerTabLabel}"`);
                 }
-                if (missingDeps.length > 0) {
-                  const depList = [...new Set(missingDeps)].slice(0, 5).join("\n  ");
-                  dependentWarning = `\n\n⚠️ Files that import your targets (may need updates if exports/signatures changed):\n  ${depList}`;
-                }
-              }
-            }
-
-            // Threshold: ≤6 files → reject with enriched Soul Map info
-            const totalFiles = verified.length + onDiskOnly.length;
-            const MAX_DIRECT_FILES = 6;
-            if (totalFiles > 0 && totalFiles <= MAX_DIRECT_FILES) {
-              const fileList: string[] = [];
-              for (const f of verified) {
-                if (repoMap) {
-                  const symbols = symbolCache.get(f) ?? (await repoMap.getFileSymbolRanges(f));
-                  if (symbols.length > 0) {
-                    const top = symbols
-                      .slice(0, 5)
-                      .map(
-                        (s: { name: string; kind: string; line: number }) =>
-                          `${s.name} (${s.kind}, L${String(s.line)})`,
-                      )
-                      .join(", ");
-                    fileList.push(`  \`${f}\` → ${top}`);
-                    continue;
-                  }
-                }
-                fileList.push(`  \`${f}\``);
-              }
-              for (const f of onDiskOnly) {
-                fileList.push(`  \`${f}\` (not in Soul Map — use read)`);
-              }
-              return (
-                `⛔ dispatch [rejected → read directly]\n` +
-                `You only need ${String(totalFiles)} file(s) — read them directly:\n` +
-                fileList.join("\n") +
-                `\nUse read with target + name for specific symbols or read for full files. Dispatch is for 7+ files or parallel edits.`
-              );
-            }
-          }
-
-          if (rawArgs.tasks.length < 2 && !rawArgs.force) {
-            return (
-              "⛔ dispatch [rejected → single task]\n" +
-              "Only 1 task — do it yourself instead of dispatching. " +
-              "Dispatch is for 2+ parallel tasks. Read the files directly and make the edits."
-            );
-          }
-
-          if (models.agentFeatures?.targetFileValidation !== false) {
-            for (const t of rawArgs.tasks) {
-              const isWebTask =
-                t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
-              if (isWebTask) continue;
-
-              const hasFilePaths = t.targetFiles.some((f) => f.includes("/") || f.includes("."));
-              if (!hasFilePaths) {
-                return `⛔ dispatch [rejected → invalid targetFiles]\nTask "${t.id ?? "?"}" has no valid file paths in targetFiles. Every non-web task must reference specific files from the Soul Map. Got: [${t.targetFiles.join(", ")}]`;
               }
             }
           }
 
-          let args = rawArgs;
+          // ── Auto-merge: if >8 tasks, merge explore tasks to fit ──
           const MAX_TASKS = 8;
           if (args.tasks.length > MAX_TASKS) {
             const mergeable = args.tasks.filter(
@@ -706,10 +578,7 @@ export function buildSubagentTools(models: SubagentModels) {
                 (t.role !== "explore" && t.role !== "investigate") ||
                 (t.dependsOn?.length ?? 0) > 0,
             );
-            if (pinned.length >= MAX_TASKS) {
-              return `⛔ dispatch [rejected → too many tasks]\n${String(args.tasks.length)} tasks (max ${String(MAX_TASKS)}). Merge related tasks — split by file ownership, not concept.`;
-            }
-            const slots = MAX_TASKS - pinned.length;
+            const slots = Math.max(1, MAX_TASKS - pinned.length);
             mergeable.sort((a, b) => b.targetFiles.length - a.targetFiles.length);
             while (mergeable.length > slots) {
               const removed = mergeable.pop();
@@ -720,220 +589,12 @@ export function buildSubagentTools(models: SubagentModels) {
               }
             }
             args = { ...args, tasks: [...pinned, ...mergeable] };
-          }
-
-          if (!args.force && cacheRef.current) {
-            const cache = cacheRef.current;
-            const allTargetFiles: string[] = [];
-            for (const t of args.tasks) {
-              if (t.role === "investigate") continue;
-              const isWebTask =
-                t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
-              if (!isWebTask) {
-                for (const f of t.targetFiles) allTargetFiles.push(normalizeTargetPath(f));
-              }
-            }
-            if (allTargetFiles.length > 0) {
-              const cached = allTargetFiles.filter((f) => cache.files.has(f));
-              const hasCodeTask = args.tasks.some((t) => t.role === "code");
-              const missing = allTargetFiles.filter((f) => !cache.files.has(f));
-
-              if (cached.length === allTargetFiles.length && !hasCodeTask) {
-                return (
-                  `⛔ dispatch [rejected → all files cached]\nALL ${String(cached.length)} target files are already in your context. ` +
-                  `You have the data — plan, edit, or respond now. ` +
-                  `Set force: true only if you need code agents to EDIT these files.`
-                );
-              }
-
-              if (cached.length > 0 && cached.length >= allTargetFiles.length * 0.5) {
-                const cachedList = cached.map((f) => `\`${f}\``).join(", ");
-                const missingHint =
-                  missing.length > 0
-                    ? ` Files not yet read: ${missing.map((f) => `\`${f}\``).join(", ")}. Use read for these ${String(missing.length)} files directly.`
-                    : "";
-                const actionHint = hasCodeTask
-                  ? "Set force: true only if you need agents to EDIT these files."
-                  : "Set force: true only if you need agents to do multi-step investigation beyond what's already in context.";
-                return `⛔ dispatch [rejected → files already cached]\n${String(cached.length)}/${String(allTargetFiles.length)} target files already in context (${cachedList}).${missingHint} Act on the data you have. ${actionHint}`;
-              }
-            }
-          }
-
-          if (!args.force) {
-            // Gate: per-turn dispatch limit
-            // Allow explore→code transitions (investigate then fix), but reject
-            // same-category repeats (explore→explore or code→code)
-            const thisHasCode = args.tasks.some((t) => t.role === "code");
-            const isRoleTransition = turnDispatchCount === 1 && !lastDispatchHadCode && thisHasCode;
-            if (turnDispatchCount > 0 && !isRoleTransition) {
-              const prev = turnDispatchSummaries
-                .map((s, i) => `  ${String(i + 1)}. ${s}`)
-                .join("\n");
-              return (
-                `⛔ dispatch [rejected → repeat dispatch]\nThis is dispatch #${String(turnDispatchCount + 1)} this turn. Previous dispatch(es):\n${prev}\n` +
-                `Act on these results before dispatching again. If they lack what you need, use read/soul_grep for targeted follow-up. ` +
-                `Set force: true only after confirming previous results genuinely lack the specific information you need.`
-              );
-            }
-
-            // Gate: intra-dispatch file overlap between agents (exact files only, not directories)
-            const fileOwners = new Map<string, string[]>();
-            for (const t of args.tasks) {
-              const isWebTask =
-                t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER;
-              if (isWebTask) continue;
-              const label = t.id ?? t.task.slice(0, 60);
-              for (const f of t.targetFiles) {
-                const norm = normalizeTargetPath(f);
-                if (!norm.includes(".")) continue;
-                const owners = fileOwners.get(norm);
-                if (owners) owners.push(label);
-                else fileOwners.set(norm, [label]);
-              }
-            }
-            const overlaps = [...fileOwners.entries()].filter(([, owners]) => owners.length > 1);
-            if (overlaps.length > 0) {
-              const lines = overlaps
-                .slice(0, 5)
-                .map(([f, owners]) => `  \`${f}\` — ${owners.join(", ")}`)
-                .join("\n");
-              return (
-                `⛔ dispatch [rejected → file overlap]\n${String(overlaps.length)} file(s) targeted by multiple agents:\n${lines}\n` +
-                `Split by file ownership — each file belongs to exactly one agent. ` +
-                `Set force: true to proceed anyway.`
-              );
-            }
-
-            // Gate: cross-tab file overlap — warn when dispatch targets files claimed by other tabs
-            const currentTabId = getActiveTaskTab();
-            if (currentTabId) {
-              const wc = getWorkspaceCoordinator();
-              const crossTabConflicts: Array<{ file: string; tabLabel: string }> = [];
-              for (const t of args.tasks) {
-                if (t.role !== "code") continue;
-                for (const f of t.targetFiles) {
-                  const norm = normalizeTargetPath(f);
-                  if (!norm.includes(".")) continue;
-                  const conflicts = wc.getConflicts(currentTabId, [norm]);
-                  for (const c of conflicts) {
-                    crossTabConflicts.push({ file: f, tabLabel: c.ownerTabLabel });
-                  }
-                }
-              }
-              if (crossTabConflicts.length > 0) {
-                const lines = crossTabConflicts
-                  .slice(0, 5)
-                  .map((c) => `  \`${c.file}\` — owned by Tab "${c.tabLabel}"`)
-                  .join("\n");
-                const extra =
-                  crossTabConflicts.length > 5
-                    ? `\n  (+${String(crossTabConflicts.length - 5)} more)`
-                    : "";
-                return (
-                  `⚠️ dispatch [warning → cross-tab file conflict]\n${String(crossTabConflicts.length)} file(s) are being edited by other tabs:\n${lines}${extra}\n` +
-                  `Tell the user about the conflict. Edits will proceed with warnings but may cause merge issues.\n` +
-                  `Set force: true to suppress this warning.`
-                );
-              }
-            }
-
-            // Gate: investigation task quality
-            const INVESTIGATION_SIGNALS =
-              /\?|count|frequency|how many|at least|threshold|metric|pattern|idiom|convention|inconsisten|duplicat|repeated|unused|dead|missing|violat|soul_grep|soul_analyze|soul_impact|grep\b|where\b|which\b|filter|compare|difference|between/i;
-            for (const t of args.tasks) {
-              if (t.role !== "investigate") continue;
-              if (INVESTIGATION_SIGNALS.test(t.task)) continue;
-              return (
-                `⛔ dispatch [rejected → vague investigation]\nTask "${t.id ?? "?"}" lacks a specific investigation target.\n` +
-                `Task: "${t.task.slice(0, 120)}${t.task.length > 120 ? "..." : ""}"\n` +
-                `Investigation tasks should specify what to look for: a pattern, a question, a metric, or a comparison. ` +
-                `Example: "Use soul_grep count mode to find inline style={{ patterns across all screens, then compare error handling in useSocial vs useAuth."\n` +
-                `Set force: true to proceed anyway.`
-              );
-            }
-
-            // Gate: search-first — reject read-all-files dispatches when grep can answer
-            {
-              const readOnlyTasks = args.tasks.filter(
-                (t) =>
-                  (t.role === "explore" || t.role === "investigate") &&
-                  !(t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER),
-              );
-              if (
-                !rawArgs.force &&
-                readOnlyTasks.length === args.tasks.length &&
-                readOnlyTasks.length >= 2
-              ) {
-                const totalFiles = new Set(
-                  readOnlyTasks.flatMap((t) => t.targetFiles.map((f) => normalizeTargetPath(f))),
-                ).size;
-                const tasksSharePrompt =
-                  readOnlyTasks.length >= 2 &&
-                  readOnlyTasks.every((t) => {
-                    const a = readOnlyTasks[0]?.task.slice(0, 80);
-                    return t.task.slice(0, 80) === a;
-                  });
-                if (totalFiles >= 10 && tasksSharePrompt) {
-                  return (
-                    `⛔ dispatch [rejected → search first]\n` +
-                    `${String(readOnlyTasks.length)} agents reading ${String(totalFiles)} files with the same task — use soul_grep first.\n` +
-                    `soul_grep with count mode finds patterns across all files in one call (~100 tokens vs ~${String(Math.round(totalFiles * 0.5))}K tokens reading everything).\n` +
-                    `Then read only the files with hits. Set force: true if you already searched and need full-file analysis.`
-                  );
-                }
-              }
-            }
-
-            const webTasks = args.tasks.filter(
-              (t) => t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER,
+            warnings.push(
+              `Merged ${String(rawArgs.tasks.length)} tasks → ${String(args.tasks.length)} to fit concurrency limit`,
             );
-            if (webTasks.length > 4) {
-              return `⛔ dispatch [rejected → too many web tasks]\n${String(webTasks.length)} web search tasks is excessive (max 4). Check the conversation for URLs the user already shared (use fetch_page) and previous search results before searching again. Set force: true only after confirming existing context lacks the answer.`;
-            }
-
-            // Gate: reject small dispatches — faster to do directly
-            const nonWebTasks = args.tasks.filter(
-              (t) =>
-                !(t.targetFiles.length === 1 && t.targetFiles[0]?.toLowerCase() === WEB_MARKER),
-            );
-            if (nonWebTasks.length > 0) {
-              const uniqueFiles = new Set<string>();
-              for (const t of nonWebTasks) {
-                for (const f of t.targetFiles) uniqueFiles.add(normalizeTargetPath(f));
-              }
-              const hasInvestigate = nonWebTasks.some((t) => t.role === "investigate");
-              const allExplore = nonWebTasks.every((t) => t.role === "explore");
-              const hasCode = nonWebTasks.some((t) => t.role === "code");
-              const MAX_EXPLORE_FILES = 10;
-              const MAX_CODE_FILES = 7;
-
-              if (
-                allExplore &&
-                !hasInvestigate &&
-                uniqueFiles.size > 0 &&
-                uniqueFiles.size <= MAX_EXPLORE_FILES
-              ) {
-                const fileList = [...uniqueFiles].map((f) => `\`${f}\``).join(", ");
-                return (
-                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — read directly with read. ` +
-                  `Dispatch is for parallel work across ${String(MAX_EXPLORE_FILES + 1)}+ files or when agents need to EDIT. ` +
-                  `Set force: true only if you need agents to do multi-step research beyond simple reads.`
-                );
-              }
-
-              if (hasCode && uniqueFiles.size <= MAX_CODE_FILES) {
-                const fileList = [...uniqueFiles].map((f) => `\`${f}\``).join(", ");
-                return (
-                  `⛔ dispatch [rejected → too few files]\n${String(uniqueFiles.size)} file${uniqueFiles.size === 1 ? "" : "s"} (${fileList}) — edit directly with edit_file. ` +
-                  `Code dispatch is for edits across ${String(MAX_CODE_FILES + 1)}+ files where agents own distinct files. ` +
-                  `Set force: true only if the edit requires multi-step work (read → analyze → edit → verify) that justifies an agent.`
-                );
-              }
-            }
           }
 
-          // Auto-split: code tasks with many numbered items targeting 1 file get split
+          // ── Auto-split: code tasks with many numbered items targeting 1 file get split
           // into 2 serial sub-tasks to improve reliability (agents choke on 10+ edits)
           const TASK_ITEM_SPLIT_THRESHOLD = 8;
           const countTaskItems = (taskText: string): number => {
@@ -1063,12 +724,6 @@ export function buildSubagentTools(models: SubagentModels) {
                 }
               }
 
-              // Preload file contents for code agents — eliminates re-reads
-              let preloadHint = "";
-              if ((t.role ?? "explore") === "code" && !isWebTask) {
-                preloadHint = await buildPreloadedContent(t.targetFiles, process.cwd());
-              }
-
               // Normalize target files — strip line range suffixes for bus tracking
               const normalizedTargetFiles = isWebTask
                 ? []
@@ -1077,7 +732,7 @@ export function buildSubagentTools(models: SubagentModels) {
               return {
                 agentId: t.id ?? `agent-${String(i + 1)}`,
                 role: t.role ?? "explore",
-                task: `${t.task}${fileHint}${skillHint}${crossTabHint}${preloadHint}`,
+                task: `${t.task}${fileHint}${skillHint}${crossTabHint}`,
                 returnFormat: t.returnFormat,
                 dependsOn: t.dependsOn,
                 taskId: t.taskId,
@@ -1193,21 +848,16 @@ export function buildSubagentTools(models: SubagentModels) {
             const verifyResult = await runVerifier(bus, [task], models, toolCallId, abortSignal);
 
             const edited = [...editedMap.keys()];
-            turnDispatchCount++;
-            lastDispatchHadCode = task.role === "code";
-            turnDispatchSummaries.push(
-              `${args.objective ?? "Single agent"}: ${edited.length > 0 ? `edited ${edited.join(", ")}` : "read-only"}`,
-            );
 
             const postParts = [desloppifyResult, verifyResult].filter(Boolean);
             const reads = bus.getFileReadRecords(task.agentId);
+            const warningBlock = warnings.length > 0 ? `\n${warnings.join("\n")}` : "";
             const singleOutput =
               postParts.length > 0 ? `${resultText}\n${postParts.join("\n")}` : resultText;
             return {
               reads,
               filesEdited: edited,
-              output: singleOutput + dependentWarning,
-              miniForge: models.forgeInstructions != null,
+              output: singleOutput + dependentWarning + warningBlock,
             } satisfies DispatchOutput;
           }
 
@@ -1215,7 +865,6 @@ export function buildSubagentTools(models: SubagentModels) {
             parentToolCallId: toolCallId,
             type: "dispatch-start",
             totalAgents: tasks.length,
-            miniForge: models.forgeInstructions != null,
           });
 
           const taskIds = new Set(tasks.map((t) => t.agentId));
@@ -1317,7 +966,6 @@ export function buildSubagentTools(models: SubagentModels) {
             totalAgents: tasks.length,
             completedAgents: bus.completedAgentIds.length,
             findingCount: bus.findingCount,
-            miniForge: models.forgeInstructions != null,
           });
 
           const results = bus.getAllResults();
@@ -1325,11 +973,14 @@ export function buildSubagentTools(models: SubagentModels) {
           const failed = results.filter((r) => !r.success);
 
           const sections: string[] = [];
-          const heading = args.objective ?? "Dispatch";
-          sections.push(`## ${heading}`);
+          sections.push(`## Dispatch`);
           sections.push(
             `**${String(successful.length)}/${String(tasks.length)}** agents completed successfully.`,
           );
+
+          if (warnings.length > 0) {
+            sections.push(`### Warnings\n${warnings.join("\n")}`);
+          }
 
           if (bus.findingCount > 0) {
             const findings = bus.getFindings();
@@ -1412,9 +1063,6 @@ export function buildSubagentTools(models: SubagentModels) {
           const verifyResult = await runVerifier(bus, tasks, models, toolCallId, combinedAbort);
           if (verifyResult) sections.push(verifyResult);
 
-          const evalResult = await runEvaluator(bus, tasks, toolCallId);
-          if (evalResult) sections.push(evalResult);
-
           const m = bus.metrics;
           const cacheStats = [m.fileHits, m.fileWaits, m.toolHits].some((v) => v > 0)
             ? `\n### Cache\nFiles: ${String(m.fileHits)} hits, ${String(m.fileWaits)} waits, ${String(m.fileMisses)} misses | Tools: ${String(m.toolHits)} hits, ${String(m.toolWaits)} waits, ${String(m.toolMisses)} misses, ${String(m.toolEvictions)} evictions, ${String(m.toolInvalidations)} invalidations`
@@ -1422,19 +1070,12 @@ export function buildSubagentTools(models: SubagentModels) {
           if (cacheStats) sections.push(cacheStats);
 
           const editedPaths = [...allEdited.keys()];
-          turnDispatchCount++;
-          lastDispatchHadCode = args.tasks.some((t) => t.role === "code");
-          turnDispatchSummaries.push(
-            `${args.objective ?? "Dispatch"}: ${String(successful.length)}/${String(tasks.length)} agents` +
-              (editedPaths.length > 0 ? `, edited ${editedPaths.join(", ")}` : ""),
-          );
 
           const allReads = bus.getFileReadRecords();
           return {
             reads: allReads,
             filesEdited: editedPaths,
             output: sections.join("\n") + dependentWarning,
-            miniForge: models.forgeInstructions != null,
           } satisfies DispatchOutput;
         } finally {
           if (activeTabId && !editingDone) getWorkspaceCoordinator().agentFinished(activeTabId);
@@ -1481,18 +1122,12 @@ export function buildSubagentTools(models: SubagentModels) {
             }
           }
         } else if (rawText.trim()) {
-          // Single agent or unstructured — take first 2000 chars
+          // Single agent or unstructured — pass through full text
           const text = rawText.trim();
-          parts.push(text.length > 2000 ? `${text.slice(0, 2000)}...` : text);
+          if (text) parts.push(text);
         }
 
-        const DISPATCH_OUTPUT_CAP = 8_000;
-        let value = parts.join("\n");
-        if (value.length > DISPATCH_OUTPUT_CAP) {
-          value = value.slice(0, DISPATCH_OUTPUT_CAP);
-          const lastNl = value.lastIndexOf("\n");
-          if (lastNl > 0) value = value.slice(0, lastNl);
-        }
+        const value = parts.join("\n");
 
         return {
           type: "text" as const,

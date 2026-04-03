@@ -8,18 +8,20 @@ interface RouterRule {
 }
 
 export interface TaskRouter {
-  coding: string | null;
-  exploration: string | null;
+  /** Model for ⚡ spark agents — explore/investigate. */
+  spark: string | null;
+  /** Model for 🔥 ember agents — code edits. */
+  ember: string | null;
   webSearch: string | null;
+  desloppify: string | null;
+  verify: string | null;
   compact: string | null;
   semantic: string | null;
-  /** Lightweight model for trivial dispatch tasks (single-file reads, small edits) */
-  trivial: string | null;
-  /** Model for de-sloppify cleanup pass after code agents */
-  desloppify: string | null;
-  /** Model for post-dispatch verification specialist */
-  verify: string | null;
   default: string | null;
+  /** @config-compat Legacy fields — mapped to spark/ember on load. Hidden from /router UI. */
+  coding?: string | null;
+  exploration?: string | null;
+  trivial?: string | null;
 }
 
 export interface ToolResult {
@@ -32,8 +34,6 @@ export interface ToolResult {
   outlineOnly?: boolean;
   /** Files edited by dispatch tool — used by /changes panel to track per-tab edits */
   filesEdited?: string[];
-  /** Whether dispatch used miniForge (shared forge system prompt for cache hits) */
-  miniForge?: boolean;
 }
 
 export type PlanStepStatus = "pending" | "active" | "done" | "skipped";
@@ -236,6 +236,9 @@ export interface AgentFeatures {
   /** Only expose core tools initially; deferred tools loaded via request_tools. Default: false — all tools active to avoid roundtrips. */
   onDemandTools?: boolean;
 }
+
+/** Doppelganger (spark) = inherits parent conversation, same model, cache hits. Diverge (ember) = fresh context, can use cheaper model. */
+export type TaskTier = "spark" | "ember";
 
 export interface AppConfig {
   defaultModel: string;

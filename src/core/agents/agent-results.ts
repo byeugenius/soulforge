@@ -17,7 +17,6 @@ export interface DispatchOutput {
   reads: FileReadRecord[];
   filesEdited: string[];
   output: string;
-  miniForge?: boolean;
 }
 
 type AgentResult = {
@@ -33,13 +32,9 @@ type AgentResult = {
   }>;
 };
 
-const DONE_RESULT_CAP = 8000;
-const PER_FILE_CONTENT_CAP = 2000;
-const PER_FINDING_DISPLAY_CAP = 500;
-const MAX_FINDINGS_DISPLAY = 5;
-const TEXT_TRUNCATION_CAP = 6000;
-const SYNTHESIS_BUDGET = 4000;
-const SUMMARY_MAX_LEN = 500;
+const PER_FILE_CONTENT_CAP = 4000;
+const TEXT_TRUNCATION_CAP = 12000;
+const SYNTHESIS_BUDGET = 6000;
 const BUDGET_OVERHEAD = 50;
 const MIN_CONTENT_LEN = 20;
 
@@ -224,10 +219,12 @@ export function synthesizeDoneFromResults(
     });
   }
 
+  // This function is the last-resort fallback — agent didn't write meaningful text
+  // and didn't call done. Synthesize from raw tool results.
   const text = result.text.trim();
   const summary =
     text.length > 10
-      ? text.slice(0, SUMMARY_MAX_LEN)
+      ? text
       : `Examined ${String(filesRead.size)} files for: ${task.task.slice(0, 100)}`;
 
   return {
@@ -250,27 +247,13 @@ export function formatDoneResult(done: DoneToolResult): string {
     parts.push(`\nFiles examined: ${done.filesExamined.join(", ")}`);
   }
   if (done.keyFindings && done.keyFindings.length > 0) {
-    const shown = done.keyFindings.slice(0, MAX_FINDINGS_DISPLAY);
-    const omitted = done.keyFindings.length - shown.length;
     parts.push(
       "\nKey findings:",
-      ...shown.map((f) => {
+      ...done.keyFindings.map((f) => {
         const loc = f.lineNumbers ? `:${f.lineNumbers}` : "";
-        const detail =
-          f.detail.length > PER_FINDING_DISPLAY_CAP
-            ? `${f.detail.slice(0, PER_FINDING_DISPLAY_CAP)} [${String(f.detail.length - PER_FINDING_DISPLAY_CAP)} chars omitted — use read for full content]`
-            : f.detail;
-        return `  ${f.file}${loc}: ${detail}`;
+        return `  ${f.file}${loc}: ${f.detail}`;
       }),
     );
-    if (omitted > 0) {
-      const files = done.keyFindings
-        .slice(MAX_FINDINGS_DISPLAY, MAX_FINDINGS_DISPLAY + 10)
-        .map((f) => f.file)
-        .join(", ");
-      const extra = omitted > 10 ? ` (+${String(omitted - 10)} more)` : "";
-      parts.push(`  ... ${String(omitted)} more findings in: ${files}${extra}`);
-    }
   }
   if (done.gaps && done.gaps.length > 0) {
     parts.push("\nGaps:", ...done.gaps.map((g) => `  - ${g}`));
@@ -283,11 +266,7 @@ export function formatDoneResult(done: DoneToolResult): string {
     if (done.verificationOutput) parts.push(done.verificationOutput);
   }
 
-  const result = parts.join("\n");
-  if (result.length > DONE_RESULT_CAP) {
-    return `${result.slice(0, DONE_RESULT_CAP)}\n[... capped at ${String(Math.round(DONE_RESULT_CAP / 1000))}K chars]`;
-  }
-  return result;
+  return parts.join("\n");
 }
 
 /**

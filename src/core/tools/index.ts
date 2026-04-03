@@ -80,6 +80,18 @@ function deferExecute<T, R>(fn: (args: T) => Promise<R>): (args: T) => Promise<R
 }
 
 const coerceInt = (v: unknown) => (typeof v === "string" ? Number(v) : v);
+const coerceJsonArray = (v: unknown) => {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  if (trimmed[0] === "[" || trimmed[0] === "{") {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+};
 
 const nullToUndef = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
 const optStr = () => z.string().nullable().optional().transform(nullToUndef);
@@ -123,7 +135,7 @@ const readFileSpec = z.object({
 export const SCHEMAS = {
   readFile: z.object({
     files: z
-      .union([z.array(readFileSpec), readFileSpec])
+      .preprocess(coerceJsonArray, z.union([z.array(readFileSpec), readFileSpec]))
       .describe("Files to read. Array of {path, ranges?, target?, name?}. One item or many."),
     fresh: optBool().describe("Set true to bypass cache and re-execute"),
   }),
@@ -432,6 +444,7 @@ export function buildTools(
 
             if (hasRanges) {
               const rangeResults = await Promise.all(
+                // biome-ignore lint/style/noNonNullAssertion: hasRanges guard above ensures ranges is defined
                 spec.ranges!.map((r) =>
                   readFileTool.execute({ path: fp, startLine: r.start, endLine: r.end }),
                 ),
@@ -551,19 +564,22 @@ export function buildTools(
       inputSchema: z.object({
         path: z.string().describe("File path to edit"),
         edits: z
-          .array(
-            z.object({
-              oldString: z.string().describe("Content to replace"),
-              newString: z.string().describe("Replacement content"),
-              lineStart: z
-                .preprocess(coerceInt, z.number())
-                .nullable()
-                .optional()
-                .transform(nullToUndef)
-                .describe(
-                  "1-indexed start line from read output. Range derived from oldString line count.",
-                ),
-            }),
+          .preprocess(
+            coerceJsonArray,
+            z.array(
+              z.object({
+                oldString: z.string().describe("Content to replace"),
+                newString: z.string().describe("Replacement content"),
+                lineStart: z
+                  .preprocess(coerceInt, z.number())
+                  .nullable()
+                  .optional()
+                  .transform(nullToUndef)
+                  .describe(
+                    "1-indexed start line from read output. Range derived from oldString line count.",
+                  ),
+              }),
+            ),
           )
           .describe("Array of edits to apply atomically"),
       }),
@@ -622,7 +638,7 @@ export function buildTools(
           .transform(nullToUndef)
           .describe("Single task title (for add/update)"),
         titles: z
-          .array(z.string())
+          .preprocess(coerceJsonArray, z.array(z.string()))
           .nullable()
           .optional()
           .transform(nullToUndef)
@@ -649,7 +665,7 @@ export function buildTools(
       description: listDirTool.description,
       inputSchema: z.object({
         path: z
-          .union([z.string(), z.array(z.string())])
+          .preprocess(coerceJsonArray, z.union([z.string(), z.array(z.string())]))
           .nullable()
           .optional()
           .transform(nullToUndef)
@@ -1393,7 +1409,7 @@ export function buildTools(
           .transform(nullToUndef)
           .describe("Skip preset fix flags — use only the flags you provide"),
         env: z
-          .record(z.string(), z.string())
+          .preprocess(coerceJsonArray, z.record(z.string(), z.string()))
           .nullable()
           .optional()
           .transform(nullToUndef)
@@ -1458,7 +1474,7 @@ export function buildTools(
           .transform(nullToUndef)
           .describe("For commit/stash/tag: message"),
         files: z
-          .array(z.string())
+          .preprocess(coerceJsonArray, z.array(z.string()))
           .nullable()
           .optional()
           .transform(nullToUndef)
@@ -1524,7 +1540,7 @@ export function buildTools(
           .transform(nullToUndef)
           .describe("For blame: end line"),
         flags: z
-          .array(z.string())
+          .preprocess(coerceJsonArray, z.array(z.string()))
           .nullable()
           .optional()
           .transform(nullToUndef)
@@ -1555,7 +1571,9 @@ export function buildTools(
           .map(([name, desc]) => `  ${name} — ${desc}`)
           .join("\n"),
       inputSchema: z.object({
-        tools: z.array(z.string()).describe("Tool names to activate"),
+        tools: z
+          .preprocess(coerceJsonArray, z.array(z.string()))
+          .describe("Tool names to activate"),
       }),
       execute: async (args) => {
         const deferred = opts?.activeDeferredTools;
@@ -1591,7 +1609,9 @@ export function buildTools(
       ...TEXT_OUTPUT,
       description: "Deactivate tools you no longer need to reduce context size.",
       inputSchema: z.object({
-        tools: z.array(z.string()).describe("Tool names to deactivate"),
+        tools: z
+          .preprocess(coerceJsonArray, z.array(z.string()))
+          .describe("Tool names to deactivate"),
       }),
       execute: async (args) => {
         const deferred = opts?.activeDeferredTools;
@@ -2128,6 +2148,25 @@ export function buildSubagentExploreTools(opts?: {
   };
 }
 
+/** Minimal tools for ember explore agents — read-only intelligence tools only.
+ *  Used when exploration model differs from parent (no cache sharing, minimize tool schema tokens).
+ *  The forge pre-digests tasks with Soul Map data, so these agents do targeted reads + analysis. */
+export function buildEmberExploreTools(opts?: { repoMap?: IntelligenceClient; tabId?: string }) {
+  const all = buildSubagentExploreTools(opts);
+  const { read, navigate, soul_grep, soul_find, soul_analyze, soul_impact } = all as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...(read ? { read } : {}),
+    ...(navigate ? { navigate } : {}),
+    ...(soul_grep ? { soul_grep } : {}),
+    ...(soul_find ? { soul_find } : {}),
+    ...(soul_analyze ? { soul_analyze } : {}),
+    ...(soul_impact ? { soul_impact } : {}),
+  };
+}
+
 /** Lean tools for code subagents — core read/edit tools only (no investigation tools) */
 export function buildSubagentCodeTools(opts?: {
   webSearchModel?: import("ai").LanguageModel;
@@ -2191,19 +2230,22 @@ export function buildSubagentCodeTools(opts?: {
       inputSchema: z.object({
         path: z.string().describe("File path to edit"),
         edits: z
-          .array(
-            z.object({
-              oldString: z.string().describe("Content to replace"),
-              newString: z.string().describe("Replacement content"),
-              lineStart: z
-                .preprocess(coerceInt, z.number())
-                .nullable()
-                .optional()
-                .transform(nullToUndef)
-                .describe(
-                  "1-indexed start line from read output. Range derived from oldString line count.",
-                ),
-            }),
+          .preprocess(
+            coerceJsonArray,
+            z.array(
+              z.object({
+                oldString: z.string().describe("Content to replace"),
+                newString: z.string().describe("Replacement content"),
+                lineStart: z
+                  .preprocess(coerceInt, z.number())
+                  .nullable()
+                  .optional()
+                  .transform(nullToUndef)
+                  .describe(
+                    "1-indexed start line from read output. Range derived from oldString line count.",
+                  ),
+              }),
+            ),
           )
           .describe("Array of edits to apply atomically"),
       }),

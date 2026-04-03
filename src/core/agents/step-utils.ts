@@ -38,13 +38,12 @@ const MAX_SUBAGENT_CONTEXT = 200_000;
 const KEEP_RECENT_MESSAGES = 4;
 
 // Step-count limits — hard caps to prevent runaway loops.
-// Bumped +3 from original (25/15) to compensate for the final step being
-// forced to toolChoice:"none" (text-only) — agents need room to finish work
-// before the text-only summary requirement kicks in.
-const EXPLORE_MAX_STEPS = 28;
+// Explore agents should finish in 3-5 steps (search → read → report).
+// Code agents need more room for read → edit → verify cycles.
+const EXPLORE_MAX_STEPS = 12;
 const CODE_MAX_STEPS = 18;
 // Step at which we inject a "wrap up" nudge (before hard stop)
-const STEP_NUDGE_EXPLORE = 18;
+const STEP_NUDGE_EXPLORE = 8;
 const STEP_NUDGE_CODE = 10;
 // Consecutive read-only steps before hinting to act.
 // Set high enough that legitimate investigation (reading 4-5 files) doesn't trigger.
@@ -481,23 +480,27 @@ export function buildPrepareStep({
       };
 
       const exportData = {
+        agent: agentId ?? "subagent",
         step: stepNumber,
         timestamp: new Date().toISOString(),
         messageCount: msgs.length,
         activeTools: result.activeTools ?? "all",
         previousStepUsage: prevUsage
-          ? {
-              inputTokens: prevUsage.inputTokens,
-              outputTokens: prevUsage.outputTokens,
-              cacheCreationTokens:
-                (prevUsage as Record<string, unknown>).cacheCreationInputTokens ?? 0,
-              cacheReadTokens: (prevUsage as Record<string, unknown>).cacheReadInputTokens ?? 0,
-              totalTokens:
-                (prevUsage.inputTokens ?? 0) +
-                (prevUsage.outputTokens ?? 0) +
-                (((prevUsage as Record<string, unknown>).cacheCreationInputTokens as number) ?? 0) +
-                (((prevUsage as Record<string, unknown>).cacheReadInputTokens as number) ?? 0),
-            }
+          ? (() => {
+              const details = (prevUsage as Record<string, unknown>).inputTokenDetails as
+                | { cacheReadTokens?: number; cacheWriteTokens?: number; noCacheTokens?: number }
+                | undefined;
+              const cacheRead = details?.cacheReadTokens ?? 0;
+              const cacheWrite = details?.cacheWriteTokens ?? 0;
+              return {
+                inputTokens: prevUsage.inputTokens,
+                outputTokens: prevUsage.outputTokens,
+                cacheReadTokens: cacheRead,
+                cacheWriteTokens: cacheWrite,
+                noCacheTokens: details?.noCacheTokens ?? 0,
+                totalTokens: (prevUsage.inputTokens ?? 0) + (prevUsage.outputTokens ?? 0),
+              };
+            })()
           : null,
         messages: msgs.map((m, i) => {
           const content = serializeContent(m.content);
@@ -529,7 +532,9 @@ export function buildPrepareStep({
       import("node:fs").then(({ mkdirSync, writeFileSync }) => {
         const dir = `${process.cwd()}/.soulforge/api-export`;
         mkdirSync(dir, { recursive: true });
-        const file = `${dir}/step-${String(stepNumber).padStart(2, "0")}.json`;
+        const subDir = agentId ? `${dir}/subagents/${agentId}` : dir;
+        mkdirSync(subDir, { recursive: true });
+        const file = `${subDir}/step-${String(stepNumber).padStart(2, "0")}.json`;
         writeFileSync(file, json, "utf-8");
       });
     }

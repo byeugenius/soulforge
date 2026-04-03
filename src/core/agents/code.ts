@@ -8,28 +8,29 @@ import { buildBusTools } from "./bus-tools.js";
 import { buildPrepareStep, buildSymbolLookup } from "./step-utils.js";
 import { repairToolCall } from "./stream-options.js";
 
-export function codeBase(hasPreloadedFiles: boolean): string {
-  if (hasPreloadedFiles) {
-    return `Code agent. Make specific edits. Target files and changes are in the task.
+export function codeBase(): string {
+  return `RULES (non-negotiable):
+1. You are a code agent. Make specific edits to target files.
+2. Do NOT emit text between tool calls. Call tools silently, then report ONCE at the end.
+3. Do NOT re-read files you already have in context. One read per file, ever.
+4. Do NOT explore beyond your target files. Your scope is defined in the task.
+5. Keep your report under 300 words. Name files and what changed.
+6. Each tool call round-trip resends the full conversation — batch aggressively, minimize steps.
 
-Target file contents are preloaded below and up-to-date. Proceed directly with multi_edit — one call per file.
-- Use the preloaded line numbers for lineStart in your edits
-- Use read only for files not listed in the preloaded section
-- On edit failure: re-read once, retry with exact text from that read
-- Compound tools: rename_symbol, move_symbol, refactor — do the complete job
+READING — surgical, not full files:
+- Use ranges when the task gives line numbers: read(files=[{path:'x.ts', ranges:[{start:45,end:80}]}])
+- Read full file only when you need the complete picture for a refactor or when the file is under 200 lines.
+- Batch all reads in ONE call: read(files=[{path:'a.ts', ranges:[...]}, {path:'b.ts', ranges:[...]}])
 
-OUTPUT: Concise summary of what changed. Name files and modifications.`;
-  }
-  return `Code agent. Make specific edits. Target files and changes are in the task.
+EDITING — precise and anchored:
+- Use multi_edit for multiple changes in the same file — ONE call per file.
+- Provide lineStart from your read output on every edit — line-anchored matching is the most reliable method.
+- On edit failure: re-read the failing region once, retry with exact text from that read.
+- Compound tools: rename_symbol, move_symbol, refactor — do the complete job in one call.
 
-Workflow: read → multi_edit → done. 3 steps typical, 5 max.
-- Read each target file ONCE in full, plan all changes, apply with multi_edit in ONE call per file
-- On edit failure: re-read once, retry with exact text from that read
-- Compound tools: rename_symbol, move_symbol, refactor — do the complete job
+WORKFLOW: read → edit → done. 3 steps typical, 5 max.
 
-Skip: re-reading to verify, exploring unrelated files, grepping when you have target paths. Use multi_edit for same-file changes.
-
-OUTPUT: Concise summary of what changed. Name files and modifications.`;
+SKIP: re-reading to verify, exploring unrelated files, grepping when you have target paths.`;
 }
 
 // No structured output schema — agents return plain text summaries.
@@ -48,9 +49,8 @@ interface CodeAgentOptions {
   contextWindow?: number;
   disablePruning?: boolean;
   tabId?: string;
-  hasPreloadedFiles?: boolean;
   forgeInstructions?: string;
-  /** Forge tool definitions with role guards — use instead of buildSubagentCodeTools for cache prefix hits. */
+  /** Forge tool definitions with role guards — use instead of buildSubagentCodeTools for spark cache prefix hits. */
   forgeTools?: Record<string, unknown>;
 }
 
@@ -60,7 +60,7 @@ export function createCodeAgent(model: LanguageModel, options?: CodeAgentOptions
   const hasBus = !!(bus && agentId);
   const busTools = hasBus ? buildBusTools(bus, agentId, "code") : {};
 
-  // miniForge mode: use forge's tool definitions (with role guards) for cache prefix hits.
+  // Spark mode: use forge's tool definitions (with role guards) for cache prefix hits.
   // Regular mode: build code-specific tools.
   let allTools: Record<string, unknown>;
   if (options?.forgeTools) {
@@ -101,7 +101,7 @@ export function createCodeAgent(model: LanguageModel, options?: CodeAgentOptions
       content: options?.forgeInstructions
         ? options.forgeInstructions
         : (() => {
-            const base = codeBase(options?.hasPreloadedFiles ?? false);
+            const base = codeBase();
             return hasBus
               ? `${base}\nOwnership: you own files you edit first. check_edit_conflicts before touching another agent's file.\nIf another agent owns the file: report_finding with the exact edit instead.\nCoordination: report_finding after significant changes (paths, what changed, new exports). Peer findings appear in tool results.`
               : base;

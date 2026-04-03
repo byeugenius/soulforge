@@ -67,6 +67,7 @@ function buildForgePrepareStep(
   },
   tabId?: string,
   codeExecution?: boolean,
+  parentMessagesRef?: { current: ModelMessage[] | null },
 ) {
   // Cache-stable inject tracking: the ToolLoopAgent discards prepareStep message
   // modifications after each step (it rebuilds from initialMessages + responseMessages).
@@ -85,6 +86,12 @@ function buildForgePrepareStep(
     steps: StepEntry[];
     // biome-ignore lint/suspicious/noExplicitAny: PrepareStepFunction generic is invariant
   }): any => {
+    // Doppelganger: snapshot the current conversation for spark mirror mode.
+    // Sparks receive this prefix so the API sees an identical cache-hit prefix.
+    if (parentMessagesRef) {
+      parentMessagesRef.current = messages;
+    }
+
     const sanitized = sanitizeMessages(messages);
 
     const result: {
@@ -363,9 +370,10 @@ interface ForgeAgentOptions {
   interactive?: InteractiveCallbacks;
   editorIntegration?: EditorIntegration;
   subagentModels?: {
-    exploration?: LanguageModel;
-    coding?: LanguageModel;
-    trivial?: LanguageModel;
+    /** Model for ⚡ spark agents — explore/investigate. */
+    spark?: LanguageModel;
+    /** Model for 🔥 ember agents — code edits. */
+    ember?: LanguageModel;
     desloppify?: LanguageModel;
     verify?: LanguageModel;
   };
@@ -517,12 +525,17 @@ export function createForgeAgent({
     if (!(name in orderedTools)) orderedTools[name] = def;
   }
 
-  // miniForge: share the forge system prompt + tool definitions with subagents for prefix cache hits.
+  // Spark mode: share the forge system prompt + tool definitions with subagents for prefix cache hits.
   // The Anthropic cache prefix is tools → system → messages. Sharing both tools AND instructions
-  // means the entire [tools + system] prefix is a cache HIT on every miniforge's first step.
+  // means the entire [tools + system] prefix is a cache HIT on every spark's first step.
   // buildInstructions is WeakMap-cached, so this call is effectively free.
   const forgeInstructions = buildInstructions(contextManager, modelId);
   const forgeTools = orderedTools;
+
+  // Doppelganger ref: mutable container updated by prepareStep on every forge step.
+  // Spark mirror agents clone from this snapshot — they inherit the full conversation prefix
+  // so the API sees an identical cache-hit prefix (tools + system + messages).
+  const parentMessagesRef: { current: ModelMessage[] | null } = { current: null };
 
   // OpenAI prompt cache routing: session-level key co-locates requests sharing
   // the same prefix on the same backend, improving hit rates (~60% → ~87%).
@@ -535,7 +548,7 @@ export function createForgeAgent({
     ? {
         dispatch: buildSubagentTools({
           defaultModel: model,
-          explorationModel: subagentModels?.exploration,
+          sparkModel: subagentModels?.spark,
           webSearchModel,
           providerOptions,
           headers: subagentHeaders,
@@ -550,13 +563,13 @@ export function createForgeAgent({
           tabId: tabId ?? contextManager.getTabId() ?? undefined,
           forgeInstructions,
           forgeTools,
+          parentMessagesRef,
         }).dispatch,
       }
     : buildSubagentTools({
         defaultModel: model,
-        explorationModel: subagentModels?.exploration,
-        codingModel: subagentModels?.coding,
-        trivialModel: subagentModels?.trivial,
+        sparkModel: subagentModels?.spark,
+        emberModel: subagentModels?.ember,
         desloppifyModel: subagentModels?.desloppify,
         verifyModel: subagentModels?.verify,
         webSearchModel,
@@ -572,6 +585,7 @@ export function createForgeAgent({
         tabId: tabId ?? contextManager.getTabId() ?? undefined,
         forgeInstructions,
         forgeTools,
+        parentMessagesRef,
       });
 
   const cachedReadFile =
@@ -651,6 +665,7 @@ export function createForgeAgent({
       contextManager,
       tabId,
       canUseCodeExecution,
+      parentMessagesRef,
     ),
     experimental_repairToolCall: repairToolCall,
     providerOptions: wrappedProviderOptions,

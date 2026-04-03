@@ -37,7 +37,7 @@ export interface MultiAgentEvent {
   error?: string;
   /** Model ID the agent was routed to */
   modelId?: string;
-  /** Complexity tier (trivial/standard) */
+  /** Execution tier: spark (mirror), ember (diverge), desloppify */
   tier?: string;
   /** Per-agent stats (emitted on agent-done/agent-error) */
   toolUses?: number;
@@ -51,8 +51,6 @@ export interface MultiAgentEvent {
   warning?: string;
   /** Whether this agent was auto-retried */
   retried?: boolean;
-  /** Whether subagents use the forge system prompt (miniForge path) */
-  miniForge?: boolean;
 }
 
 export interface AgentStatsEvent {

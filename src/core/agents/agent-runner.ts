@@ -1,6 +1,8 @@
-import type { ProviderOptions } from "@ai-sdk/provider-utils";
+import type { ModelMessage, ProviderOptions } from "@ai-sdk/provider-utils";
 import { type LanguageModel, RetryError } from "ai";
 import { logBackgroundError } from "../../stores/errors.js";
+import type { TaskTier } from "../../types/index.js";
+
 import { taskListTool } from "../tools/task-list.js";
 import {
   type AgentBus,
@@ -17,7 +19,7 @@ import {
   writeAgentContext,
 } from "./agent-results.js";
 import { codeBase } from "./code.js";
-import { exploreBase, investigateBase } from "./explore.js";
+import { exploreBase } from "./explore.js";
 import { emitMultiAgentEvent } from "./subagent-events.js";
 import {
   autoPostCompletionSummary,
@@ -37,16 +39,20 @@ const RETRY_JITTER_MS = 1000;
 const RETURN_FORMAT_INSTRUCTIONS: Record<import("./agent-bus.js").ReturnFormat, string> = {
   summary:
     "Return concise findings and reasoning. No code blocks or raw file content. " +
-    "Focus on what you found, what it means, and what the implications are.",
+    "Focus on what you found, what it means, and what the implications are. " +
+    "Anchor every claim with file:line so the parent can surgically read more.",
   code:
     "Return pasteable code snippets with file paths and line numbers. " +
-    "Every finding MUST include the actual code. The parent agent is BLIND to your tool results.",
+    "Every finding MUST include the actual code. The parent agent is BLIND to your tool results. " +
+    "Skip structure the parent already has (exports, signatures). Show internals: logic, values, wiring.",
   files:
     "Return file paths only, each with a one-line description of what was found or changed. " +
     "No code blocks, no detailed analysis. Just the list.",
   full:
-    "Return complete analysis: reasoning, code snippets, file paths, line numbers, and all details. " +
-    "Paste full function bodies and type definitions in keyFindings — the parent cannot see your tool results.",
+    "Return complete analysis with file:line anchors on every claim. " +
+    "The parent already has the Soul Map (file paths, exported symbols, signatures, dependency edges). " +
+    "Don't repeat structure — report internals: function body logic, concrete values, lookup tables, " +
+    "store selectors, data transformations, call chains with args. Paste key code snippets inline.",
   verdict:
     "Return a clear yes/no answer with a brief justification (1-3 sentences). " +
     "No code blocks unless they directly support the verdict.",
@@ -100,26 +106,43 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export function detectTaskTier(task: AgentTask): "trivial" | "standard" {
+/** Extract model ID string from a LanguageModel object. */
+function getModelId(model: LanguageModel): string {
+  return typeof model === "object" && "modelId" in model ? String(model.modelId) : "unknown";
+}
+
+/** Classify a task into spark (same model, cache sharing) or ember (different model, lean tools). */
+export function classifyTask(task: AgentTask, models?: SubagentModels): TaskTier {
+  // Explicit tier from dispatch schema takes priority
   if (task.tier) return task.tier;
-  if (task.role !== "code") return "standard";
-  const fileCount = task.targetFileCount ?? 0;
-  return fileCount <= 1 && task.task.length < 200 ? "trivial" : "standard";
+
+  // Code agents are always embers — they need their own coding model and tools
+  if (task.role === "code") return "ember";
+
+  // Explore — spark only if the explore model matches the parent (cache sharing).
+  // Different model = different cache namespace = no benefit from spark overhead.
+  if (models?.sparkModel) {
+    const sparkId = getModelId(models.sparkModel);
+    const parentId = getModelId(models.defaultModel);
+    if (sparkId !== parentId) return "ember";
+  }
+
+  return "spark";
 }
 
 export function selectModel(task: AgentTask, models: SubagentModels): { model: LanguageModel } {
-  const tier = detectTaskTier(task);
-  const useExplore =
-    task.role === "explore" || task.role === "investigate" || models.readOnly === true;
+  const tier = classifyTask(task, models);
 
-  if (tier === "trivial" && models.trivialModel && models.agentFeatures?.tierRouting !== false) {
-    return { model: models.trivialModel };
+  // Spark: same model as parent for cache sharing
+  if (tier === "spark") {
+    return { model: models.sparkModel ?? models.defaultModel };
   }
 
-  const base = useExplore
-    ? (models.explorationModel ?? models.defaultModel)
-    : (models.codingModel ?? models.defaultModel);
-  return { model: base };
+  // Ember: explore uses sparkModel (cheaper), code uses emberModel
+  if (task.role !== "code" && models.sparkModel) {
+    return { model: models.sparkModel };
+  }
+  return { model: models.emberModel ?? models.defaultModel };
 }
 
 export function stripContextManagement(opts?: ProviderOptions): ProviderOptions | undefined {
@@ -188,13 +211,12 @@ export async function runAgentTask(
     }
   }
 
-  const taskTier = detectTaskTier(task);
+  const taskTier = classifyTask(task, models);
   const { model: selectedModel } = selectModel(task, models);
   const selectedModelId =
     typeof selectedModel === "object" && "modelId" in selectedModel
       ? String(selectedModel.modelId)
       : "unknown";
-
   emitMultiAgentEvent({
     parentToolCallId,
     type: "agent-start",
@@ -269,23 +291,22 @@ export async function runAgentTask(
     enrichedPrompt += `\n\n--- Return format: ${task.returnFormat} ---\n${RETURN_FORMAT_INSTRUCTIONS[task.returnFormat]}`;
   }
 
-  // miniForge: when using forge system prompt, inject role instructions into the user message.
-  // Works across all providers — automatic caching (OpenAI, Gemini, DeepSeek) benefits from shared prefix.
-  const useMiniForge = models.forgeInstructions != null && taskTier !== "trivial";
-  if (useMiniForge) {
-    const isCode = task.role === "code";
-    const isInvestigate = task.role === "investigate";
-    const hasPreloaded = enrichedPrompt.includes("--- Preloaded file contents");
+  // Doppelganger: sparks inherit the parent forge's full conversation —
+  // same system prompt, same tools, same messages. No role preamble needed.
+  const isDoppelganger =
+    taskTier === "spark" &&
+    models.parentMessagesRef?.current != null &&
+    models.parentMessagesRef.current.length > 0;
 
+  // Non-doppelganger sparks: inject role instructions into the user message.
+  // Works across all providers — automatic caching (OpenAI, Gemini, DeepSeek) benefits from shared prefix.
+  const useSpark = models.forgeInstructions != null && taskTier === "spark";
+  if (useSpark && !isDoppelganger) {
     let rolePreamble: string;
-    if (isCode) {
-      rolePreamble = codeBase(hasPreloaded);
+    if (task.role === "code") {
+      rolePreamble = codeBase();
       rolePreamble +=
         "\nOwnership: you own files you edit first. check_edit_conflicts before touching another agent's file.\nIf another agent owns the file: report_finding with the exact edit instead.\nCoordination: report_finding after significant changes (paths, what changed, new exports). Peer findings appear in tool results.";
-    } else if (isInvestigate) {
-      rolePreamble = investigateBase();
-      rolePreamble +=
-        "\nCoordination: report_finding after discoveries — especially shared symbols/configs with peer targets. check_findings for peer detail.";
     } else {
       rolePreamble = exploreBase();
       rolePreamble +=
@@ -314,12 +335,27 @@ export async function runAgentTask(
       // biome-ignore lint/suspicious/noExplicitAny: agent.generate result type varies with Output generic
       let result: any;
       try {
-        result = await agent.generate({
-          prompt: enrichedPrompt,
-          abortSignal,
-          timeout: { stepMs: 300_000 },
-          ...callbacks,
-        });
+        const generateArgs = isDoppelganger
+          ? {
+              messages: [
+                ...models.parentMessagesRef!.current!,
+                {
+                  role: "user" as const,
+                  content: [{ type: "text" as const, text: enrichedPrompt }],
+                } satisfies ModelMessage,
+              ],
+              abortSignal,
+              timeout: { stepMs: 300_000 },
+              ...callbacks,
+            }
+          : {
+              prompt: enrichedPrompt,
+              abortSignal,
+              timeout: { stepMs: 300_000 },
+              ...callbacks,
+            };
+
+        result = await agent.generate(generateArgs);
       } catch (genErr: unknown) {
         // Recover steps from error or callback accumulator so we can
         // synthesize results even when the agent errors mid-run.
@@ -364,20 +400,26 @@ export async function runAgentTask(
       let cacheRead =
         callbacks._acc.cacheRead || (result.totalUsage.inputTokenDetails?.cacheReadTokens ?? 0);
 
-      // Synthesize structured result deterministically from tool calls + bus findings.
-      // No Output.object() — agents return plain text. We extract everything from steps.
       const agentFindings = bus.getFindings().filter((f) => f.agentId === task.agentId);
       let doneResult: DoneToolResult | null = null;
       let calledDone = false;
 
-      // Check for explicit done tool call first (agent curated its own summary)
-      doneResult = extractDoneResult(result);
-      if (doneResult) calledDone = true;
+      // Prefer the agent's own text output — like Claude Code, just use what the agent wrote.
+      const agentText = typeof result.text === "string" ? result.text.trim() : "";
+      if (agentText.length > 200) {
+        doneResult = { summary: agentText };
+        calledDone = true;
+      }
 
-      // Otherwise synthesize from tool results + bus findings (deterministic, zero LLM cost)
+      // Fallback: check for explicit done tool call
+      if (!doneResult) {
+        doneResult = extractDoneResult(result);
+        if (doneResult) calledDone = true;
+      }
+
+      // Last resort: synthesize from tool results + bus findings (deterministic, zero LLM cost)
       if (!doneResult) {
         doneResult = synthesizeDoneFromResults(result, agentFindings, task);
-        // When steps are empty, enrich with bus file reads
         if (result.steps.length === 0) {
           const busReads = bus.getFileReadRecords(task.agentId);
           if (busReads.length > 0 && doneResult.filesExamined?.length === 0) {

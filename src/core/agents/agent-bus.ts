@@ -7,6 +7,7 @@
  */
 
 import { logBackgroundError } from "../../stores/errors.js";
+import type { TaskTier } from "../../types/index.js";
 
 export function normalizePath(p: string): string {
   let n = p;
@@ -35,7 +36,6 @@ export interface BusFinding {
   timestamp: number;
 }
 
-type TaskTier = "trivial" | "standard";
 export type AgentRole = "explore" | "code" | "investigate";
 
 export type ReturnFormat = "summary" | "code" | "files" | "full" | "verdict";

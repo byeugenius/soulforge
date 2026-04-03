@@ -2,6 +2,7 @@ import { logBackgroundError } from "../../stores/errors.js";
 import { projectTool } from "../tools/project.js";
 import type { AgentBus, AgentTask } from "./agent-bus.js";
 import { buildFallbackResult } from "./agent-results.js";
+import { classifyTask } from "./agent-runner.js";
 import { emitMultiAgentEvent } from "./subagent-events.js";
 import { buildStepCallbacks, createAgent, type SubagentModels } from "./subagent-tools.js";
 
@@ -10,20 +11,25 @@ import { buildStepCallbacks, createAgent, type SubagentModels } from "./subagent
 // Step 2: LLM reviews for slop patterns the linter can't catch
 
 const DESLOPPIFY_PROMPT = [
-  "You are a cleanup agent. Lint --fix already ran on these files. Now review for slop the linter missed:",
+  "RULES (non-negotiable):",
+  "1. You are a cleanup agent. Lint --fix already ran. Review for slop the linter missed.",
+  "2. Do NOT emit text between tool calls. Call tools silently, then report ONCE at the end.",
+  "3. Keep your report under 200 words. List files changed and what was removed.",
+  "4. If the code is clean, report done immediately without reading.",
+  "",
+  "REMOVE:",
   "- Tests that verify language/framework behavior rather than business logic",
-  "- Redundant type assertions the type system already enforces (e.g. `as string` on a string)",
-  "- Over-defensive error handling for impossible states (e.g. null checks after non-nullable returns)",
+  "- Redundant type assertions the type system already enforces",
+  "- Over-defensive error handling for impossible states",
   "- console.log/debug/print statements not part of the feature",
-  "- Dead code: unused variables, unreachable branches, empty catch blocks with no purpose",
+  "- Dead code: unused variables, unreachable branches, empty catch blocks",
   "",
   "KEEP (do NOT remove):",
   "- TODO/FIXME/SECTION/placeholder comments",
   "- Business logic, meaningful error handling, type annotations",
   "- Comments explaining non-obvious decisions",
   "",
-  "WORKFLOW: read each file → multi_edit to fix slop → done.",
-  "If the code is clean, report done immediately without reading.",
+  "WORKFLOW: read files with ranges around edited sections → multi_edit to fix slop → done.",
 ].join("\n");
 
 export async function runDesloppify(
@@ -43,6 +49,11 @@ export async function runDesloppify(
 
   const editedPaths = [...editedFiles.keys()];
 
+  const desloppifyModelId =
+    typeof models.desloppifyModel === "object" && "modelId" in models.desloppifyModel
+      ? String(models.desloppifyModel.modelId)
+      : "unknown";
+
   emitMultiAgentEvent({
     parentToolCallId,
     type: "agent-start",
@@ -50,11 +61,8 @@ export async function runDesloppify(
     role: "code",
     task: `cleanup ${String(editedPaths.length)} files`,
     totalAgents: tasks.length + 1,
-    modelId:
-      typeof models.desloppifyModel === "object" && "modelId" in models.desloppifyModel
-        ? String(models.desloppifyModel.modelId)
-        : "unknown",
-    tier: "desloppify",
+    modelId: desloppifyModelId,
+    tier: "ember",
   });
 
   try {
@@ -71,22 +79,30 @@ export async function runDesloppify(
     } catch {}
 
     // Step 2: LLM cleanup pass
+    // Invalidate bus file cache for edited files — code agents wrote new content
+    // but the bus cache still has pre-edit versions. Without this, desloppify's
+    // read tool returns stale content (or fails) from the bus cache wrapper.
+    for (const p of editedPaths) {
+      bus.invalidateFile(p, "desloppify");
+    }
+
     const desloppifyTask: AgentTask = {
       agentId: "desloppify",
       role: "code",
       task: `${DESLOPPIFY_PROMPT}${lintResult}\n\nFiles to review:\n${editedPaths.map((p) => `- ${p}`).join("\n")}`,
+      targetFiles: editedPaths,
     };
 
     bus.registerTasks([desloppifyTask]);
 
     const { agent } = await createAgent(
-      { ...desloppifyTask, tier: "standard" },
-      { ...models, codingModel: models.desloppifyModel },
+      { ...desloppifyTask, tier: "ember" },
+      { ...models, emberModel: models.desloppifyModel },
       bus,
       parentToolCallId,
     );
 
-    const callbacks = buildStepCallbacks(parentToolCallId, "desloppify");
+    const callbacks = buildStepCallbacks(parentToolCallId, "desloppify", desloppifyModelId);
     // biome-ignore lint/suspicious/noExplicitAny: output schema may throw
     let result: any;
     try {
@@ -113,7 +129,8 @@ export async function runDesloppify(
       }
     }
 
-    const resultText = buildFallbackResult(result);
+    const agentText = typeof result.text === "string" ? result.text.trim() : "";
+    const resultText = agentText.length > 20 ? agentText : buildFallbackResult(result);
 
     emitMultiAgentEvent({
       parentToolCallId,
@@ -122,7 +139,7 @@ export async function runDesloppify(
       role: "code",
       task: `cleanup ${String(editedPaths.length)} files`,
       totalAgents: tasks.length + 1,
-      tier: "desloppify",
+      tier: "ember",
     });
 
     if (resultText && resultText.length > 20) {
@@ -139,6 +156,7 @@ export async function runDesloppify(
       role: "code",
       task: `cleanup ${String(editedPaths.length)} files`,
       totalAgents: tasks.length + 1,
+      tier: "ember",
       error: msg,
     });
     return null;
@@ -150,28 +168,25 @@ export async function runDesloppify(
 // Step 2: LLM checks logic correctness against the original task
 
 const VERIFY_PROMPT = [
-  "You are a verification agent in a SEPARATE context from the implementers — you did NOT write this code.",
-  "",
-  "Your job: verify the implementation is correct and complete against what was requested.",
+  "RULES (non-negotiable):",
+  "1. You are a verification agent. You did NOT write this code — fresh eyes.",
+  "2. Do NOT emit text between tool calls. Call tools silently, then report ONCE at the end.",
+  "3. Read edited files with ranges around the changed sections, not full files.",
+  "4. Each tool call round-trip resends the full conversation — batch reads, minimize steps.",
   "",
   "PROCESS:",
-  "1. Check the typecheck/test results provided below — errors are automatic FAIL",
-  "2. Read each edited file and verify:",
+  "1. Check typecheck/test results below — errors are automatic FAIL",
+  "2. Read each edited file (ranges around changes) and verify:",
   "   - Does the implementation match what the task asked for?",
-  "   - Are there missing edge cases (empty input, null, zero, negative)?",
-  "   - Are imports correct? Do exported signatures match what callers expect?",
-  "   - Any race conditions, infinite loops, or resource leaks?",
-  "3. If exports changed signatures, use navigate(action: references) to check one caller",
+  "   - Missing edge cases? Incorrect imports? Signature mismatches?",
+  "3. If exports changed signatures, use navigate(references) to check one caller",
   "",
-  "SCOPE: read and report only.",
-  "- Formatting/style/naming: already handled by de-sloppify — skip",
-  "- Typecheck/tests: results provided below — skip",
-  "- File modifications: out of scope — only report findings",
+  "SKIP: formatting/style (handled by de-sloppify), typecheck/tests (results below).",
   "",
   "OUTPUT: End with exactly one of:",
-  "  VERDICT: PASS — [one-line summary of what was verified]",
-  "  VERDICT: FAIL — [specific issues: file, line, what's wrong]",
-  "  VERDICT: PARTIAL — [what couldn't be verified and why]",
+  "  VERDICT: PASS — [one-line summary]",
+  "  VERDICT: FAIL — [file:line, what's wrong]",
+  "  VERDICT: PARTIAL — [what couldn't be verified]",
 ].join("\n");
 
 export async function runVerifier(
@@ -185,25 +200,33 @@ export async function runVerifier(
   const codeAgents = tasks.filter((t) => t.role === "code");
   if (codeAgents.length === 0) return null;
 
-  const reviewModel = models.verifyModel ?? models.explorationModel ?? models.defaultModel;
+  const reviewModel = models.verifyModel ?? models.defaultModel;
 
   const editedFiles = bus.getEditedFiles();
   if (editedFiles.size === 0) return null;
 
   const editedPaths = [...editedFiles.keys()];
 
+  const verifierModelId =
+    typeof reviewModel === "object" && "modelId" in reviewModel
+      ? String(reviewModel.modelId)
+      : "unknown";
+
+  const verifierModels = { ...models, sparkModel: reviewModel };
+  const verifierTier = classifyTask(
+    { agentId: "verifier", role: "explore", task: "" },
+    verifierModels,
+  );
+
   emitMultiAgentEvent({
     parentToolCallId,
     type: "agent-start",
     agentId: "verifier",
-    role: "code",
+    role: "explore",
     task: `verify ${String(editedPaths.length)} edited files`,
     totalAgents: tasks.length + 1,
-    modelId:
-      typeof reviewModel === "object" && "modelId" in reviewModel
-        ? String(reviewModel.modelId)
-        : "unknown",
-    tier: "standard",
+    modelId: verifierModelId,
+    tier: verifierTier,
   });
 
   try {
@@ -247,33 +270,30 @@ export async function runVerifier(
       .filter(Boolean)
       .join("\n");
 
+    const verifyPrompt = [
+      VERIFY_PROMPT,
+      "",
+      `--- Automated check results ---`,
+      checkResults.join("\n"),
+      "",
+      `--- Files edited ---`,
+      editedPaths.map((p) => `- ${p}`).join("\n"),
+      "",
+      `--- What was requested ---`,
+      taskContext,
+    ].join("\n");
+
     const verifyTask: AgentTask = {
       agentId: "verifier",
       role: "explore",
-      task: [
-        VERIFY_PROMPT,
-        "",
-        `--- Automated check results ---`,
-        checkResults.join("\n"),
-        "",
-        `--- Files edited ---`,
-        editedPaths.map((p) => `- ${p}`).join("\n"),
-        "",
-        `--- What was requested ---`,
-        taskContext,
-      ].join("\n"),
+      task: verifyPrompt,
     };
 
     bus.registerTasks([verifyTask]);
 
-    const { agent } = await createAgent(
-      verifyTask,
-      { ...models, explorationModel: reviewModel },
-      bus,
-      parentToolCallId,
-    );
+    const { agent } = await createAgent(verifyTask, verifierModels, bus, parentToolCallId);
 
-    const callbacks = buildStepCallbacks(parentToolCallId, "verifier");
+    const callbacks = buildStepCallbacks(parentToolCallId, "verifier", verifierModelId);
     // biome-ignore lint/suspicious/noExplicitAny: output schema may throw
     let result: any;
     try {
@@ -300,15 +320,17 @@ export async function runVerifier(
       }
     }
 
-    const resultText = buildFallbackResult(result);
+    const agentText = typeof result.text === "string" ? result.text.trim() : "";
+    const resultText = agentText.length > 20 ? agentText : buildFallbackResult(result);
 
     emitMultiAgentEvent({
       parentToolCallId,
       type: "agent-done",
       agentId: "verifier",
-      role: "code",
+      role: "explore",
       task: `verify ${String(editedPaths.length)} edited files`,
       totalAgents: tasks.length + 1,
+      tier: verifierTier,
     });
 
     return `\n\n### Verification\n${resultText}`;
@@ -319,23 +341,12 @@ export async function runVerifier(
       parentToolCallId,
       type: "agent-error",
       agentId: "verifier",
-      role: "code",
+      role: "explore",
       task: `verify ${String(editedPaths.length)} edited files`,
       totalAgents: tasks.length + 1,
+      tier: verifierTier,
       error: msg,
     });
     return null;
   }
-}
-
-/**
- * Evaluator: kept for backward compat. Verifier now does this + more.
- */
-export async function runEvaluator(
-  _bus: AgentBus,
-  _tasks: AgentTask[],
-  _parentToolCallId: string,
-): Promise<string | null> {
-  // Verifier now handles typecheck + test — evaluator is a no-op
-  return null;
 }

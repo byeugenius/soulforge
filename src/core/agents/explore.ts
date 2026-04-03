@@ -2,38 +2,50 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
 import { ToolLoopAgent } from "ai";
 import { EPHEMERAL_CACHE } from "../llm/provider-options.js";
-import { buildSubagentExploreTools, wrapWithBusCache } from "../tools/index.js";
+import { buildEmberExploreTools, wrapWithBusCache } from "../tools/index.js";
 import type { AgentBus } from "./agent-bus.js";
 import { buildBusTools } from "./bus-tools.js";
 import { buildPrepareStep, buildSymbolLookup } from "./step-utils.js";
 import { repairToolCall } from "./stream-options.js";
 
 export function exploreBase(): string {
-  return `Explore agent. Read-only research. Tool results are authoritative.
+  return `RULES (non-negotiable):
+1. You are an explore agent. Read-only research. Do NOT edit files.
+2. Do NOT emit text between tool calls. Call tools silently, then report ONCE at the end.
+3. Do NOT re-read files you already have in context. One read per file, ever.
+4. Stay strictly within your task scope. If you discover related systems outside scope, mention in one sentence at most.
+5. Keep your report under 500 words. Be factual and concise.
+6. Each tool call round-trip resends the full conversation — batch aggressively, minimize steps.
 
-Use the cheapest tool first:
-1. soul_find, soul_grep(count), soul_impact, navigate, analyze — free, instant
-2. read(files=[{path, target, name}]) — extract one symbol, not the whole file
-3. read(files=[{path}]), grep — only when 1-2 didn't answer
+REPORTING (critical — your parent is BLIND to your tool results):
+The parent already has the Soul Map: file paths, exported symbol names, signatures, line numbers, dependency edges.
+Do NOT repeat what the Soul Map shows. Instead, report what's INSIDE the code:
+- Function bodies: logic, control flow, formulas, algorithms
+- Concrete values: config entries, magic numbers, lookup tables, enum members
+- Internal wiring: which store selectors are used, what triggers re-renders, how data transforms between layers
+- Call chains: A calls B with args X, B returns Y, A passes Y to C
+Every claim must have a file:line anchor so the parent can surgically read more if needed.
 
-Workflow:
-- Paths given → read(files=[{path, target, name}]) for each
-- Keywords only → soul_find or navigate(definition), then read hits
-- Data flow → soul_impact + navigate(references)
-After reading targets, trace callers via navigate(references). Flag disconnects.
+TOOLS (use the right tool for the job):
+- soul_find — find files and symbols by name. Start here when you have a keyword.
+- soul_grep — search code for patterns. count mode for frequency, wordBoundary for exact matches.
+- soul_impact — find what depends on a file (dependents), what it imports (dependencies), what changes together (cochanges). Use when asked about blast radius or data flow.
+- soul_analyze — structural queries: file_profile, unused_exports, symbols_by_kind, call_graph. Use when asked about architecture or structure.
+- navigate — follow definitions, references, call hierarchies, type hierarchies across files. Use when tracing how something is used.
+- read — read file content. Use ranges from the task (e.g. start:100, end:150). Batch multiple files in ONE call.
 
-OUTPUT: Concise text summary with file names, line numbers, exact values. Your text is the only thing the parent sees.`;
+WORKFLOW:
+- Paths given → batch read with ranges in ONE call
+- Keywords only → soul_find first, then read the hits
+- "What depends on X?" → soul_impact(dependents)
+- "How is X used?" → navigate(references)
+- "What does this file do?" → soul_analyze(file_profile)
+Batch all independent tool calls in one parallel block. One round trip, not five.`;
 }
 
+/** @deprecated Use exploreBase() — investigate and explore are merged. */
 export function investigateBase(): string {
-  return `Investigation agent. Broad cross-cutting analysis.
-
-Quantify before reading: soul_grep(count), soul_analyze, soul_impact first.
-Only read files that indexed tools pointed you to.
-
-Use soul_grep for pattern matching, soul_analyze for structural queries (unused exports, frequency, profiles), soul_impact for dependencies, navigate for tracing usage.
-
-OUTPUT: Concise text summary with counts, file lists, exact values. Your text is the only thing the parent sees.`;
+  return exploreBase();
 }
 
 // No structured output schema — agents return plain text summaries.
@@ -54,7 +66,7 @@ interface ExploreAgentOptions {
   role?: "explore" | "investigate";
   tabId?: string;
   forgeInstructions?: string;
-  /** Forge tool definitions with role guards — use instead of buildSubagentExploreTools for cache prefix hits. */
+  /** Forge tool definitions with role guards — spark cache prefix hits. */
   forgeTools?: Record<string, unknown>;
 }
 
@@ -64,18 +76,13 @@ export function createExploreAgent(model: LanguageModel, options?: ExploreAgentO
   const hasBus = !!(bus && agentId);
   const busTools = hasBus ? buildBusTools(bus, agentId, "explore") : {};
 
-  // miniForge mode: use forge's tool definitions (with role guards) for cache prefix hits.
-  // Regular mode: build explore-specific tools.
+  // Spark: forge's tool definitions (with role guards) for cache prefix hits.
+  // Ember: 7 read-only intelligence tools (different model, no cache sharing).
   let allTools: Record<string, unknown>;
   if (options?.forgeTools) {
     allTools = { ...options.forgeTools, ...busTools };
   } else {
-    let tools = buildSubagentExploreTools({
-      webSearchModel: options?.webSearchModel,
-      onApproveWebSearch: options?.onApproveWebSearch,
-      onApproveFetchPage: options?.onApproveFetchPage,
-      repoMap: options?.repoMap,
-    });
+    let tools = buildEmberExploreTools({ repoMap: options?.repoMap, tabId: options?.tabId });
     if (hasBus) {
       tools = wrapWithBusCache(tools, bus, agentId, options?.repoMap) as typeof tools;
     }
@@ -105,8 +112,7 @@ export function createExploreAgent(model: LanguageModel, options?: ExploreAgentO
       content: options?.forgeInstructions
         ? options.forgeInstructions
         : (() => {
-            const isInvestigate = options?.role === "investigate";
-            const base = isInvestigate ? investigateBase() : exploreBase();
+            const base = exploreBase();
             return hasBus
               ? `${base}\nCoordination: report_finding after discoveries — especially shared symbols/configs with peer targets. check_findings for peer detail.`
               : base;
