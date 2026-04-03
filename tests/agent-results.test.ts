@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   type DoneToolResult,
   buildFallbackResult,
-  extractDoneResult,
   formatDoneResult,
   synthesizeDoneFromResults,
 } from "../src/core/agents/agent-results.js";
@@ -276,12 +275,12 @@ describe("synthesizeDoneFromResults — bus findings priority", () => {
 // ─── Budget enforcement ───
 
 describe("synthesizeDoneFromResults — budget caps", () => {
-  it("caps individual findings at PER_FILE_CONTENT_CAP (2000 chars)", () => {
+  it("caps individual findings at PER_FILE_CONTENT_CAP (4000 chars)", () => {
     const hugeContent = "x".repeat(10_000);
     const result = makeResult("done", [readStep("huge.ts", hugeContent)]);
     const done = synthesizeDoneFromResults(result, [], TASK);
     const finding = done.keyFindings?.find((f) => f.file === "huge.ts");
-    expect(finding?.detail.length).toBeLessThanOrEqual(2000);
+    expect(finding?.detail.length).toBeLessThanOrEqual(4000);
   });
 
   it("respects total SYNTHESIS_BUDGET across multiple files", () => {
@@ -292,7 +291,7 @@ describe("synthesizeDoneFromResults — budget caps", () => {
     const result = makeResult("done", steps);
     const done = synthesizeDoneFromResults(result, [], TASK);
     const totalChars = done.keyFindings?.reduce((sum, f) => sum + f.detail.length, 0) ?? 0;
-    expect(totalChars).toBeLessThanOrEqual(8500); // SYNTHESIS_BUDGET + overhead tolerance
+    expect(totalChars).toBeLessThanOrEqual(10500); // SYNTHESIS_BUDGET (6000) + overhead tolerance
   });
 
   it("short content below MIN_CONTENT_LEN is skipped", () => {
@@ -391,7 +390,7 @@ describe("formatDoneResult", () => {
     expect(text).toContain("auth.ts imports from middleware.ts");
   });
 
-  it("caps displayed findings at MAX_FINDINGS_DISPLAY (5)", () => {
+  it("displays all findings (no cap)", () => {
     const done: DoneToolResult = {
       summary: "Summary",
       keyFindings: Array.from({ length: 20 }, (_, i) => ({
@@ -400,44 +399,25 @@ describe("formatDoneResult", () => {
       })),
     };
     const text = formatDoneResult(done);
-    // Only 5 findings should have their detail shown
     const detailLines = text.split("\n").filter((l) => l.includes("finding content here"));
-    expect(detailLines.length).toBe(5);
-    // Omitted count shown
-    expect(text).toContain("15 more findings in:");
+    expect(detailLines.length).toBe(20);
   });
 
-  it("caps omitted file list at 10 names", () => {
-    const done: DoneToolResult = {
-      summary: "Summary",
-      keyFindings: Array.from({ length: 50 }, (_, i) => ({
-        file: `file${String(i)}.ts`,
-        detail: "x",
-      })),
-    };
-    const text = formatDoneResult(done);
-    expect(text).toContain("(+35 more)");
-    // Should not list all 45 omitted file names
-    expect(text).not.toContain("file20.ts");
-  });
-
-  it("enforces DONE_RESULT_CAP on very large output", () => {
+  it("renders large summary without capping", () => {
     const done: DoneToolResult = {
       summary: "x".repeat(9000),
     };
     const text = formatDoneResult(done);
-    expect(text.length).toBeLessThanOrEqual(8200);
-    expect(text).toContain("[... capped");
+    expect(text.length).toBe(9000);
   });
 
-  it("caps individual finding display at PER_FINDING_DISPLAY_CAP", () => {
+  it("renders full finding detail without truncation", () => {
     const done: DoneToolResult = {
       summary: "Summary",
       keyFindings: [{ file: "big.ts", detail: "x".repeat(2000) }],
     };
     const text = formatDoneResult(done);
-    // The finding line should mention chars omitted
-    expect(text).toContain("chars omitted");
+    expect(text).toContain("x".repeat(2000));
   });
 
   it("handles empty/undefined optional fields", () => {
@@ -448,38 +428,7 @@ describe("formatDoneResult", () => {
   });
 });
 
-// ─── extractDoneResult ───
 
-describe("extractDoneResult", () => {
-  it("finds done tool call in last step", () => {
-    const result = makeResult("", [
-      { toolCalls: [{ toolName: "read", args: { path: "a.ts" } }] },
-      { toolCalls: [{ toolName: "done", args: { summary: "Found the bug" } }] },
-    ]);
-    const done = extractDoneResult(result);
-    expect(done?.summary).toBe("Found the bug");
-  });
-
-  it("prefers last done call when multiple exist", () => {
-    const result = makeResult("", [
-      { toolCalls: [{ toolName: "done", args: { summary: "First attempt" } }] },
-      { toolCalls: [{ toolName: "done", args: { summary: "Final answer" } }] },
-    ]);
-    const done = extractDoneResult(result);
-    expect(done?.summary).toBe("Final answer");
-  });
-
-  it("returns null when no done call", () => {
-    const result = makeResult("", [
-      { toolCalls: [{ toolName: "read", args: { path: "a.ts" } }] },
-    ]);
-    expect(extractDoneResult(result)).toBeNull();
-  });
-
-  it("returns null for empty steps", () => {
-    expect(extractDoneResult(makeResult("", []))).toBeNull();
-  });
-});
 
 // ─── buildFallbackResult ───
 
@@ -490,11 +439,11 @@ describe("buildFallbackResult", () => {
     expect(text).toContain("Files edited: src/fix.ts");
   });
 
-  it("includes agent text (truncated if long)", () => {
-    const result = makeResult("x".repeat(7000), []);
+  it("includes agent text (truncated if very long)", () => {
+    const result = makeResult("x".repeat(15000), []);
     const text = buildFallbackResult(result);
     expect(text).toContain("[...]");
-    expect(text.length).toBeLessThan(7000);
+    expect(text.length).toBeLessThan(15000);
   });
 
   it("includes bus findings when present", () => {
@@ -605,7 +554,7 @@ describe("synthesis quality — parent actionability", () => {
     expect(done.keyFindings?.[0]?.file).toBe("src/critical.ts");
     // Second finding should exist but be smaller or absent
     const totalChars = done.keyFindings?.reduce((sum, f) => sum + f.detail.length, 0) ?? 0;
-    expect(totalChars).toBeLessThanOrEqual(4500);
+    expect(totalChars).toBeLessThanOrEqual(6500); // SYNTHESIS_BUDGET (6000) + overhead
   });
 });
 
