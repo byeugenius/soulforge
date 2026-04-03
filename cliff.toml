@@ -39,7 +39,7 @@ postprocessors = [
 
 [git]
 conventional_commits = true
-filter_unconventional = true
+filter_unconventional = false
 split_commits = false
 commit_parsers = [
   { message = "^feat", group = "Features" },
@@ -52,6 +52,7 @@ commit_parsers = [
   { message = "^chore\\(deps\\)", skip = true },
   { message = "^chore|^ci|^style|^build", group = "Miscellaneous" },
   { body = ".*security", group = "Security" },
+  { message = ".*", group = "Other" },
 ]
 protect_breaking_commits = false
 filter_commits = false
