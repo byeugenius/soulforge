@@ -65,7 +65,7 @@ graph TD
     BUS["src/core/agents/agent-bus.ts<br/>PR: 0.036"]
     RUNNER["src/core/agents/agent-runner.ts<br/>PR: 0.017"]
     EVENTS["src/core/agents/subagent-events.ts<br/>PR: 0.017"]
-    BUSTOOLS["src/core/agents/bus-tools.ts<br/>PR: 0.017"]
+    BUSTOOLS["src/core/agents/subagent-tools.ts<br/>PR: 0.017"]
     FORGE["src/core/agents/forge.ts"]
     EXPLORE["src/core/agents/explore.ts"]
     CODE["src/core/agents/code.ts"]
@@ -179,7 +179,7 @@ AST extraction results:
 Identifier references extracted (used for edge building):
   → agent-runner (import)
   → subagent-events (import)
-  → bus-tools (import)
+  → subagent-tools (import)
   → ErrorStore (cross-file reference)
 ```
 
@@ -191,7 +191,7 @@ export function normalizePath(p: string): string
 export class AgentBus {
   constructor(tasks, sharedCache, projectRoot, ...)
   async run(): Promise<AgentResult[]>
-  async acquireFileRead(agentId, absPath, reader): Promise<string>
+  async readFile(agentId, absPath): Promise<string>
 }
 
 // What tree-sitter does NOT put in the map:
@@ -214,16 +214,11 @@ Step 2: FTS5 search on symbols table
   → Match: validateDispatch (in agent-bus.ts, line 230)
 
 Step 3: PageRank with personalized restart vector
-  Base PageRank:     boot.tsx=0.135  agent-bus.ts=0.036  types/index.ts=0.037
-  After FTS boost:   boot.tsx=0.135  agent-bus.ts=0.536  subagent-tools.ts=0.520
-                                     ↑ +0.5 FTS match    ↑ +0.5 FTS match
+  Files matching conversation terms get boosted.
+  Previously edited files get a large boost.
+    Import neighbors and co-change partners get smaller boosts.
 
-Step 4: If you previously edited agent-bus.ts
-  Edited file boost: agent-bus.ts gets 5× weight in restart vector
-  Neighbor boost:    agent-runner.ts gets +1.0 (direct import neighbor)
-  Co-change boost:   tools/index.ts gets +min(22/5, 3.0) = +3.0
-
-Step 5: Final ranking (top of map)
+Step 4: Final ranking (top of map)
   1. agent-bus.ts        — FTS match + edit boost + high base PR
   2. subagent-tools.ts   — FTS match + co-change boost
   3. tools/index.ts      — co-change partner (22 co-commits)
@@ -346,25 +341,19 @@ You ask: "rename AgentBus to TaskBus"
           │
           ▼
 ┌─────────────────────┐
-│ emitFileEdited()    │──▶ File marked dirty
+│ File marked dirty   │
 └─────────┬───────────┘
           │
-          ▼ (500ms debounce)
+          ▼ (debounced)
 ┌─────────────────────┐
-│ Re-index with        │──▶ tree-sitter re-parses
-│ tree-sitter          │    New symbol: TaskBus (was AgentBus)
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│ Recompute edges      │──▶ Import graph updated
-│ Recompute PageRank   │    New scores calculated
+│ Re-index symbols     │──▶ tree-sitter re-parses
+│ Recompute ranking    │    PageRank + edges updated
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
-│ Clear render cache   │──▶ Next turn gets fresh map
-│ Invalidate summaries │    LLM re-summarizes TaskBus
+│ Next turn gets       │──▶ Fresh map with new symbols
+│ updated map          │
 └─────────────────────┘
           │
           ▼
@@ -463,21 +452,21 @@ Question: "Where is AgentBus defined?"
   ✅ Answer: src/core/agents/agent-bus.ts, line 125
   DONE. No tool call needed.
 
-Question: "What calls acquireFileRead?"
+Question: "What calls parseConfig?"
 
-  Tier 0 — Soul Map shows it exists in agent-bus.ts     Cost: 0 tokens
+  Tier 0 — Soul Map shows it exists in config.ts        Cost: 0 tokens
   Tier 1 — navigate(call_hierarchy)                     Cost: ~200 tokens
-  ✅ Answer: called from agent-runner.ts:340, explore.ts:89
+  ✅ Answer: called from boot.ts:40, cli.ts:89
   DONE. Never read the full files.
 
-Question: "Fix the bug in acquireFileRead"
+Question: "Fix the bug in parseConfig"
 
   Tier 0 — Soul Map locates it                          Cost: 0 tokens
   Tier 1 — navigate(definition) → line 125              Cost: ~100 tokens
   Tier 2 — read(target: function, name:            Cost: ~400 tokens
-            acquireFileRead) → reads just that function
+            parseConfig) → reads just that function
   Edit: multi_edit with fix                              Cost: ~200 tokens
-  DONE. Read 1 function, not the 858-line file.
+  DONE. Read 1 function, not the full file.
 ```
 
 ```
@@ -486,10 +475,9 @@ Token efficiency comparison:
   Without Soul Map:                    With Soul Map:
   ┌──────────────────────────┐        ┌──────────────────────────┐
   │ read entire project tree │ 2000   │ Soul Map in context      │ 2500
-  │ read agent-bus.ts        │ 3400   │ read acquireFileRead()   │  400
-  │ read agent-runner.ts     │ 2900   │ edit with fix            │  200
-  │ read types/index.ts      │ 1200   │                          │
-  │ grep for related files   │  800   │                          │
+  │ read full file           │ 3400   │ read just the function   │  400
+  │ read related files       │ 4100   │ edit with fix            │  200
+  │ grep for more context    │  800   │                          │
   │ read 3 more files        │ 4200   │                          │
   │ finally: edit with fix   │  200   │                          │
   ├──────────────────────────┤        ├──────────────────────────┤

@@ -46,21 +46,39 @@ Benchmark on `rename_symbol`: **19 steps / $0.228 → 3 steps / $0.036** with co
 
 ## Tool Reference
 
+### `read`
+
+```typescript
+read({ files: [
+  { path: "src/index.ts" },                                    // full file
+  { path: "src/utils.ts", ranges: [{ start: 10, end: 50 }] }, // line range
+  { path: "src/agent.ts", target: "class", name: "AgentBus" }  // surgical symbol extraction
+]})
+```
+
+Reads multiple files in parallel in one call. Each file can be a full read, a line range, or a surgical symbol extraction by name. Large files are automatically truncated with a symbol outline from the Soul Map so the agent knows what's in the file without reading it all. Duplicate reads return a stub.
+
+### `multi_edit`
+
+```typescript
+multi_edit({
+  path: "src/index.ts",
+  edits: [
+    { oldString: "const x = 1;", newString: "const x = 2;", lineStart: 10 },
+    { oldString: "const y = 3;", newString: "const y = 4;", lineStart: 25 }
+  ]
+})
+```
+
+Applies multiple edits to a file atomically. All-or-nothing: if any edit fails, zero edits are applied. `lineStart` values reference the original file; the tool handles offset tracking. Includes auto-format and post-edit diagnostics.
+
 ### `rename_symbol`
 
 ```typescript
 rename_symbol({ symbol: "AgentBus", newName: "CoordinationBus" })
 ```
 
-**What happens internally:**
-1. LSP workspace symbol search for the name
-2. Filter results: `isFile()` validation (rejects nested properties like `User.id`), prefer exported symbols
-3. If LSP can't find it: grep fallback across the codebase
-4. LSP `textDocument/rename` with all workspace edits applied
-5. Grep verification: confirm no remaining references to old name
-6. Report: files changed, references updated, any remaining occurrences
-
-**Why it's better than `refactor rename`:** No `file` parameter needed. The tool locates the symbol itself via workspace search + grep fallback. Works across monorepos.
+Locates the symbol automatically (no file hint needed), performs an LSP rename across all files, and verifies no references remain. One call, compiler-guaranteed.
 
 ### `move_symbol`
 
@@ -68,98 +86,31 @@ rename_symbol({ symbol: "AgentBus", newName: "CoordinationBus" })
 move_symbol({ symbol: "parseConfig", from: "src/utils.ts", to: "src/config/parser.ts" })
 ```
 
-**What happens internally:**
-1. Parse source file, extract the symbol's full source code
-2. Remove from source file (preserve surrounding code)
-3. Insert into target file (created if it doesn't exist)
-4. Scan all files in the project for imports of the symbol from the old path
-5. Update each import to point to the new path
-6. Handle re-exports if the source file re-exported the symbol
+Moves a symbol between files and updates all imports across the project. Supports TypeScript/JavaScript, Python, and Rust import updates. Go/C/C++ get graceful degradation.
 
-**Per-language import handlers:**
-- **TypeScript/JavaScript**: Full support. Handles `import { X }`, `import type { X }`, `require()`, re-exports. Respects `verbatimModuleSyntax` (uses `import type` for type-only symbols)
-- **Python**: Handles `from module import X`, `import module`, bare imports with same-directory resolution
-- **Rust**: Handles `use crate::path::Symbol`, `mod` declarations
-- **Go/C/C++**: Graceful degradation — moves the symbol but warns that imports need manual update
+### `rename_file`
+
+```typescript
+rename_file({ from: "src/old-name.ts", to: "src/new-name.ts" })
+```
+
+Renames or moves a file and updates all import paths across the project. One call handles the file move and every importer.
 
 ### `project`
 
 ```typescript
 project({ action: "test", filter: "auth" })
-project({ action: "build" })
 project({ action: "lint", fix: true })
 project({ action: "typecheck" })
-project({ action: "run", script: "dev" })
 ```
 
-**What happens internally:**
-1. Probe for config files to detect the toolchain:
-   - `bun.lock` / `bunfig.toml` → bun
-   - `Cargo.toml` → cargo
-   - `go.mod` → go
-   - `pyproject.toml` → uv/pytest/ruff
-   - `*.xcodeproj` → xcodebuild
-   - `build.gradle` → gradlew
-   - `pubspec.yaml` → flutter/dart
-   - `*.csproj` / `*.sln` → dotnet
-   - `CMakeLists.txt` → cmake
-   - `mix.exs` → mix
-   - `Gemfile` → bundle
-   - ... 23 ecosystems total
-
-2. Map `action` to the correct command for that toolchain:
-   - `test` → `bun test`, `cargo test`, `pytest`, `go test ./...`, `xcodebuild test -scheme...`
-   - `build` → `bun run build`, `cargo build`, `go build ./...`, `dotnet build`
-   - `lint` → `biome check`, `clippy`, `ruff check`, `golangci-lint run`
-
-3. Apply user overrides: flags, env vars, cwd, timeout
-
-4. Execute and return structured output
-
-**Why this matters:** No LLM nails an Xcode build command or Gradle task on the first try. `project("test")` works — first time, every project, every language.
-
-### `discover_pattern`
-
-```typescript
-discover_pattern({ pattern: "api endpoint handler" })
-```
-
-Scans the codebase for recurring structural patterns (e.g., how API handlers are structured, how tests are organized). Returns examples the agent can follow for consistent code generation.
-
-### `read_code`
-
-```typescript
-read_code({ symbol: "AgentBus", file: "src/core/agents/agent-bus.ts" })
-```
-
-Extracts just one symbol's source code instead of dumping the entire file. Token savings: a 500-line file might have a 30-line class definition — `read_code` returns only those 30 lines.
-
-Falls through: tree-sitter extraction → regex extraction → full file with line range.
+Auto-detects the toolchain from config files (23 ecosystems) and runs the right command. No guessing `npm test` vs `bun test` vs `cargo test`. Accepts flags, env vars, cwd override, timeout.
 
 ### `navigate`
 
 ```typescript
-navigate({ action: "definition", symbol: "acquireFileRead", file: "src/core/agents/agent-bus.ts" })
 navigate({ action: "references", symbol: "AgentBus" })
-navigate({ action: "call_hierarchy", symbol: "buildTools", direction: "incoming" })
+navigate({ action: "call_hierarchy", symbol: "buildTools" })
 ```
 
-LSP-backed navigation. Returns locations with surrounding context lines. The agent uses this instead of grep for structural queries.
-
-## Benchmark Results
-
-Single representative run on `rename_symbol` (renaming an exported class across 8 files). Results vary by model, codebase size, and symbol complexity:
-
-| Metric | Before (manual) | After (compound) | Improvement |
-|--------|-----------------|-------------------|-------------|
-| Agent steps | 19 | 3 | 84% fewer |
-| Token cost | $0.228 | $0.036 | 84% cheaper |
-
-Without compound tools, the agent has to: read the file to find the symbol, figure out the test runner, attempt a rename via string replacement, grep for remaining references, fix missed references one by one, run tests, fix failures, re-run tests. 19 steps of trial and error.
-
-With `rename_symbol`: one tool call locates the symbol, performs the LSP rename, verifies via grep, and reports "All references updated. No errors." — 3 steps total.
-
-The improvements come from three changes applied together:
-1. Grep fallback in `locateSymbol` — tool finds the symbol itself, no file hint needed
-2. Confident output — no "verify" suggestions that trigger agent verification spirals
-3. Toolchain in context — `Toolchain: bun` prevents wrong-runner retries
+LSP-backed navigation: definitions, references, call hierarchy, implementations, type hierarchy. The agent uses this instead of grep for structural queries.

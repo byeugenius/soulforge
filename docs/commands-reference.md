@@ -31,7 +31,7 @@ Sub-commands (like `/proxy login`) work when typed directly but are grouped unde
 | Command | Description |
 |---------|-------------|
 | `/models` | Switch LLM model (Ctrl+L) — search enabled |
-| `/router` | Route models by task type (planning, coding, exploration, verification) |
+| `/router` | Route models by task type (spark, ember, web search, desloppify, verify, compact) |
 | `/provider-settings` | Configure provider features — thinking mode, effort, speed, context management |
 | `/model-scope` | Toggle model persistence scope (project vs global) |
 | `/keys` | Manage API keys (LLM providers & web search) |

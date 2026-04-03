@@ -104,74 +104,7 @@ The budget can reach 4,000 tokens maximum (for very early turns with many files)
 
 ## Real-Time Updates
 
-The file event system ensures the repo map stays current:
-
-```
-Tool calls edit_file / write_file
-    ↓
-emitFileEdited(absPath)
-    ↓
-ContextManager.onFileChanged(absPath)
-    ↓
-RepoMap.onFileChanged(absPath)
-    ↓
-Mark file dirty → debounced re-index (500ms, busy_timeout = 5000ms)
-    ↓
-Re-extract symbols + edges → recompute PageRank
-    ↓
-Clear repo map render cache
-    ↓
-Next system prompt gets updated ranking
-```
-
-Similarly, `emitFileRead(absPath)` feeds into `trackMentionedFile()`, which boosts the file in the next PageRank personalization without re-indexing.
-
-## Schema Details
-
-```sql
-CREATE TABLE files (
-  id INTEGER PRIMARY KEY,
-  path TEXT UNIQUE NOT NULL,
-  mtime_ms REAL NOT NULL,
-  language TEXT NOT NULL,
-  line_count INTEGER NOT NULL DEFAULT 0,
-  symbol_count INTEGER NOT NULL DEFAULT 0,
-  pagerank REAL NOT NULL DEFAULT 0
-);
-
-CREATE TABLE symbols (
-  id INTEGER PRIMARY KEY,
-  file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  line INTEGER NOT NULL,
-  signature TEXT,
-  is_exported INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE edges (
-  source_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  target_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  weight REAL NOT NULL DEFAULT 1.0,
-  PRIMARY KEY (source_file_id, target_file_id)
-);
-
-CREATE TABLE cochanges (
-  file_id_a INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  file_id_b INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  count INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY (file_id_a, file_id_b)
-);
-
-CREATE TABLE semantic_summaries (
-  symbol_id INTEGER PRIMARY KEY REFERENCES symbols(id) ON DELETE CASCADE,
-  summary TEXT NOT NULL,
-  file_mtime REAL NOT NULL
-);
-
--- FTS5 for conversation-term matching
-CREATE VIRTUAL TABLE symbols_fts USING fts5(name, content=symbols, content_rowid=id);
-```
+Files are re-indexed on edit (debounced). Edited files get re-parsed, symbols and edges updated, PageRank recomputed, and the render cache cleared. Read files get a boost in the next ranking pass.
 
 ## Comparison
 

@@ -175,7 +175,7 @@ Session is always saved on exit (normal or Ctrl+C). The `chat-done` event and st
 
 Headless mode runs the full Forge agent with all tools:
 
-- **All 33 tools** — read, edit, shell, grep, glob, soul_grep, soul_find, soul_analyze, soul_impact, navigate, refactor, rename_symbol, move_symbol, project, memory, git, and more
+- **All 35+ tools** — read (batch + surgical), edit_file, multi_edit, shell, grep, glob, soul_grep, soul_find, soul_analyze, soul_impact, navigate, refactor, rename_symbol, move_symbol, rename_file, project, memory, git, dispatch, and more
 - **Multi-agent dispatch** — parallel subagents with shared cache
 - **Repo map** — tree-sitter analysis, PageRank, cochange, blast radius
 - **Intelligence layer** — LSP, ts-morph, tree-sitter fallback chain

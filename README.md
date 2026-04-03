@@ -1,15 +1,15 @@
 <h1 align="center">SoulForge</h1>
 
 <p align="center">
-  <strong>Graph-Powered Code Intelligence</strong><br/>
-  Multi-agent coding with codebase-aware AI — embedded Neovim, 24 themes, terminal-native
+  <strong>The AI coding agent that already knows your codebase.</strong><br/>
+  Graph-powered intelligence · multi-agent dispatch · terminal-native
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-BSL%201.1-blue.svg" alt="License" /></a>
   <a href="#"><img src="https://img.shields.io/badge/version-1.7.0-brightgreen.svg" alt="Version" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-blue.svg" alt="TypeScript" /></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/tests-2296%20passing-brightgreen.svg" alt="Tests" /></a>
+  <img src="https://img.shields.io/badge/tests-2296%20passing-brightgreen.svg" alt="Tests" />
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f472b6.svg" alt="Bun" /></a>
 </p>
 
@@ -17,318 +17,161 @@
   <em>Built by <a href="https://github.com/proxysoul">proxySoul</a></em>
 </p>
 
----
-
-## Table of Contents
-
-- [What is SoulForge?](#what-is-soulforge)
-- [Highlights](#highlights)
-- [Architecture](#architecture)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [CLI Flags](#cli-flags)
-  - [Keyboard Shortcuts](#keyboard-shortcuts)
-  - [Slash Commands](#slash-commands)
-  - [Forge Modes](#forge-modes)
-- [Tool Suite](#tool-suite)
-- [LLM Providers](#llm-providers)
-  - [Custom Providers](#custom-providers)
-  - [Task Router](#task-router)
-- [Repo Map](#repo-map)
-- [Context Management](#context-management)
-- [Project Toolchain Detection](#project-toolchain-detection)
-- [Project Instructions](#project-instructions)
-- [Configuration](#configuration)
-- [Testing](#testing)
-- [Documentation](#documentation)
-- [Roadmap](#roadmap)
-- [Inspirations](#inspirations)
-- [License](#license)
-
----
-
-## What is SoulForge?
-
-Your real Neovim — config, plugins, LSP — embedded in an AI agent that understands your codebase structurally. Graph-powered intelligence, multi-agent dispatch, 10 providers. Works over SSH.
-
 <p align="center">
   <img src="assets/main-1.png" alt="SoulForge — Graph-Powered Code Intelligence" width="900" />
-  <img src="assets/main-2.png" alt="SoulForge — Graph-Powered Code Intelligence" width="900" />
 </p>
-
-### How it compares
-
-| | SoulForge | Claude Code | Copilot CLI | Codex CLI | Aider |
-|---|---|---|---|---|---|
-| **Editor** | Embedded Neovim (LazyVim, your config) | No editor | No editor | No editor | No editor |
-| **Code graph** | SQLite graph — PageRank, blast radius, cochange, clone detection, FTS5 search, unused export detection, file profiles, identifier frequency | None (file reads + grep) | None | None (MCP plugins available) | Tree-sitter repo map + PageRank |
-| **Code intelligence** | 4-tier fallback: LSP → ts-morph → tree-sitter → regex. Dual LSP (Neovim bridge + standalone). 30 languages | LSP via plugin marketplace (rename supported, no auto-install, no fallback chain) | LSP (VS Code engines) | MCP-based LSP via plugins | Tree-sitter AST |
-| **Compound tools** | `rename_symbol`, `move_symbol`, `refactor` — compiler-guaranteed, atomic, cross-file | Rename via LSP | — | -- | — |
-| **Semantic context** | AST summaries for top 500 symbols, dispatch auto-enrichment with symbol line ranges | — | — | -- | Tree-sitter tag summaries |
-| **Multi-agent** | Parallel dispatch (8 agents, 3 concurrent, shared file cache, edit ownership) | Subagents + Agent Teams | Subagents + Fleet | Multi-agent v2 + subagents | Single agent |
-| **Providers** | 10 (LLM Gateway, Anthropic, OpenAI, Google, xAI, Ollama, +4) | Anthropic models (API, Bedrock, Vertex) | Multi-model (Anthropic, OpenAI, Google) | OpenAI models | 100+ LLMs |
-| **Task routing** | Per-task model assignment (plan, code, explore, search, trivial, cleanup, compact) | Single model | Single model | Per-agent model assignment | Single model |
-| **Cost visibility** | Per task, per agent, per model | `/cost` per session | Request counts | Server-side tracking | Per message |
-| **Context management** | 2-layer: per-step pruning + V1 (LLM summary) / V2 (deterministic extraction) compaction | Auto-compaction | Context window management | Server-side compaction | — |
-| **MCP** | Roadmap | Yes | Yes | Yes | No |
-| **License** | BSL 1.1 (source-available) | Proprietary | Proprietary | Apache 2.0 | Apache 2.0 |
-
-> *Competitor features verified as of March 29, 2026. This landscape moves fast — [let us know](https://github.com/ProxySoul/soulforge/issues) if something's changed.*
 
 ---
 
-## Highlights
+## Why SoulForge?
+
+Every AI coding tool starts blind. The agent reads files, greps around, slowly pieces together what your codebase looks like. You're paying for the agent to figure out what you already know.
+
+SoulForge doesn't work that way. On startup, it builds a **live dependency graph** of your entire codebase. Every file, symbol, import, and export, ranked by importance, enriched with git history, updated in real-time as files change. The agent already knows which files matter, what depends on what, and how far an edit will ripple. It doesn't need to explore. It just starts working.
+
+### How SoulForge saves you 30-50% on API costs & in less time
+
+| | |
+|---|---|
+| **Live Soul Map** | The agent already knows where every symbol lives, what imports what, and which files are most important. No wasted tokens reading files just to orient itself. |
+| **Surgical reads** | Instead of reading entire files, the agent pulls exactly the function or class it needs by name. A 500-line file becomes a 20-line symbol extraction. The Soul Map provides line numbers and signatures, so the agent always knows precisely what to ask for. |
+| **Zero-cost compaction** | When conversations get long, SoulForge compacts context by replaying structured state it already tracked (files touched, decisions made, errors hit) without making an LLM call. Other tools spend thousands of tokens summarizing. SoulForge does it for free. |
+| **Shared agent cache** | When multiple agents work in parallel, the first one to read a large file caches it. Others get a compact stub with symbol names and line ranges instead of the full content. Hundreds of lines become four. |
+| **Mix-and-match models** | You choose which model handles which job. Put Opus on planning, Sonnet on coding, Haiku on search and cleanup. Or use one model for everything. The task router gives you full control. |
+| **Prompt caching** | The Soul Map is stable across turns, so it stays cached. On Anthropic, that means the bulk of the system prompt costs a fraction of what it would otherwise. |
+
+---
+
+## What makes SoulForge different
 
 <table>
 <tr>
 <td width="50%">
 
-### Embedded Neovim + LazyVim
-Your actual Neovim — LazyVim distribution with 30+ plugins, LSP servers auto-installed via Mason, Catppuccin theme, noice, lualine, treesitter highlighting. The AI reads, navigates, and edits through the same editor you use. Your config, your muscle memory.
+### Live Soul Map
+A SQLite-backed graph of your entire codebase: files, symbols, imports, exports. Ranked by PageRank, enriched with git co-change history, updated in real-time as you edit. The agent knows what's in your project, what depends on what, and where everything lives. Not a static snapshot. It evolves with your code. [Deep dive →](docs/repo-map.md)
 
 </td>
 <td width="50%">
 
+### Surgical Reads
+The agent doesn't read whole files. It extracts exactly the function, class, or type it needs by name, powered by the Soul Map's symbol index and a 4-tier intelligence chain (LSP → ts-morph → tree-sitter → regex). A 500-line file becomes a 20-line read. Across 30 languages. [Deep dive →](docs/architecture.md)
+
+</td>
+</tr>
+<tr>
+<td>
+
 ### Multi-Agent Dispatch
-Parallelize work across explore, code, and web search agents. Shared file cache prevents redundant reads. Edit coordination prevents conflicts. Up to 8 agents, 3 concurrent slots. [Deep dive →](docs/agent-bus.md)
+Parallelize work across explore, code, and web search agents. When one agent reads a large file, others get a compact stub with symbol names and line ranges instead of re-reading the full content. Edit coordination prevents conflicts. [Deep dive →](docs/agent-bus.md)
+
+</td>
+<td>
+
+### Zero-Cost Compaction
+State extraction runs as the conversation happens: files touched, decisions made, errors hit. All tracked deterministically. When context gets long, it compacts instantly from this pre-built state. No LLM call, no latency, no cost. [Deep dive →](docs/compaction.md)
 
 </td>
 </tr>
 <tr>
 <td>
 
-### Graph-Powered Repo Map
-SQLite-backed codebase graph with PageRank ranking, cochange analysis, blast radius estimation, and clone detection. The agent understands which files matter, what changes together, and how far edits ripple — before reading a single line. [Deep dive →](docs/repo-map.md)
+### Multi-Tab Coordination
+Run multiple sessions side by side with different models and modes per tab. Agents see what other tabs are editing, get warnings on contested files, and git operations coordinate across tabs automatically. [Deep dive →](docs/cross-tab-coordination.md)
 
 </td>
-<td>
-
-### 4-Tier Code Intelligence
-LSP → ts-morph → tree-sitter → regex fallback chain. 30 languages with convention-based visibility detection. Dual LSP backend: bridges to Neovim's LSP when the editor is open, spawns standalone servers when it's not. [Deep dive →](docs/architecture.md)
-
-</td>
-</tr>
-<tr>
 <td>
 
 ### Compound Tools
-`rename_symbol`, `move_symbol`, `refactor`, `project` do the complete job in one call. Compiler-guaranteed renames. Atomic moves with import updates across all importers. [Deep dive →](docs/compound-tools.md)
-
-</td>
-<td>
-
-### Task Router + Cost Transparency
-Assign models per task: Opus for planning, Sonnet for coding, Haiku for search. Token usage visible per task, per agent, per model — you see exactly what you're spending and the router optimizes it automatically.
-
-</td>
-</tr>
-<tr>
-<td>
-
-### Context Management
-Two-layer compaction keeps long sessions productive: rolling tool-result pruning per step, plus V1 (LLM summary) or V2 (deterministic extraction) compaction on threshold. [Deep dive →](docs/compaction.md)
-
-</td>
-<td>
-
-### User Steering
-Type messages while the agent is working — they queue up and inject into the next agent step. Steer without interrupting. Abort cleanly with Ctrl+X. [Deep dive →](docs/steering.md)
-
-</td>
-</tr>
-<tr>
-<td>
-
-### 10 Providers, Any Model
-LLM Gateway, Anthropic, OpenAI, Google, xAI, Ollama (local), OpenRouter, Vercel AI Gateway, Proxy, and custom OpenAI-compatible APIs. You own the API keys. No vendor lock-in. [Deep dive →](docs/provider-options.md)
-
-</td>
-<td>
-
-### Cross-Tab Coordination
-Up to 5 concurrent tabs with per-tab model selection and advisory file claims. Run Opus in one tab for complex architecture, Haiku in another for quick searches. Agents see what other tabs are editing, get warnings on contested files, and git operations are blocked during active dispatch. [Deep dive →](docs/cross-tab-coordination.md)
-
-</td>
-</tr>
-<tr>
-<td>
-
-### Project Toolchain
-Auto-detects lint, typecheck, test, and build commands across 23 ecosystems from config files. Pre-commit gate blocks `git commit` on lint/type errors. Monorepo package discovery. [Deep dive →](docs/project-tool.md)
-
-</td>
-<td>
-
-### Skills & Approval Gates
-Installable skill system for domain-specific capabilities. Destructive action approval — `rm -rf`, `git push --force`, sensitive file edits individually prompted. Auto mode for full autonomy when you want it.
+`read` batches multiple files in parallel with surgical symbol extraction. `multi_edit` applies multiple edits to a file atomically (all-or-nothing). `rename_symbol`, `move_symbol`, `rename_file`, `refactor` are compiler-guaranteed and cross-file. `project` auto-detects lint/test/build across 23 ecosystems. [Deep dive →](docs/compound-tools.md)
 
 </td>
 </tr>
 </table>
 
+### And also
+
+- **Lock-in mode.** Hides agent narration during work, shows only tool activity and the final answer. Toggle via `/lock-in` or config.
+- **Embedded Neovim.** Your actual config, plugins, and LSP servers. The AI works through the same editor you use. [Deep dive →](docs/architecture.md)
+- **10 providers.** Anthropic, OpenAI, Google, xAI, Ollama, OpenRouter, LLM Gateway, Vercel AI Gateway, Proxy, and any OpenAI-compatible API. [Deep dive →](docs/provider-options.md)
+- **Task router.** Assign different models to different jobs. Spark agents (explore/investigate) and ember agents (code edits) can each use different models. You pick what goes where. [Deep dive →](docs/architecture.md)
+- **Code execution (Smithy).** Sandboxed code execution via Anthropic's `code_execution` tool. The agent can run Python to process data, do calculations, or batch tool calls programmatically.
+- **User steering.** Type while the agent works. Messages queue up and reach the agent at the next step. [Deep dive →](docs/steering.md)
+- **Skills & approval gates.** Installable skills for domain-specific work. Destructive actions require confirmation. Auto mode when you want full autonomy.
+- **4-tier code intelligence.** LSP → ts-morph → tree-sitter → regex fallback across 30 languages. Dual LSP: Neovim bridge when the editor is open, standalone servers when it's not. [Deep dive →](docs/architecture.md)
+
+<p align="center">
+  <img src="assets/main-2.png" alt="SoulForge — Multi-Agent Dispatch" width="900" />
+</p>
+
 ---
 
-## Architecture
+## How it compares
 
-The Forge Agent is the orchestrator. It holds 33 tools including the `dispatch` tool, which creates an AgentBus and launches parallel subagents. Subagents share file/tool caches through the bus and coordinate edits via ownership tracking.
+| | SoulForge | Claude Code | Copilot CLI | Codex CLI | Aider |
+|---|---|---|---|---|---|
+| **Codebase awareness** | Live SQLite graph: PageRank, blast radius, cochange, clone detection, FTS5, unused exports | None (file reads + grep) | None | None (MCP plugins) | Tree-sitter repo map + PageRank |
+| **Cost optimization** | Soul Map + surgical reads + zero-cost compaction + shared agent cache + mix-and-match models + prompt caching | Auto-compaction | Context window management | Server-side compaction | — |
+| **Code intelligence** | 4-tier fallback: LSP → ts-morph → tree-sitter → regex. Dual LSP. 30 languages | LSP via plugins (no fallback chain) | LSP (VS Code) | MCP-based LSP | Tree-sitter AST |
+| **Multi-agent** | Parallel dispatch with shared file/tool cache and edit coordination | Subagents + Agent Teams | Subagents + Fleet | Multi-agent v2 | Single agent |
+| **Multi-tab** | Concurrent tabs with per-tab models, file claim awareness, cross-tab git coordination | — | — | — | — |
+| **Task routing** | Per-task model assignment (spark, ember, web search, verify, desloppify, compact) | Single model | Single model | Per-agent model | Single model |
+| **Compound tools** | `read` (batch + surgical), `multi_edit` (atomic), `rename_symbol`, `move_symbol`, `rename_file`, `refactor`, `project` | Rename via LSP | — | — | — |
+| **Editor** | Embedded Neovim (your config, your plugins) | No editor | No editor | No editor | No editor |
+| **Providers** | 10 + custom OpenAI-compatible | Anthropic only | Multi-model | OpenAI only | 100+ LLMs |
+| **License** | BSL 1.1 (source-available) | Proprietary | Proprietary | Apache 2.0 | Apache 2.0 |
 
-```mermaid
-graph TB
-    User([User Input]) --> Chat[useChat Hook]
-    Chat --> Forge[Forge Agent]
-
-    subgraph Forge Tools
-        Tools[33 Tools]
-        Dispatch[dispatch tool]
-    end
-
-    Forge --> Tools
-    Forge --> Dispatch
-
-    Dispatch --> |creates| Bus[AgentBus<br/>file cache · tool cache<br/>findings · edit ownership]
-
-    Bus --> |spawns| I[Investigate Agent<br/>broad analysis]
-    Bus --> |spawns| E[Explore Agent<br/>targeted extraction]
-    Bus --> |spawns| C[Code Agent<br/>edits]
-
-    I & E & C --> |read/write cache| Bus
-
-    Tools --> Intel[Intelligence Router]
-    Tools --> Nvim[Neovim<br/>msgpack-RPC]
-    Tools --> RepoMap[(Repo Map<br/>SQLite · PageRank)]
-    Tools --> Mem[(Memory<br/>SQLite · FTS5)]
-
-    Intel --> LSP[LSP]
-    Intel --> TSM[ts-morph]
-    Intel --> TS[tree-sitter]
-    Intel --> Regex[regex]
-
-    style Forge fill:#9B30FF,color:#fff
-    style Bus fill:#336,color:#fff
-    style Dispatch fill:#663,color:#fff
-    style RepoMap fill:#1a3,color:#fff
-    style Mem fill:#1a3,color:#fff
-    style Nvim fill:#57A143,color:#fff
-```
-
-### Intelligence Fallback Chain
-
-Queries route through backends by tier. Each backend reports what it supports; the router picks the highest-tier backend available for the operation.
-
-```mermaid
-graph LR
-    Query([Symbol Query]) --> LSP{LSP<br/>available?}
-    LSP -->|yes| LSPResult[Precise<br/>types · refs · diagnostics]
-    LSP -->|no| TSMorph{ts-morph<br/>available?}
-    TSMorph -->|yes| TSMResult[AST<br/>signatures · exports]
-    TSMorph -->|no| TreeSitter{tree-sitter<br/>grammar?}
-    TreeSitter -->|yes| TSResult[Structural<br/>outlines · imports]
-    TreeSitter -->|no| RegexResult[Best-effort<br/>pattern matching]
-
-    style LSPResult fill:#4a7,color:#fff
-    style TSMResult fill:#47a,color:#fff
-    style TSResult fill:#a74,color:#fff
-    style RegexResult fill:#a47,color:#fff
-```
-
-### Multi-Agent Dispatch
-
-Up to 8 agents run concurrently (3 parallel slots) with staggered starts. All agents share a file cache through AgentBus — when one agent reads a file, others get it for free. Agents with `dependsOn` wait for their dependencies before starting.
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant F as Forge Agent
-    participant D as dispatch tool
-    participant B as AgentBus
-    participant I as Investigate
-    participant E as Explore
-    participant C as Code Agent
-
-    U->>F: "Audit auth and refactor middleware"
-    F->>D: dispatch(3 tasks)
-    D->>B: new AgentBus()
-    par Concurrent (3 slots, staggered)
-        D->>I: launch investigate (t=0ms)
-        D->>E: launch explore (t=150ms)
-        D->>C: launch code (dependsOn: I, E)
-    end
-    I->>B: soul_grep counts + soul_analyze + findings
-    E->>B: targeted reads + findings
-    Note over B: Code agent reads<br/>hit cache instantly
-    B-->>C: dependencies resolved
-    C->>C: Edit with full context
-    C->>B: done (edits applied)
-    D->>F: All agents complete → merged result
-```
+> *Competitor features verified as of March 29, 2026. [Let us know](https://github.com/ProxySoul/soulforge/issues) if something's changed.*
 
 ---
 
 ## Installation
 
-Pick the method that fits your workflow. SoulForge checks for prerequisites on first launch and offers to install Neovim and Nerd Fonts if missing.
+macOS and Linux. SoulForge checks for prerequisites on first launch and offers to install Neovim and Nerd Fonts if missing.
 
-### Prebuilt Binary (recommended)
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run the installer:
-
-```bash
-tar xzf soulforge-*.tar.gz
-cd soulforge-*/
-./install.sh
-```
-
-The installer places everything in `~/.soulforge/` and adds it to your PATH. Then run `soulforge` (or `sf`).
-
-<details>
-<summary><strong>Homebrew</strong></summary>
+### Homebrew (recommended)
 
 ```bash
 brew tap proxysoul/tap
 brew install soulforge
 ```
 
-</details>
-
 <details>
 <summary><strong>Bun (global install)</strong></summary>
 
-Requires [Bun](https://bun.sh) >= 1.2 as the runtime — SoulForge uses Bun-specific APIs (Workers, native modules, PTY).
-
 ```bash
-# Install Bun if you don't have it
 curl -fsSL https://bun.sh/install | bash
-
-# Install SoulForge globally
 bun install -g @proxysoul/soulforge
-
-soulforge   # or: sf
+soulforge
 ```
 
 </details>
 
 <details>
-<summary><strong>Self-contained bundle (includes Neovim, ripgrep, fd, lazygit)</strong></summary>
+<summary><strong>Prebuilt binary</strong></summary>
 
-The bundle ships everything — Neovim 0.11, ripgrep, fd, lazygit, tree-sitter grammars, Nerd Font symbols, and a local LLM proxy. No system dependencies required. Build it from source:
+Download from [GitHub Releases](https://github.com/ProxySoul/soulforge/releases/latest), extract, and run the installer:
 
 ```bash
-git clone https://github.com/ProxySoul/soulforge.git
-cd soulforge
-bun install
+tar xzf soulforge-*.tar.gz && cd soulforge-*/ && ./install.sh
+```
 
-# Build bundle (macOS ARM64 by default)
-./scripts/bundle.sh              # → dist/bundle/soulforge-1.0.0-darwin-arm64/
+Installs to `~/.soulforge/`, adds to PATH.
+
+</details>
+
+<details>
+<summary><strong>Self-contained bundle</strong></summary>
+
+Ships everything: Neovim 0.11, ripgrep, fd, lazygit, tree-sitter grammars, Nerd Font symbols. No system dependencies.
+
+```bash
+git clone https://github.com/ProxySoul/soulforge.git && cd soulforge && bun install
+./scripts/bundle.sh              # macOS ARM64
 ./scripts/bundle.sh x64          # Intel Mac
 ./scripts/bundle.sh x64 linux    # Linux x64
 ./scripts/bundle.sh arm64 linux  # Linux ARM64
-
-# Install
-cd dist/bundle/soulforge-*/
-./install.sh                     # installs to ~/.soulforge, adds to PATH
-
-# Uninstall
-~/.soulforge/uninstall.sh
+cd dist/bundle/soulforge-*/ && ./install.sh
 ```
 
 </details>
@@ -339,17 +182,10 @@ cd dist/bundle/soulforge-*/
 Requires [Bun](https://bun.sh) >= 1.0 and [Neovim](https://neovim.io) >= 0.11.
 
 ```bash
-git clone https://github.com/ProxySoul/soulforge.git
-cd soulforge
-bun install
-
-# Run in development mode
-bun run dev
-
-# Or build and link globally
-bun run build
-bun link
-soulforge
+git clone https://github.com/ProxySoul/soulforge.git && cd soulforge && bun install
+bun run dev          # development mode
+# or
+bun run build && bun link && soulforge
 ```
 
 </details>
@@ -357,457 +193,138 @@ soulforge
 ### Quick start
 
 ```bash
-soulforge                    # Launch — select a model with Ctrl+L
-soulforge --set-key anthropic sk-ant-...   # Or save a key first
-soulforge --list-providers   # Check which providers are ready
+soulforge                                  # Launch, pick a model with Ctrl+L
+soulforge --set-key anthropic sk-ant-...   # Save a key
+soulforge --headless "your prompt here"    # Non-interactive mode
 ```
 
-See [GETTING_STARTED.md](GETTING_STARTED.md) for a full walkthrough — first launch, model setup, editor configuration, and tips.
+See [GETTING_STARTED.md](GETTING_STARTED.md) for a full walkthrough.
 
 ---
 
 ## Usage
 
-### CLI Flags
-
 ```bash
 soulforge                                    # Launch TUI
-soulforge --session <id>                     # Resume a saved session
-soulforge --headless "your prompt here"      # Stream to stdout
-soulforge --headless --json "prompt"         # Structured JSON
-soulforge --headless --events "prompt"       # JSONL event stream
-soulforge --headless --model provider/model  # Override model
-soulforge --headless --mode architect        # Read-only analysis
-soulforge --headless --system "role" "prompt"# Inject system prompt
-soulforge --headless --include file.ts       # Pre-load files
-soulforge --headless --session <id> "prompt" # Resume session
-soulforge --headless --save-session "prompt" # Save for later
-soulforge --headless --max-steps 10          # Limit steps
-soulforge --headless --timeout 60000         # Abort after 60s
-soulforge --headless --no-repomap "prompt"   # Skip repo map
-soulforge --headless --diff "fix the bug"    # Show changed files
-soulforge --headless --no-render "prompt"    # Raw output (no ANSI styling)
-soulforge --headless --chat                  # Interactive multi-turn chat
-soulforge --headless --chat --events         # Chat with JSONL events
-echo "prompt" | soulforge --headless         # Pipe from stdin
-soulforge --list-providers                   # Provider status
-soulforge --list-models [provider]           # Available models
-soulforge --set-key <provider> <key>         # Save API key
-soulforge --version                          # Version info
+soulforge --headless "prompt"               # Stream to stdout
+soulforge --headless --json "prompt"        # Structured JSON output
+soulforge --headless --chat                 # Interactive multi-turn
+soulforge --headless --model provider/model # Override model
+soulforge --headless --mode architect       # Read-only analysis
+soulforge --headless --diff "fix the bug"   # Show changed files
 ```
 
-[Headless mode deep dive →](docs/headless.md)
+**Modes:** default (full agent), auto (no questions), architect (read-only), socratic, challenge, plan
 
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+L` | Select LLM model |
-| `Ctrl+E` | Toggle editor panel |
-| `Ctrl+G` | Git menu |
-| `Ctrl+S` | Skills browser |
-| `Ctrl+K` | Command picker |
-| `Ctrl+T` | New tab |
-| `Ctrl+W` | Close tab |
-| `Ctrl+X` | Abort current generation |
-| `Tab` | Switch tabs |
-| `Escape` | Toggle chat/editor focus |
-
-### Slash Commands
-
-86 commands available — press `/` or `Ctrl+K` to browse. Key ones by category:
-
-**Models & Providers**
-`/model` `/router` `/provider` `/model-scope`
-
-**Agent & Modes**
-`/mode` `/plan` `/agent-features` `/reasoning`
-
-**Editor & Display**
-`/editor` `/split` `/diff-style` `/chat-style` `/vim-hints` `/open <file>`
-
-**Git** (all under `/git`)
-`/git` `/git commit` `/git push` `/git pull` `/git branch` `/git log` `/git diff` `/git stash` `/git lazygit` `/git co-author`
-
-**Intelligence & LSP**
-`/lsp` `/lsp-install` `/lsp-restart` `/diagnose` `/repo-map` `/web-search` `/keys`
-
-**Context & Memory**
-`/compact` `/context` `/memory` `/compaction` `/instructions`
-
-**Sessions & Tabs**
-`/sessions` `/tab` `/tab new` `/tab close` `/tab rename` `/claim`
-
-**Files & Changes**
-`/changes` `/files` `/open <file>`
-
-**System**
-`/setup` `/skills` `/privacy` `/storage` `/errors` `/status` `/proxy`
-
-[Full command reference →](docs/commands-reference.md)
-
-### Forge Modes
-
-| Mode | Description |
-|------|-------------|
-| **default** | Full agent — reads and writes code |
-| **auto** | Full tool access, executes immediately, minimal questions |
-| **architect** | Read-only design and architecture |
-| **socratic** | Questions first, then suggestions |
-| **challenge** | Adversarial review, finds flaws |
-| **plan** | Research → structured plan → execute |
+[Full CLI reference →](docs/headless.md) · [All 86 slash commands →](docs/commands-reference.md)
 
 ---
 
-## Tool Suite
+## Providers
 
-SoulForge ships 33 tools organized by capability:
+| Provider | Setup |
+|----------|-------|
+| [**LLM Gateway**](https://llmgateway.io/?ref=6tjJR2H3X4E9RmVQiQwK) | `LLM_GATEWAY_API_KEY` |
+| [**Anthropic**](https://console.anthropic.com/) | `ANTHROPIC_API_KEY` |
+| [**OpenAI**](https://platform.openai.com/) | `OPENAI_API_KEY` |
+| [**Google**](https://aistudio.google.com/) | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| [**xAI**](https://console.x.ai/) | `XAI_API_KEY` |
+| [**Ollama**](https://ollama.ai) | Auto-detected |
+| [**OpenRouter**](https://openrouter.ai) | `OPENROUTER_API_KEY` |
+| [**Vercel AI Gateway**](https://vercel.com/ai-gateway) | `AI_GATEWAY_API_KEY` |
+| [**Proxy**](https://github.com/router-for-me/CLIProxyAPI) | `PROXY_API_KEY` |
+| **Custom** | Any OpenAI-compatible API |
 
-### Code Intelligence
-
-| Tool | What it does |
-|------|-------------|
-| `read_file` | Read files with optional `target` param for symbol extraction (LSP-powered) |
-| `navigate` | Definition, references, call hierarchy, implementations |
-| `analyze` | File diagnostics, unused symbols, complexity |
-| `rename_symbol` | Compiler-guaranteed rename across all files |
-| `move_symbol` | Move to another file + update all importers |
-| `rename_file` | Rename/move a file with import path updates |
-| `refactor` | Extract function/variable, organize imports |
-
-### Codebase Analysis (zero LLM cost)
-
-| Tool | What it does |
-|------|-------------|
-| `soul_grep` | Count-mode ripgrep with repo map intercept |
-| `soul_find` | Fuzzy file/symbol search, PageRank-ranked, signatures included |
-| `soul_analyze` | Identifier frequency, unused exports, file profiles, top files by PageRank, external package usage, symbol lookup by kind/name with signatures |
-| `soul_impact` | Dependency graph — dependents, cochanges, blast radius |
-
-### Project Management
-
-| Tool | What it does |
-|------|-------------|
-| `project` | Auto-detected lint, format, test, build, typecheck across [23 ecosystems](#project-toolchain-detection) |
-| `project(list)` | Discover monorepo packages with per-package capabilities |
-| `dispatch` | Parallel multi-agent execution (up to 8 agents, 3 concurrent) |
-| `git` | Structured git operations with auto co-author tracking |
-
-<details>
-<summary><strong>All tools</strong></summary>
-
-**Read/Write:** `read_file` (with `target` param for symbol extraction), `edit_file` (also handles create/write), `multi_edit`, `undo_edit`, `list_dir`, `glob`, `grep`
-
-**Shell:** `shell` (with pre-commit lint gate, co-author injection, project tool redirect)
-
-**Memory:** `memory` (actions: write, search, list, delete)
-
-**Agent:** `dispatch`, `web_search`, `fetch_page`
-
-**Editor:** `editor` (Neovim integration — read, edit, navigate, diagnostics, format)
-
-**Planning:** `plan`, `update_plan_step`, `task_list`, `ask_user`
-
-**Discovery:** `discover_pattern`, `test_scaffold`, `skills`
-
-**Tool Management:** `request_tools`, `release_tools` (agent-managed mode — disabled by default)
-
-</details>
-
----
-
-## LLM Providers
-
-| Provider | Models | Setup |
-|----------|--------|-------|
-| [**LLM Gateway**](https://llmgateway.io/?ref=6tjJR2H3X4E9RmVQiQwK) | Multi-model gateway (OpenAI, Claude, Gemini, DeepSeek) | `LLM_GATEWAY_API_KEY` |
-| [**Anthropic**](https://console.anthropic.com/) | Claude 4.6 Opus/Sonnet, Haiku 4.5 | `ANTHROPIC_API_KEY` |
-| [**OpenAI**](https://platform.openai.com/) | GPT-4.5, o3, o4-mini | `OPENAI_API_KEY` |
-| [**Google**](https://aistudio.google.com/) | Gemini 2.5 Pro/Flash | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| [**xAI**](https://console.x.ai/) | Grok 3 | `XAI_API_KEY` |
-| [**Ollama**](https://ollama.ai) | Any local model | Auto-detected |
-| [**OpenRouter**](https://openrouter.ai) | 200+ models | `OPENROUTER_API_KEY` |
-| [**Vercel AI Gateway**](https://vercel.com/ai-gateway) | Unified gateway for 15+ providers with caching, fallbacks, rate limiting | `AI_GATEWAY_API_KEY` |
-| [**Proxy**](https://github.com/router-for-me/CLIProxyAPI) | Local proxy with auto-lifecycle management — starts/stops with SoulForge | `PROXY_API_KEY` |
-| **Custom** | Any OpenAI-compatible API — add via config | Any env var |
-
-### Custom Providers
-
-Add any OpenAI-compatible API as a provider — no code changes needed:
+Add custom providers in config, no code changes:
 
 ```json
-// ~/.soulforge/config.json (global) or .soulforge/config.json (project)
 {
-  "providers": [
-    {
-      "id": "deepseek",
-      "name": "DeepSeek",
-      "baseURL": "https://api.deepseek.com/v1",
-      "envVar": "DEEPSEEK_API_KEY",
-      "models": ["deepseek-chat", "deepseek-coder"],
-      "modelsAPI": "https://api.deepseek.com/v1/models"
-    }
-  ]
+  "providers": [{
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseURL": "https://api.deepseek.com/v1",
+    "envVar": "DEEPSEEK_API_KEY",
+    "models": ["deepseek-chat", "deepseek-coder"]
+  }]
 }
 ```
 
-Then use `deepseek/deepseek-chat` as a model ID anywhere — TUI model picker, headless `--model`, task router slots. Custom providers show `[custom]` in listings. If a custom `id` conflicts with a built-in, it auto-renames to `{id}-custom`.
-
-[Custom providers reference →](docs/headless.md#custom-providers)
-
-### Task Router
-
-Assign different models to different jobs. Configure via `/router`:
-
-| Slot | Default | Purpose |
-|------|---------|---------|
-| Planning | Sonnet | Architecture, design decisions |
-| Coding | Opus | Implementation, bug fixes |
-| Exploration | Opus | Research, code reading |
-| Web Search | Haiku | Search queries |
-| Trivial | Haiku | Small, simple tasks (auto-detected) |
-| De-sloppify | Haiku | Post-implementation cleanup pass |
-| Compact | Haiku | Context compaction summaries |
-
----
-
-## Repo Map
-
-SQLite-backed graph of your entire codebase, updated in real-time as files are edited.
-
-```mermaid
-graph LR
-    Scan[File Scanner<br/>watches edits] --> Parse[tree-sitter<br/>30 languages]
-    Parse --> Symbols[(Symbols<br/>name · kind · line · exports)]
-    Parse --> Refs[(References<br/>cross-file imports)]
-    Refs --> Graph[Dependency Graph]
-    Graph --> PR[PageRank]
-    Graph --> CC[Cochange<br/>git log analysis]
-    Graph --> BR[Blast Radius]
-    Symbols --> FTS[FTS5 Search]
-    Symbols --> Clones[Clone Detection<br/>minhash signatures]
-
-    style Symbols fill:#1a3,color:#fff
-    style Refs fill:#1a3,color:#fff
-    style PR fill:#47a,color:#fff
-    style CC fill:#47a,color:#fff
-    style BR fill:#47a,color:#fff
-```
-
-**Powers:** `soul_find` (PageRank-ranked search with signatures), `soul_grep` (zero-cost identifier counts), `soul_analyze` (unused exports with dead code vs unnecessary export classification, file profiles, top files, external packages, symbol-by-kind queries with signatures), `soul_impact` (blast radius, dependency chains), dispatch enrichment (auto-injects symbol line ranges), AST semantic summaries (docstrings for top 500 symbols).
-
-**Language support:** Convention-based visibility detection for 30 languages. Export inference via Go capitalization, Rust/Zig `pub`, Python/Dart underscore convention, Java/Kotlin/Swift/C#/Scala not-private, PHP, Elixir `def`/`defp`, C/C++/ObjC header files, Solidity, and more. Identifier extraction patterns cover camelCase, PascalCase, snake_case, and hyphenated (Elisp) naming conventions across all supported languages.
-
-**Monorepo support:** Partial. The repo map indexes files within the working directory. Cross-package dependencies within a monorepo are not yet tracked — each package is treated as an independent unit. The `project` tool handles monorepo workspace discovery separately.
-
-[Full reference →](docs/repo-map.md)
-
----
-
-## Context Management
-
-```mermaid
-graph TB
-    subgraph "Per-Step — every API call"
-        Pruning[Tool Result Pruning<br/>last 4 full · older → summaries]
-    end
-
-    subgraph "On Threshold — auto-triggered"
-        V1[V1 Compaction<br/>LLM summarization]
-        V2[V2 Compaction<br/>deterministic extraction<br/>+ 2k token gap-fill]
-    end
-
-    subgraph "Always Active"
-        Steering[User Steering<br/>queue + inject mid-stream]
-        Sessions[Session Save<br/>incremental · crash-resilient]
-        PreCommit[Pre-Commit Gate<br/>lint + typecheck before commit]
-    end
-
-    style Pruning fill:#47a,color:#fff
-    style V1 fill:#a74,color:#fff
-    style V2 fill:#4a7,color:#fff
-    style PreCommit fill:#a47,color:#fff
-```
-
-- **Tool result pruning** — older tool results become one-line summaries enriched with repo map symbols
-- **V1 compaction** — full LLM summarization when context exceeds threshold
-- **V2 compaction** — deterministic state extraction from tool calls, cheap LLM gap-fill
-- **User steering** — type while the agent works, messages inject at the next step
-- **Pre-commit gate** — auto-runs native lint + typecheck before allowing `git commit`
-
-[Compaction deep dive →](docs/compaction.md) · [Steering deep dive →](docs/steering.md)
-
----
-
-## Project Toolchain Detection
-
-The `project` tool auto-detects your toolchain from config files — no setup required:
-
-| Ecosystem | Lint | Typecheck | Test | Build |
-|-----------|------|-----------|------|-------|
-| **JS/TS (Bun)** | biome / oxlint / eslint | tsc | bun test | bun run build |
-| **JS/TS (Node)** | biome / oxlint / eslint | tsc | npm test | npm run build |
-| **Deno** | deno lint | deno check | deno test | — |
-| **Rust** | cargo clippy | cargo check | cargo test | cargo build |
-| **Go** | golangci-lint / go vet | go build | go test | go build |
-| **Python** | ruff / flake8 | pyright / mypy | pytest | — |
-| **PHP** | phpstan / psalm | phpstan / psalm | phpunit | — |
-| **Ruby** | rubocop | — | rspec / rails test | — |
-| **Swift** | swiftlint | swift build | swift test | swift build |
-| **Elixir** | credo | dialyzer | mix test | mix compile |
-| **Java/Kotlin** | gradle check | javac / kotlinc | gradle test | gradle build |
-| **C/C++** | clang-tidy | cmake build | ctest | cmake build |
-| **Dart/Flutter** | dart analyze | dart analyze | flutter test | flutter build |
-| **Zig** | — | zig build | zig build test | zig build |
-| **Haskell** | hlint | stack build | stack test | stack build |
-| **Scala** | — | sbt compile | sbt test | sbt compile |
-| **.NET/C#** | dotnet format | dotnet build | dotnet test | dotnet build |
-| **iOS/Xcode** | swiftlint | xcodebuild build | xcodebuild test | xcodebuild build |
-| **Java (Maven)** | checkstyle | mvn compile | mvn test | mvn package |
-| **C/C++ (Make)** | — | — | make test | make |
-| **Clojure** | clj-kondo | — | lein test / clj -M:test | lein uberjar |
-
-**Monorepo support:** `project(action: "list")` discovers workspace packages across pnpm, npm/yarn, Cargo, and Go workspaces.
-
-[Full reference →](docs/project-tool.md)
-
----
-
-## Project Instructions
-
-SoulForge loads `SOULFORGE.md` from your project root as project-specific instructions — conventions, architecture notes, toolchain preferences — injected into every prompt.
-
-You can also load instruction files from other AI tools to reduce friction when migrating or working across tools:
-
-| File | Source | Default |
-|------|--------|---------|
-| `SOULFORGE.md` | SoulForge | **on** |
-| `CLAUDE.md` | Claude Code | off |
-| `.cursorrules` | Cursor | off |
-| `.github/copilot-instructions.md` | GitHub Copilot | off |
-| `.clinerules` | Cline | off |
-| `.windsurfrules` | Windsurf | off |
-| `.aider.conf.yml` | Aider | off |
-| `AGENTS.md` | OpenAI Codex | off |
-| `.opencode/instructions.md` | OpenCode | off |
-| `AMPLIFY.md` | Amp | off |
-
-Toggle via `/instructions` in the TUI or set `"instructionFiles"` in config:
-
-```json
-{ "instructionFiles": ["soulforge", "claude", "cursorrules"] }
-```
+[Provider options →](docs/provider-options.md) · [Custom providers →](docs/headless.md#custom-providers)
 
 ---
 
 ## Configuration
 
-Layered config: global (`~/.soulforge/config.json`) + project (`.soulforge/config.json`).
+Layered: global (`~/.soulforge/config.json`) + project (`.soulforge/config.json`).
 
 ```json
 {
   "defaultModel": "anthropic/claude-sonnet-4-6",
   "thinking": { "mode": "adaptive" },
   "repoMap": true,
-  "semanticSummaries": "ast",
-  "diffStyle": "default",
-  "chatStyle": "accent",
-  "vimHints": true,
-  "providers": [
-    {
-      "id": "deepseek",
-      "name": "DeepSeek",
-      "baseURL": "https://api.deepseek.com/v1",
-      "envVar": "DEEPSEEK_API_KEY",
-      "models": ["deepseek-chat", "deepseek-coder"]
-    }
-  ]
+  "taskRouter": {
+    "spark": "anthropic/claude-sonnet-4-6",
+    "ember": "anthropic/claude-opus-4-6",
+    "webSearch": "anthropic/claude-haiku-4-5",
+    "desloppify": "anthropic/claude-haiku-4-5",
+    "compact": "google/gemini-2.0-flash"
+  },
+  "instructionFiles": ["soulforge", "claude", "cursorrules"]
 }
 ```
 
-See [GETTING_STARTED.md](GETTING_STARTED.md) for the full reference.
+**Project instructions:** Drop a `SOULFORGE.md` in your project root with conventions, architecture notes, preferences. Also supports `CLAUDE.md`, `.cursorrules`, `AGENTS.md`, and others. Toggle via `/instructions`.
 
----
-
-## Testing
-
-```bash
-bun test              # 2296 tests across 49 files
-bun run typecheck     # tsc --noEmit
-bun run lint          # biome check (lint + format)
-bun run lint:fix      # auto-fix
-```
+See [GETTING_STARTED.md](GETTING_STARTED.md) for the full config reference.
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| **[Command Reference](docs/commands-reference.md)** | All 86 commands by category |
-| **[Headless Mode](docs/headless.md)** | Non-interactive CLI for CI/CD, scripting, automation |
-| **[Architecture](docs/architecture.md)** | System overview, data flow, component lifecycle |
-| **[Repo Map](docs/repo-map.md)** | PageRank, cochange, blast radius, clone detection |
-| **[Agent Bus](docs/agent-bus.md)** | Multi-agent coordination, shared cache, edit ownership |
-| **[Compound Tools](docs/compound-tools.md)** | rename_symbol, move_symbol, refactor internals |
-| **[Compaction](docs/compaction.md)** | V1/V2 context management strategies |
-| **[Project Tool](docs/project-tool.md)** | Toolchain detection, pre-commit checks, monorepo discovery |
-| **[Steering](docs/steering.md)** | Mid-stream user input injection |
-| **[Provider Options](docs/provider-options.md)** | Thinking modes, context management, degradation |
-| **[Prompt System](docs/prompt-system.md)** | Per-family prompts, Soul Map injection, mode overlays |
-| [Getting Started](GETTING_STARTED.md) | Installation, configuration, first steps |
-| [Contributing](CONTRIBUTING.md) | Dev setup, project structure, PR guidelines |
-| [Security](SECURITY.md) | Security policy, forbidden file management, responsible disclosure |
+| | |
+|---|---|
+| [Architecture](docs/architecture.md) | System overview, intelligence router, agent system, tool design |
+| [Repo Map](docs/repo-map.md) | PageRank, cochange, blast radius, clone detection, language support |
+| [Agent Bus](docs/agent-bus.md) | Multi-agent coordination, shared cache, edit ownership |
+| [Compaction](docs/compaction.md) | V1/V2 context management, working state extraction |
+| [Compound Tools](docs/compound-tools.md) | read, multi_edit, rename_symbol, move_symbol, refactor, project |
+| [Project Tool](docs/project-tool.md) | 23 ecosystems, pre-commit checks, monorepo discovery |
+| [Headless Mode](docs/headless.md) | CLI flags, JSON/JSONL output, CI/CD integration |
+| [Commands](docs/commands-reference.md) | All 86 slash commands |
+| [Steering](docs/steering.md) | Mid-stream user input |
+| [Provider Options](docs/provider-options.md) | Thinking modes, context management |
+| [Prompt System](docs/prompt-system.md) | Per-family prompts, mode overlays |
+| [Getting Started](GETTING_STARTED.md) | First launch walkthrough |
+| [Contributing](CONTRIBUTING.md) | Dev setup, PR guidelines |
 
 ---
 
 ## Roadmap
 
-**SoulForge beyond the TUI** — the intelligence layer is being extracted into reusable packages:
+The intelligence layer is being extracted into reusable packages:
 
-```
-@soulforge/intelligence    Core library — repo map, tools, agent loop
-       ↑
-@soulforge/mcp             MCP server — plug into Claude Code, Cursor, Copilot
-       ↑
-sf --headless              CLI mode — CI/CD, scripts, automation  ✓ shipped
-       ↑
-SoulForge TUI              Full experience (what you're looking at now)
-```
+- **`@soulforge/intelligence`**: graph intelligence, tools, and agent orchestration as an importable library
+- **`@soulforge/mcp`**: expose Soul Map tools as MCP servers for Claude Code, Cursor, Copilot, or any MCP client
+- **`sf --headless`**: shipped. Non-interactive mode for CI/CD, automation, and scripting. [Docs →](docs/headless.md)
 
-- **`@soulforge/intelligence`** — graph intelligence, 33 tools, and agent orchestration as an importable package. Build your own AI tools on top of SoulForge's brain.
-- **`@soulforge/mcp`** — expose soul_grep, soul_find, soul_analyze, soul_impact, navigate, read_code as MCP tools. Any AI tool that supports MCP gets SoulForge's graph intelligence.
-- **`sf --headless`** — non-interactive mode. Pipe in a prompt, get back results. For CI/CD, automation, and benchmarks. [Documentation →](docs/headless.md)
+**In progress:** MCP support · repo map visualization · GitHub CLI integration · dispatch worktrees · [ACP support](https://agentclientprotocol.com/)
 
-**In progress:**
-- **MCP support** — consume external MCP servers from within SoulForge + expose tools as an MCP server
-- **Repo Map visualization** — interactive dependency graph, PageRank heatmap, blast radius explorer
-- **GitHub CLI integration** — native `gh_pr`, `gh_issue`, `gh_status` tools with structured output
-- **Dispatch worktrees** — git worktree per code agent for conflict-free parallel edits
-- **[ACP support](https://agentclientprotocol.com/)** — Agent Client Protocol integration. Run SoulForge as a coding agent inside Zed, JetBrains, Neovim (agentic.nvim), or any ACP-compatible editor. Headless mode already covers 80% of the protocol surface — `sf --acp` would expose graph intelligence, multi-agent dispatch, and all 33 tools via JSON-RPC 2.0 over stdio
-
-**Planned:**
-- **Monorepo graph support** — cross-package dependency tracking for pnpm/npm/yarn workspaces, Cargo workspaces, Go workspaces (`go.work`), Nx/Turborepo, and Bazel/Buck. Currently the repo map treats each workspace root as an isolated unit — cross-package imports resolve as external dependencies instead of internal edges. This means PageRank, blast radius, and unused export detection don't span package boundaries.
-- **Benchmarks** — side-by-side comparisons: tool calls, edit accuracy, token efficiency on large codebases
-- **Orchestrated workflows** — sequential agent handoffs (planner → TDD → reviewer → security)
+**Planned:** monorepo graph support · benchmarks · orchestrated workflows (planner → TDD → reviewer → security)
 
 ---
 
 ## Inspirations
 
-SoulForge builds on ideas from projects we respect:
-
-- **[Aider](https://github.com/Aider-AI/aider)** — tree-sitter repo maps with PageRank for code context. Similar approach to SoulForge's repo map, though SoulForge adds cochange analysis, blast radius, clone detection, and real-time graph updates.
-- **[OpenCode](https://github.com/opencode-ai/opencode)** — per-provider prompt routing. SoulForge's family-specific prompt system takes a similar approach with separate base prompts for Claude, OpenAI, Gemini, and a generic fallback.
-- **[Everything Claude Code (ECC)](https://github.com/affaan-m/everything-claude-code)** — design philosophy: enforce behavior with code, not prompt instructions. Our `targetFiles` schema validation, pre-commit lint gates, confident tool output, and auto-enrichment patterns come from this thinking.
-- **[Vercel AI SDK](https://sdk.vercel.ai)** — the multi-provider abstraction layer that makes 9 providers possible with a single tool loop interface.
-- **[Neovim](https://neovim.io)** — the editor. SoulForge embeds it via msgpack-RPC rather than reimplementing it, because your config and muscle memory shouldn't be a compromise.
+- **[Aider](https://github.com/Aider-AI/aider)**: tree-sitter repo maps with PageRank. SoulForge adds cochange analysis, blast radius, clone detection, and live updates.
+- **[Everything Claude Code](https://github.com/affaan-m/everything-claude-code)**: enforce behavior with code, not prompts. Our schema validation, pre-commit gates, and auto-enrichment patterns come from this thinking.
+- **[Vercel AI SDK](https://sdk.vercel.ai)**: the multi-provider abstraction that makes 10 providers possible.
+- **[Neovim](https://neovim.io)**: embedded via msgpack-RPC. Your config and muscle memory shouldn't be a compromise.
 
 ---
 
 ## License
 
-[Business Source License 1.1](LICENSE). Free for personal and internal use. Commercial use requires a [commercial license](COMMERCIAL_LICENSE.md). Converts to Apache 2.0 on March 15, 2030. Third-party licenses in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+[Business Source License 1.1](LICENSE). Free for personal and internal use. Commercial use requires a [commercial license](COMMERCIAL_LICENSE.md). Converts to Apache 2.0 on March 15, 2030.
 
 <p align="center">
   <sub>Built with care by <a href="https://github.com/proxysoul">proxySoul</a></sub>
