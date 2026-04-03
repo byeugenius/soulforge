@@ -132,10 +132,25 @@ const readFileSpec = z.object({
   name: optStr().describe("Symbol name (required when target is set, except scope)"),
 });
 
+/** Coerce common weak-model mistakes for the `files` param:
+ *  - bare string  → [{path: str}]
+ *  - array of strings → [{path: s} for s]
+ */
+const coerceFileSpecs = (v: unknown): unknown => {
+  if (typeof v === "string") return [{ path: v }];
+  if (Array.isArray(v) && v.length > 0 && typeof v[0] === "string") {
+    return v.map((s) => (typeof s === "string" ? { path: s } : s));
+  }
+  return v;
+};
+
 export const SCHEMAS = {
   readFile: z.object({
     files: z
-      .preprocess(coerceJsonArray, z.union([z.array(readFileSpec), readFileSpec]))
+      .preprocess(
+        (v) => coerceFileSpecs(coerceJsonArray(v)),
+        z.union([z.array(readFileSpec), readFileSpec]),
+      )
       .describe("Files to read. Array of {path, ranges?, target?, name?}. One item or many."),
     fresh: optBool().describe("Set true to bypass cache and re-execute"),
   }),

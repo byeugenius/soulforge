@@ -517,9 +517,8 @@ export function buildSubagentTools(models: SubagentModels) {
                 corrected.push(f);
               } else {
                 warnings.push(
-                  `⚠️ File not found: \`${norm}\` — spark/ember will use tools to locate it`,
+                  `⚠️ Dropped hallucinated file: \`${norm}\` — not in repo map or on disk`,
                 );
-                corrected.push(f); // Keep it — the agent has tools to handle missing files
               }
             }
             t.targetFiles = corrected;
