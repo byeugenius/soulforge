@@ -189,6 +189,13 @@ const COMMAND_DEFS: CommandDef[] = [
     tags: ["history", "restore"],
   },
   {
+    cmd: "/session new",
+    ic: "add",
+    desc: "Start a new session (saves current)",
+    category: "Session",
+    tags: ["new", "fresh", "reset"],
+  },
+  {
     cmd: "/session plan",
     ic: "plan",
     desc: "Toggle plan mode (research & plan only)",

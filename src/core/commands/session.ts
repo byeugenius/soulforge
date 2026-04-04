@@ -178,6 +178,10 @@ function handleSessions(_input: string, ctx: CommandContext): void {
   ctx.openSessions();
 }
 
+function handleNew(_input: string, ctx: CommandContext): void {
+  ctx.newSession();
+}
+
 export function register(map: Map<string, CommandHandler>): void {
   // Grouped commands
   map.set("/session", handleSessions);
@@ -185,6 +189,7 @@ export function register(map: Map<string, CommandHandler>): void {
   map.set("/session compact", handleCompact);
   map.set("/session continue", handleContinue);
   map.set("/session history", handleSessions);
+  map.set("/session new", handleNew);
   map.set("/session export", handleExport);
 
   // Legacy aliases (backward compat)

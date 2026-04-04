@@ -22,6 +22,7 @@ export interface CommandContext {
   openSkills: () => void;
   openGitCommit: () => void;
   openSessions: () => void;
+  newSession: () => void;
   openHelp: () => void;
   openErrorLog: () => void;
   openCompactionLog: () => void;
