@@ -2,6 +2,7 @@ import type { ModelMessage, ProviderOptions } from "@ai-sdk/provider-utils";
 import { type LanguageModel, RetryError } from "ai";
 import { logBackgroundError } from "../../stores/errors.js";
 import type { TaskTier } from "../../types/index.js";
+import { detectModelFamily } from "../llm/provider-options.js";
 
 import { taskListTool } from "../tools/task-list.js";
 import {
@@ -159,6 +160,36 @@ export function stripContextManagement(opts?: ProviderOptions): ProviderOptions 
     }
   }
   return changed ? (out as ProviderOptions) : opts;
+}
+
+const FAMILY_TO_KEYS: Record<string, Set<string>> = {
+  claude: new Set(["anthropic", "proxy", "llmgateway", "openrouter", "vercel_gateway"]),
+  openai: new Set(["openai", "proxy", "llmgateway", "openrouter", "vercel_gateway"]),
+  google: new Set(["google", "proxy", "llmgateway", "openrouter", "vercel_gateway"]),
+};
+
+/**
+ * Strip provider option keys that don't match the subagent's model family.
+ * Prevents Claude-specific options (thinking, effort) from being sent to
+ * OpenAI/Google models, which may reject unknown parameters.
+ */
+export function stripMismatchedProviderOptions(
+  opts: ProviderOptions | undefined,
+  modelId: string,
+): ProviderOptions | undefined {
+  if (!opts) return opts;
+  const family = detectModelFamily(modelId) as string;
+  const allowedKeys = FAMILY_TO_KEYS[family];
+  if (!allowedKeys) return undefined;
+  const out: Record<string, unknown> = {};
+  let kept = 0;
+  for (const [key, val] of Object.entries(opts)) {
+    if (allowedKeys.has(key)) {
+      out[key] = val;
+      kept++;
+    }
+  }
+  return kept > 0 ? (out as ProviderOptions) : undefined;
 }
 
 export async function runAgentTask(

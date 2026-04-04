@@ -19,6 +19,7 @@ import {
   selectModel,
   sleep,
   stripContextManagement,
+  stripMismatchedProviderOptions,
 } from "./agent-runner.js";
 import { runDesloppify, runVerifier } from "./agent-verification.js";
 import { createCodeAgent } from "./code.js";
@@ -252,8 +253,12 @@ export async function createAgent(
   // Ember: different model or code role → lean tools, lean prompt, no cache sharing overhead.
   const useSpark = models.forgeInstructions != null && tier === "spark";
 
-  // Always strip context management — subagent models (e.g. Haiku) may not support it
-  let subagentProviderOptions = stripContextManagement(models.providerOptions);
+  // Strip context management (subagents are short-lived) and provider options
+  // that don't match the subagent's model family (e.g. anthropic thinking → GPT)
+  let subagentProviderOptions = stripMismatchedProviderOptions(
+    stripContextManagement(models.providerOptions),
+    modelId,
+  );
 
   if (useExplore && subagentProviderOptions) {
     const patched: Record<string, unknown> = {};
