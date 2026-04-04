@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { logBackgroundError } from "../../../../stores/errors.js";
+import { trackProcess } from "../../../process-tracker.js";
 import {
   decode,
   encode,
@@ -56,6 +57,7 @@ export class StandaloneLspClient {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.cwd,
     });
+    trackProcess(this.process);
 
     this.process.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
     this.process.on("exit", (code, signal) => {

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { attach } from "neovim";
 import type { NvimConfigMode } from "../../types/index.js";
+import { trackProcess } from "../process-tracker.js";
 import { NvimScreen } from "./screen.js";
 
 export interface NvimInstance {
@@ -73,6 +74,7 @@ export async function launchNeovim(
     stdio: ["pipe", "pipe", "pipe"],
     env,
   });
+  trackProcess(proc);
 
   const api = attach({ proc });
   const screen = new NvimScreen(rows, cols);

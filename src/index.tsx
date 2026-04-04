@@ -6,6 +6,7 @@ import type { ContextManager } from "./core/context/manager.js";
 import { icon } from "./core/icons.js";
 import { disposeIntelligenceRouter } from "./core/intelligence/index.js";
 import { deactivateCurrentProvider, type ProviderStatus } from "./core/llm/provider.js";
+import { killAllTracked } from "./core/process-tracker.js";
 import type { PrerequisiteStatus } from "./core/setup/prerequisites.js";
 import { closeAllTerminals } from "./core/terminal/manager.js";
 import { getThemeTokens, useTheme } from "./core/theme/index.js";
@@ -46,6 +47,9 @@ function runCleanup(): void {
   } catch {}
   try {
     closeAllTerminals();
+  } catch {}
+  try {
+    killAllTracked();
   } catch {}
 }
 
