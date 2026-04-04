@@ -413,6 +413,94 @@ describe(".NET project", () => {
   });
 });
 
+// ── Monorepo (Turbo/pnpm/yarn) ──────────────────────────────
+
+describe("pnpm monorepo (turbo)", () => {
+  it("detects typecheck from scripts even without tsconfig.json in root", async () => {
+    const cwd = makeProject("pnpm-turbo-root", {
+      "package.json": JSON.stringify({
+        scripts: { build: "turbo build", lint: "turbo lint", typecheck: "turbo typecheck", dev: "turbo dev" },
+      }),
+      "pnpm-lock.yaml": "",
+      "pnpm-workspace.yaml": "packages:\n  - 'apps/*'\n  - 'packages/*'",
+      "turbo.json": "{}",
+    });
+    const p = await detectProfile(cwd);
+    expect(p.typecheck).toBe("pnpm typecheck");
+    expect(p.build).toBe("pnpm build");
+    expect(p.lint).toBe("pnpm lint");
+    expect(p.run).toBe("pnpm dev");
+  });
+
+  it("sub-package detects pnpm from root lockfile", async () => {
+    const root = makeProject("pnpm-turbo-sub", {
+      "package.json": JSON.stringify({ scripts: { dev: "turbo dev" } }),
+      "pnpm-lock.yaml": "",
+      "pnpm-workspace.yaml": "packages:\n  - 'apps/*'",
+      "apps/web/package.json": JSON.stringify({
+        scripts: { build: "next build", dev: "next dev", lint: "eslint", typecheck: "tsc --noEmit" },
+      }),
+      "apps/web/tsconfig.json": "{}",
+    });
+    const p = await detectProfile(join(root, "apps/web"));
+    expect(p.build).toBe("pnpm build");
+    expect(p.lint).toBe("pnpm lint");
+    expect(p.typecheck).toBe("pnpm typecheck");
+    expect(p.run).toBe("pnpm dev");
+  });
+
+  it("sub-package without scripts falls back to pnpm tsc", async () => {
+    const root = makeProject("pnpm-turbo-sub-noscript", {
+      "pnpm-lock.yaml": "",
+      "apps/api/package.json": JSON.stringify({ scripts: { dev: "wrangler dev" } }),
+      "apps/api/tsconfig.json": "{}",
+    });
+    const p = await detectProfile(join(root, "apps/api"));
+    expect(p.typecheck).toBe("npx tsc --noEmit");
+    expect(p.run).toBe("pnpm dev");
+  });
+});
+
+describe("yarn monorepo", () => {
+  it("sub-package detects yarn from root lockfile", async () => {
+    const root = makeProject("yarn-mono-sub", {
+      "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+      "yarn.lock": "",
+      "packages/ui/package.json": JSON.stringify({
+        scripts: { build: "tsc", test: "jest", lint: "eslint ." },
+      }),
+      "packages/ui/tsconfig.json": "{}",
+    });
+    const p = await detectProfile(join(root, "packages/ui"));
+    expect(p.test).toBe("yarn test");
+    expect(p.build).toBe("yarn build");
+    expect(p.lint).toBe("yarn lint");
+  });
+
+  it("sub-package without lockfile does not fall back to npm", async () => {
+    const root = makeProject("yarn-mono-no-npm", {
+      "yarn.lock": "",
+      "packages/core/package.json": JSON.stringify({ scripts: { build: "tsc" } }),
+    });
+    const p = await detectProfile(join(root, "packages/core"));
+    expect(p.build).toBe("yarn build");
+  });
+});
+
+describe("bun monorepo", () => {
+  it("detects typecheck from scripts without tsconfig.json", async () => {
+    const cwd = makeProject("bun-turbo-root", {
+      "bun.lock": "",
+      "package.json": JSON.stringify({
+        scripts: { typecheck: "turbo typecheck", build: "turbo build" },
+      }),
+    });
+    const p = await detectProfile(cwd);
+    expect(p.typecheck).toBe("bun run typecheck");
+    expect(p.build).toBe("bun run build");
+  });
+});
+
 // ── Edge Cases ──────────────────────────────────────────────
 
 describe("edge cases", () => {

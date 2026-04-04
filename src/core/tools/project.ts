@@ -1,5 +1,5 @@
 import { access, readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ToolResult } from "../../types/index.js";
 import { compressShellOutputFull } from "./shell-compress.js";
 import { saveTee, truncateWithTee } from "./tee.js";
@@ -75,11 +75,11 @@ export async function detectProfile(cwd: string): Promise<ProjectProfile> {
     profile.test = scripts.test ?? "bun test";
     profile.build = scripts.build ? `bun run build` : null;
     profile.lint = scripts.lint ? "bun run lint" : await detectJsLinter(cwd, "bunx");
-    profile.typecheck = (await has("tsconfig.json"))
-      ? scripts.typecheck
-        ? "bun run typecheck"
-        : "bunx tsc --noEmit"
-      : null;
+    profile.typecheck = scripts.typecheck
+      ? "bun run typecheck"
+      : (await has("tsconfig.json"))
+        ? "bunx tsc --noEmit"
+        : null;
     profile.run = scripts.dev ? "bun run dev" : scripts.start ? "bun run start" : null;
     profile.format = scripts.format ? "bun run format" : await detectJsFormatter(cwd, "bunx");
     profile.formatAndLint = await detectFormatAndLint(cwd, "bunx");
@@ -99,16 +99,16 @@ export async function detectProfile(cwd: string): Promise<ProjectProfile> {
 
   // JS/TS — pnpm/yarn/npm
   if (await has("package.json")) {
-    const pm = (await has("pnpm-lock.yaml")) ? "pnpm" : (await has("yarn.lock")) ? "yarn" : "npm";
+    const pm = await detectJsPm(cwd);
     const run = pm === "npm" ? "npm run" : pm;
     profile.test = scripts.test ? `${run} test` : null;
     profile.build = scripts.build ? `${run} build` : null;
     profile.lint = scripts.lint ? `${run} lint` : await detectJsLinter(cwd, "npx");
-    profile.typecheck = (await has("tsconfig.json"))
-      ? scripts.typecheck
-        ? `${run} typecheck`
-        : "npx tsc --noEmit"
-      : null;
+    profile.typecheck = scripts.typecheck
+      ? `${run} typecheck`
+      : (await has("tsconfig.json"))
+        ? "npx tsc --noEmit"
+        : null;
     profile.run = scripts.dev ? `${run} dev` : scripts.start ? `${run} start` : null;
     profile.format = scripts.format ? `${run} format` : await detectJsFormatter(cwd, "npx");
     profile.formatAndLint = await detectFormatAndLint(cwd, "npx");
@@ -360,6 +360,27 @@ export async function detectProfile(cwd: string): Promise<ProjectProfile> {
   return profile;
 }
 
+/** Detect JS package manager by walking up to find a lockfile (handles monorepo sub-packages). */
+async function detectJsPm(cwd: string): Promise<"pnpm" | "yarn" | "npm"> {
+  const lockfiles: [string, "pnpm" | "yarn"][] = [
+    ["pnpm-lock.yaml", "pnpm"],
+    ["yarn.lock", "yarn"],
+  ];
+  let dir = cwd;
+  for (let i = 0; i < 5; i++) {
+    for (const [file, pm] of lockfiles) {
+      try {
+        await access(join(dir, file));
+        return pm;
+      } catch {}
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return "npm";
+}
+
 async function readPackageScripts(cwd: string): Promise<Record<string, string>> {
   try {
     const pkg = JSON.parse(await readFile(join(cwd, "package.json"), "utf-8"));
@@ -452,8 +473,8 @@ async function detectJsTypecheck(cwd: string): Promise<string | null> {
   if (!(await has("tsconfig.json"))) return null;
   if ((await has("bun.lock")) || (await has("bun.lockb"))) return "bunx tsc --noEmit";
   if ((await has("deno.json")) || (await has("deno.lock"))) return "deno check .";
-  if (await has("pnpm-lock.yaml")) return "pnpm tsc --noEmit";
-  return "npx tsc --noEmit";
+  const pm = await detectJsPm(cwd);
+  return pm === "pnpm" ? "pnpm tsc --noEmit" : "npx tsc --noEmit";
 }
 
 /**
@@ -473,12 +494,15 @@ export async function detectNativeChecks(cwd: string): Promise<string | null> {
   const cmds: string[] = [];
 
   // JS/TS — detect runner for local tool resolution
+  const pm = await detectJsPm(cwd);
   const runner =
     (await has("bun.lock")) || (await has("bun.lockb"))
       ? "bunx"
-      : (await has("package.json"))
-        ? "npx"
-        : "";
+      : pm === "pnpm"
+        ? "pnpm exec"
+        : (await has("package.json"))
+          ? "npx"
+          : "";
   const jsLint = await detectJsLinter(cwd, runner);
   if (jsLint) cmds.push(jsLint);
   const jsTc = await detectJsTypecheck(cwd);
