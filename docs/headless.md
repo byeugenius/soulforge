@@ -90,7 +90,7 @@ soulforge --help                             # Print usage
 | `--version` / `-v` | Print version. |
 | `--help` / `-h` | Print full usage. |
 
-`--set-key` works with all built-in providers (`anthropic`, `openai`, `google`, `xai`, `github-models`, `copilot`, `openrouter`, `llmgateway`, `vercel_gateway`) and any custom provider that has an `envVar` configured. GitHub Copilot (`copilot`) auto-detects the token from your IDE or `gh` CLI, no `--set-key` needed if you're already signed in. Copilot uses an unofficial internal API; use at your own risk.
+`--set-key` works with all built-in providers (`anthropic`, `openai`, `google`, `xai`, `github-models`, `copilot`, `openrouter`, `llmgateway`, `vercel_gateway`) and any custom provider that has an `envVar` configured. GitHub Copilot (`copilot`) requires an OAuth token from your IDE config (`~/.config/github-copilot/apps.json`). Unofficial internal API; use at your own risk.
 
 ## Output
 

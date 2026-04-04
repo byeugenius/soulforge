@@ -1,7 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
-import { loadConfig } from "../../../config/index.js";
 import { getProviderApiKey } from "../../secrets.js";
 import { CURRENT_VERSION } from "../../version.js";
 import type { ProviderDefinition, ProviderModelInfo } from "./types.js";
@@ -51,38 +49,11 @@ function invalidateBearer(): void {
   cachedBearer = null;
 }
 
-/** Try `gh auth token` as last resort. */
-function loadGhCliToken(): string | undefined {
-  try {
-    const result = spawnSync("gh", ["auth", "token"], {
-      timeout: 3000,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const token = result.stdout?.trim();
-    if (result.status === 0 && token) return token;
-  } catch {}
-  return undefined;
-}
-
 function getGitHubToken(): string {
-  // 1. Stored API key (via /keys or --set-key) — always checked
   const stored = getProviderApiKey(ENV_VAR);
   if (stored) return stored;
-
-  // 2. Auto-detect from env vars and gh CLI — only when opted in
-  const autoDetect = loadConfig().copilotAutoDetect === true;
-  if (autoDetect) {
-    const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-    if (envToken) return envToken;
-    const ghToken = loadGhCliToken();
-    if (ghToken) return ghToken;
-  }
-
   throw new Error(
-    autoDetect
-      ? "GitHub Copilot requires a token. Use /keys, --set-key copilot, GITHUB_TOKEN, or gh auth login."
-      : "GitHub Copilot requires a token. Use /keys or --set-key copilot to save your token. Enable copilotAutoDetect in config to also check GITHUB_TOKEN and gh CLI.",
+    "GitHub Copilot requires an OAuth token. Sign in via VS Code or JetBrains, then copy oauth_token from ~/.config/github-copilot/apps.json and save it with /keys or --set-key copilot.",
   );
 }
 
@@ -196,10 +167,7 @@ export const copilot: ProviderDefinition = {
   ],
 
   async checkAvailability() {
-    if (getProviderApiKey(ENV_VAR)) return true;
-    const autoDetect = loadConfig().copilotAutoDetect === true;
-    if (!autoDetect) return false;
-    return !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || loadGhCliToken());
+    return !!getProviderApiKey(ENV_VAR);
   },
 
   grouped: true,

@@ -23,7 +23,7 @@ You need at least one LLM provider key:
 | OpenAI | `OPENAI_API_KEY` | GPT-4o, o3, o4-mini |
 | xAI | `XAI_API_KEY` | Grok |
 | Google | `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini |
-| GitHub Copilot | `/keys` or `--set-key` | Claude, GPT-4o/5.4, Gemini, o-series |
+| GitHub Copilot | OAuth token from IDE | Claude, GPT-4o/5.4, Gemini, o-series |
 | GitHub Models | `GITHUB_MODELS_API_KEY` | GPT-4o, Llama, DeepSeek, Mistral |
 | Ollama | *(none -- runs locally)* | Llama, Mistral, Qwen, etc. |
 
@@ -39,7 +39,7 @@ Or use a single [AI Gateway](https://sdk.vercel.ai/docs/ai-sdk-core/provider-man
 
 If you have a [GitHub Copilot](https://github.com/features/copilot) subscription, SoulForge can use it as a provider.
 
-**Setup:** Save your token via `/keys` or `soulforge --set-key copilot <token>`. To find your token, extract `oauth_token` from `~/.config/github-copilot/apps.json` (sign in via VS Code or JetBrains first). Or enable `copilotAutoDetect` in config to pick up `GITHUB_TOKEN` and `gh auth token` automatically.
+**Setup:** Sign in to Copilot via your IDE (VS Code, JetBrains), then copy `oauth_token` from `~/.config/github-copilot/apps.json` and save with `/keys` or `soulforge --set-key copilot <token>`.
 
 Models available through Copilot: Claude Opus/Sonnet, GPT-4o, GPT-4.1, GPT-5.4, o4-mini, Gemini 2.5 Pro, and more. All included in your Copilot subscription.
 

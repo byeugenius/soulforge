@@ -84,7 +84,6 @@ const PROVIDERS: ProviderEntry[] = [
     url: "https://github.com/features/copilot",
     desc: "Free with Copilot sub",
     icon: getProvider("copilot")?.icon ?? "CP",
-    autoDetect: true,
   },
   {
     id: "openrouter-api-key",

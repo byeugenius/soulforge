@@ -2,7 +2,7 @@ import { decodePasteBytes, type PasteEvent, TextAttributes } from "@opentui/core
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
-import { loadConfig, saveGlobalConfig } from "../../config/index.js";
+import { saveGlobalConfig } from "../../config/index.js";
 import { icon, providerIcon } from "../../core/icons.js";
 import { getAllProviders } from "../../core/llm/providers/index.js";
 import {
@@ -65,8 +65,7 @@ type MenuItem =
   | { type: "key"; item: KeyItem; sources: SecretSources }
   | { type: "remove"; label: string; keyId: SecretKey }
   | { type: "section"; label: string }
-  | { type: "priority" }
-  | { type: "copilot-autodetect" };
+  | { type: "priority" };
 
 interface Props {
   visible: boolean;
@@ -226,9 +225,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
     null,
   );
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [copilotAutoDetect, setCopilotAutoDetect] = useState(
-    () => loadConfig().copilotAutoDetect === true,
-  );
 
   useEffect(() => {
     if (visible) {
@@ -286,7 +282,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
 
     items.push({ type: "section", label: "Settings" });
     items.push({ type: "priority" });
-    items.push({ type: "copilot-autodetect" });
     return items;
   }, [keyItems, keys]);
 
@@ -304,13 +299,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
     setInputTarget(target);
     setInputValue("");
     setMode("input");
-  };
-
-  const handleToggleCopilotAutoDetect = () => {
-    const next = !copilotAutoDetect;
-    setCopilotAutoDetect(next);
-    saveGlobalConfig({ copilotAutoDetect: next });
-    flash(`Copilot auto-detect: ${next ? "on" : "off"}`, "success");
   };
 
   const handleTogglePriority = () => {
@@ -408,8 +396,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
       const item = entry.mi;
       if (item.type === "priority") {
         handleTogglePriority();
-      } else if (item.type === "copilot-autodetect") {
-        handleToggleCopilotAutoDetect();
       } else if (item.type === "key") {
         handleSetKey(item.item.id);
       } else if (item.type === "remove") {
@@ -551,26 +537,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
             );
           }
 
-          if (mi.type === "copilot-autodetect") {
-            return (
-              <PopupRow key="copilot-autodetect" w={innerW}>
-                <text bg={bg} fg={isSelected ? t.brand : t.textDim}>
-                  {isSelected ? " › " : "   "}
-                </text>
-                <text bg={bg} fg={isSelected ? "white" : t.textSecondary}>
-                  {"Copilot auto-detect  "}
-                </text>
-                <text
-                  bg={bg}
-                  fg={copilotAutoDetect ? t.success : t.textDim}
-                  attributes={TextAttributes.BOLD}
-                >
-                  {copilotAutoDetect ? "on" : "off"}
-                </text>
-              </PopupRow>
-            );
-          }
-
           if (mi.type === "remove") {
             return (
               <PopupRow key={`rm-${mi.keyId}`} w={innerW}>
@@ -602,21 +568,6 @@ export function ApiKeySettings({ visible, onClose }: Props) {
                   <text bg={POPUP_BG} fg={t.textFaint}>
                     {"  "}
                     {selected.item.envVar}
-                  </text>
-                </PopupRow>
-              </>
-            );
-          }
-          if (selected.type === "copilot-autodetect") {
-            return (
-              <>
-                <Hr iw={innerW} />
-                <PopupRow w={innerW}>
-                  <text bg={POPUP_BG} fg={t.textDim}>
-                    {"   "}
-                    {copilotAutoDetect
-                      ? "checks GITHUB_TOKEN and gh CLI"
-                      : "only uses token from /keys"}
                   </text>
                 </PopupRow>
               </>

@@ -4,17 +4,16 @@ Unofficial integration using the same internal API as VS Code and JetBrains. **U
 
 ## Setup
 
-**Option A: Manual token** (default)
-
-Sign in to Copilot via your IDE, then extract `oauth_token` from `~/.config/github-copilot/apps.json`:
+1. Sign in to Copilot via VS Code, JetBrains, or any IDE with the Copilot extension
+2. Copy `oauth_token` from `~/.config/github-copilot/apps.json`
+3. Save it:
 
 ```bash
 soulforge --set-key copilot <token>
+# or use /keys in the TUI
 ```
 
-**Option B: Auto-detect**
-
-Set `"copilotAutoDetect": true` in `~/.soulforge/config.json`. SoulForge then checks `GITHUB_TOKEN`, `GH_TOKEN`, and `gh auth token` automatically.
+On Windows the config is at `~\AppData\Local\github-copilot\apps.json`.
 
 ## Usage
 
