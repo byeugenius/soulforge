@@ -168,13 +168,38 @@ export async function ensureModelMetadata(modelId: string): Promise<void> {
   ]);
 }
 
+interface OpenRouterPricing {
+  prompt?: string;
+  completion?: string;
+  input_cache_read?: string;
+  input_cache_write?: string;
+}
+
 interface OpenRouterModel {
   id: string;
   name: string;
   context_length: number;
+  pricing?: OpenRouterPricing;
 }
 
 let openRouterCache: OpenRouterModel[] | null = null;
+
+/** Look up OpenRouter pricing for a model ID. Returns per-million-token costs or null. */
+export function getOpenRouterModelPricing(
+  modelId: string,
+): { input: number; output: number; cacheRead: number; cacheWrite: number } | null {
+  const match = findOpenRouterModel(modelId);
+  if (!match?.pricing) return null;
+  const p = match.pricing;
+  // OpenRouter prices are per-token strings; convert to per-million-token numbers
+  const input = Number(p.prompt ?? "0") * 1e6;
+  const output = Number(p.completion ?? "0") * 1e6;
+  const cacheRead = Number(p.input_cache_read ?? "0") * 1e6;
+  // If no cache write price, default to input price (most providers charge same as input)
+  const cacheWrite = p.input_cache_write ? Number(p.input_cache_write) * 1e6 : input;
+  if (Number.isNaN(input) || Number.isNaN(output)) return null;
+  return { input, output, cacheRead, cacheWrite };
+}
 
 /**
  * Ensure the OpenRouter model catalog is cached. Delegates to the grouped fetch

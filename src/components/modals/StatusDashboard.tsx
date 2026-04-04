@@ -15,6 +15,7 @@ import { useRepoMapStore } from "../../stores/repomap.js";
 import {
   computeModelCost,
   computeTotalCostFromBreakdown,
+  isModelFree,
   type TokenUsage,
   useStatusBarStore,
 } from "../../stores/statusbar.js";
@@ -574,26 +575,28 @@ export function StatusDashboard({
       const sortedBd = Object.entries(su.modelBreakdown ?? {}).sort(
         ([midA, a], [midB, b]) => computeModelCost(midB, b) - computeModelCost(midA, a),
       );
+      const allFree = sortedBd.length > 0 && sortedBd.every(([mid]) => isModelFree(mid));
       const totalCost =
         sortedBd.length > 0 ? computeTotalCostFromBreakdown(su.modelBreakdown ?? {}) : 0;
-      if (totalCost > 0) {
+      if (totalCost > 0 || allFree) {
         const fmtCost = (c: number) => (c < 0.01 ? `${c.toFixed(3)}` : `${c.toFixed(2)}`);
         lines.push(<Spacer key="s-cost" innerW={innerW} />);
         const costHeader = isAllScope ? "Cost Breakdown — All Tabs" : "Cost Breakdown";
         lines.push(<SectionHeader key="h-cost" label={costHeader} innerW={innerW} />);
         const costLabelW = Math.min(30, innerW - 20);
         for (const [mid, usage] of sortedBd) {
+          const free = isModelFree(mid);
           const c = computeModelCost(mid, usage);
-          if (c <= 0) continue;
-          const pct = Math.round((c / totalCost) * 100);
+          if (c <= 0 && !free) continue;
+          const pct = totalCost > 0 ? Math.round((c / totalCost) * 100) : 0;
           const maxModelW = costLabelW - 4;
           const shortId = mid.length > maxModelW ? `${mid.slice(0, maxModelW - 1)}…` : mid;
           lines.push(
             <EntryRow
               key={`cost-${mid}`}
               label={`  ${shortId}`}
-              value={`${fmtCost(c)}  (${String(pct)}%)`}
-              valueColor={t.textPrimary}
+              value={free ? "FREE" : `${fmtCost(c)}  (${String(pct)}%)`}
+              valueColor={free ? t.success : t.textPrimary}
               labelW={costLabelW}
               rightAlign
               innerW={innerW}
@@ -604,8 +607,8 @@ export function StatusDashboard({
           <EntryRow
             key="cost-total"
             label="  Total"
-            value={fmtCost(totalCost)}
-            valueColor={t.warning}
+            value={allFree ? "FREE" : fmtCost(totalCost)}
+            valueColor={allFree ? t.success : t.warning}
             labelW={costLabelW}
             rightAlign
             innerW={innerW}
@@ -619,8 +622,11 @@ export function StatusDashboard({
       lines.push(<Spacer key="s-tabs" innerW={innerW} />);
       lines.push(<SectionHeader key="h-tabs" label="Per Tab" innerW={innerW} />);
 
-      const fmtCost = (c: number) =>
-        c <= 0 ? "—" : c < 0.01 ? `$${c.toFixed(3)}` : `$${c.toFixed(2)}`;
+      const fmtCost = (c: number, modelIds?: string[]) => {
+        if (modelIds && modelIds.length > 0 && modelIds.every((mid) => isModelFree(mid)))
+          return "FREE";
+        return c <= 0 ? "—" : c < 0.01 ? `$${c.toFixed(3)}` : `$${c.toFixed(2)}`;
+      };
 
       // Column header
       const colLabelW = Math.min(24, Math.floor(innerW * 0.35));
@@ -662,7 +668,7 @@ export function StatusDashboard({
               {colStr(fmtTokens(uncached), cw)}
               {colStr(fmtTokens(totalOut), cw)}
               {colStr(cachePct > 0 ? `${String(cachePct)}%` : "—", cw)}
-              {colStr(fmtCost(cost), cw)}
+              {colStr(fmtCost(cost, Object.keys(u.modelBreakdown ?? {})), cw)}
             </text>
           </PopupRow>,
         );

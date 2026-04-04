@@ -1,7 +1,11 @@
 import { fg as fgStyle, StyledText, type TextRenderable } from "@opentui/core";
 import { useEffect, useRef } from "react";
 import { getThemeTokens } from "../../core/theme/index.js";
-import { computeTotalCostFromBreakdown, useStatusBarStore } from "../../stores/statusbar.js";
+import {
+  computeTotalCostFromBreakdown,
+  isModelFree,
+  useStatusBarStore,
+} from "../../stores/statusbar.js";
 
 const STEP_MS = 50;
 const EASE = 0.35;
@@ -17,8 +21,9 @@ function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-function buildContent(costCents: number, cacheHitPct: number): StyledText {
+function buildContent(costCents: number, cacheHitPct: number, free: boolean): StyledText {
   const tk = getThemeTokens();
+  if (free) return new StyledText([fgStyle(tk.success)("FREE")]);
   const cost = costCents / 100;
   if (cost <= 0) return new StyledText([fgStyle(tk.textFaint)("$0")]);
   const color = cacheHitPct > 50 ? tk.success : tk.textSecondary;
@@ -31,16 +36,18 @@ export function TokenDisplay() {
   const costRef = useRef(0);
   const cacheHitRef = useRef(0);
   const currentCostRef = useRef(0);
+  const freeRef = useRef(false);
 
   useEffect(
     () =>
       useStatusBarStore.subscribe((state) => {
         const usage = state.tokenUsage;
         const breakdown = usage.modelBreakdown;
+        // Check if ALL models in the breakdown are free
+        const modelIds = Object.keys(breakdown);
+        freeRef.current = modelIds.length > 0 && modelIds.every((mid) => isModelFree(mid));
         const rawCost =
-          breakdown && Object.keys(breakdown).length > 0
-            ? computeTotalCostFromBreakdown(breakdown)
-            : 0;
+          breakdown && modelIds.length > 0 ? computeTotalCostFromBreakdown(breakdown) : 0;
         costRef.current = Math.round(rawCost * 100);
         const totalInput = usage.prompt + usage.subagentInput + usage.cacheRead + usage.cacheWrite;
         cacheHitRef.current = totalInput > 0 ? Math.round((usage.cacheRead / totalInput) * 100) : 0;
@@ -55,7 +62,11 @@ export function TokenDisplay() {
       currentCostRef.current = approach(currentCostRef.current, target);
       try {
         if (textRef.current)
-          textRef.current.content = buildContent(currentCostRef.current, cacheHitRef.current);
+          textRef.current.content = buildContent(
+            currentCostRef.current,
+            cacheHitRef.current,
+            freeRef.current,
+          );
       } catch {}
     }, STEP_MS);
     return () => clearInterval(timer);
@@ -65,7 +76,7 @@ export function TokenDisplay() {
     <text
       ref={textRef}
       truncate
-      content={buildContent(currentCostRef.current, cacheHitRef.current)}
+      content={buildContent(currentCostRef.current, cacheHitRef.current, freeRef.current)}
     />
   );
 }
