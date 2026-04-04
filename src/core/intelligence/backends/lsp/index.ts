@@ -3,7 +3,7 @@
 // - When Neovim is running → bridges to Neovim's LSP (nvim-bridge)
 // - When Neovim is NOT running → spawns servers directly (standalone-client)
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -72,6 +72,14 @@ const SUPPORTED_LANGUAGES: Set<Language> = new Set([
   "python",
   "go",
   "rust",
+  "java",
+  "kotlin",
+  "scala",
+  "csharp",
+  "swift",
+  "dart",
+  "elixir",
+  "ocaml",
   "lua",
   "c",
   "cpp",
@@ -82,8 +90,10 @@ const SUPPORTED_LANGUAGES: Set<Language> = new Set([
   "css",
   "html",
   "json",
+  "toml",
   "yaml",
   "dockerfile",
+  "vue",
 ]);
 
 export class LspBackend implements IntelligenceBackend {
@@ -1004,6 +1014,11 @@ export class LspBackend implements IntelligenceBackend {
     }
   }
 
+  /** Whether nvim is currently running and available for LSP. */
+  isNvimAvailable(): boolean {
+    return nvimBridge.isNvimAvailable();
+  }
+
   /** Warm up nvim LSP by opening a file and waiting for diagnostics. */
   async warmupNvim(file: string): Promise<boolean> {
     if (!nvimBridge.isNvimAvailable()) return false;
@@ -1516,6 +1531,15 @@ const PROJECT_FILES: Partial<Record<Language, string[]>> = {
   python: ["pyproject.toml", "setup.py"],
   go: ["go.mod"],
   rust: ["Cargo.toml"],
+  java: ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+  kotlin: ["build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle"],
+  scala: ["build.sbt"],
+  csharp: [".csproj", ".sln"],
+  dart: ["pubspec.yaml"],
+  elixir: ["mix.exs"],
+  ruby: ["Gemfile"],
+  php: ["composer.json"],
+  swift: ["Package.swift"],
 };
 
 function findProjectRootForLanguage(file: string, language: Language): string | null {
@@ -1524,10 +1548,28 @@ function findProjectRootForLanguage(file: string, language: Language): string | 
 
   let dir = dirname(resolve(file));
   const root = resolve("/");
-  while (dir !== root) {
-    for (const marker of markers) {
+  const MAX_DIRS = 100;
+  let dirCount = 0;
+  while (dir !== root && dirCount < MAX_DIRS) {
+    dirCount++;
+    // Check if any markers are extension-only (e.g. ".csproj", ".sln")
+    const extMarkers = markers.filter((m) => m.startsWith(".") && !m.includes("/"));
+    const nameMarkers = markers.filter((m) => !m.startsWith(".") || m.includes("/"));
+
+    // Read directory once for all extension markers
+    if (extMarkers.length > 0) {
+      try {
+        const entries = readdirSync(dir);
+        for (const marker of extMarkers) {
+          if (entries.some((e) => e.endsWith(marker))) return dir;
+        }
+      } catch {}
+    }
+
+    for (const marker of nameMarkers) {
       if (existsSync(join(dir, marker))) return dir;
     }
+
     dir = dirname(dir);
   }
   return null;
@@ -1538,7 +1580,7 @@ function escapeRegex(str: string): string {
 }
 
 const DEFINITION_KEYWORDS =
-  /\b(function|class|const|let|var|type|interface|enum|struct|trait|fn|def|func|impl|mod|pub)\b/;
+  /\b(function|class|const|let|var|type|interface|enum|struct|trait|fn|def|func|impl|mod|pub|public|private|protected|static|void|abstract|override|sealed|record|annotation|object|fun|suspend|data|inline|operator|infix|external|companion|lateinit|val)\b/;
 
 function isDefinitionLine(line: string): boolean {
   // Skip comments
