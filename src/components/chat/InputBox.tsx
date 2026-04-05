@@ -10,13 +10,15 @@ import { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "../../core/history/fuz
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
 import { useUIStore } from "../../stores/ui.js";
+import type { ImageAttachment } from "../../types/index.js";
+import { readClipboardImageAsync } from "../../utils/clipboard.js";
 
 interface Props {
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, images?: ImageAttachment[]) => void;
   isLoading: boolean;
   isCompacting?: boolean;
   isFocused?: boolean;
-  onQueue?: (msg: string) => void;
+  onQueue?: (msg: string, images?: ImageAttachment[]) => void;
   onExit?: () => void;
   queueCount?: number;
   cwd?: string;
@@ -77,6 +79,19 @@ const INPUT_KEY_BINDINGS = [
   { name: "linefeed", action: "newline" as const },
 ];
 
+/** Re-create virtual extmarks for all [image-N] tokens in the textarea.
+ *  Must be called after setText() which resets the buffer and destroys extmarks. */
+function syncImageExtmarks(ta: TextareaRenderable): void {
+  ta.extmarks.clear();
+  const text = ta.plainText;
+  const re = /\[image-\d+\]/g;
+  let m = re.exec(text);
+  while (m !== null) {
+    ta.extmarks.create({ start: m.index, end: m.index + m[0].length, virtual: true });
+    m = re.exec(text);
+  }
+}
+
 export const InputBox = memo(function InputBox({
   onSubmit,
   isLoading,
@@ -111,6 +126,10 @@ export const InputBox = memo(function InputBox({
     Array<{ id: number; text: string; collapsed: boolean; placeholder: string }>
   >([]);
   const pasteIdCounter = useRef(0);
+  // Image attachments from clipboard paste
+  const pendingImages = useRef<ImageAttachment[]>([]);
+  const imageCounter = useRef(0);
+  const imageLoadingRef = useRef(false);
 
   const showBusy = isLoading || isCompacting;
 
@@ -273,10 +292,13 @@ export const InputBox = memo(function InputBox({
     isNavigatingHistory.current = true;
     setValue("");
     textareaRef.current?.setText("");
+    textareaRef.current?.extmarks.clear();
     cursorLineRef.current = 0;
     lineCountRef.current = 1;
     historyIdx.current = -1;
     pasteBlocks.current = [];
+    pendingImages.current = [];
+    imageCounter.current = 0;
     setVisualLines(1);
   }, []);
 
@@ -305,6 +327,10 @@ export const InputBox = memo(function InputBox({
 
       if (input.trim() === "") return;
 
+      // Block submit while clipboard image probe is in-flight —
+      // ensures the image attachment lands before the message is sent
+      if (imageLoadingRef.current) return;
+
       // Expand any collapsed paste blocks before submitting
       let finalInput = input;
       for (const block of pasteBlocks.current) {
@@ -313,15 +339,24 @@ export const InputBox = memo(function InputBox({
         }
       }
 
+      // Sync pendingImages: only keep images whose [label] is still in the text
+      if (pendingImages.current.length > 0) {
+        pendingImages.current = pendingImages.current.filter((img) =>
+          finalInput.includes(`[${img.label}]`),
+        );
+      }
+
       // During loading or compacting: slash commands execute immediately, messages queue
       if ((isLoading || isCompacting) && !finalInput.trim().startsWith("/")) {
-        onQueue?.(finalInput.trim());
+        const images = pendingImages.current.length > 0 ? [...pendingImages.current] : undefined;
+        onQueue?.(finalInput.trim(), images);
         resetInput();
         return;
       }
 
       pushHistory(finalInput.trim());
-      onSubmit(finalInput.trim());
+      const images = pendingImages.current.length > 0 ? [...pendingImages.current] : undefined;
+      onSubmit(finalInput.trim(), images);
       resetInput();
     },
     [
@@ -339,16 +374,28 @@ export const InputBox = memo(function InputBox({
     ],
   );
 
-  // Sync textarea content → React state
+  // Sync textarea content → React state.
+  // Safety net: if an [image-N] token was removed (via extmark deletion),
+  // sync pendingImages to match.
   const handleContentChange = useCallback(() => {
-    const text = textareaRef.current?.plainText ?? "";
+    const ta = textareaRef.current;
+    const text = ta?.plainText ?? "";
     if (isNavigatingHistory.current) {
       isNavigatingHistory.current = false;
     } else {
       historyIdx.current = -1;
     }
+
+    // Sync pendingImages with surviving tokens
+    if (pendingImages.current.length > 0) {
+      const surviving = pendingImages.current.filter((img) => text.includes(`[${img.label}]`));
+      if (surviving.length < pendingImages.current.length) {
+        pendingImages.current = surviving;
+      }
+    }
+
     setValue(text);
-    lineCountRef.current = textareaRef.current?.lineCount ?? 1;
+    lineCountRef.current = ta?.lineCount ?? 1;
     setVisualLines(calcVisualLines(text));
   }, [calcVisualLines]);
 
@@ -374,11 +421,12 @@ export const InputBox = memo(function InputBox({
     setVisualLines(calcVisualLines(valueRef.current));
   }, [calcVisualLines]);
 
-  // Intercept paste — 4+ lines get collapsed inline
+  // Intercept paste — collapse 4+ line text pastes
   useEffect(() => {
     const handler = (event: PasteEvent) => {
       if (!isFocused) return;
       const text = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
       const pastedLines = text.split("\n");
 
       // 1-3 lines: let textarea handle normally
@@ -400,6 +448,35 @@ export const InputBox = memo(function InputBox({
   }, [isFocused, renderer]);
 
   useKeyboard((evt) => {
+    // Ctrl+V: probe clipboard for image data in the background.
+    // We do NOT preventDefault — the terminal's bracketed paste handles text normally.
+    // If an image is found, we append [image-N] after the text paste completes.
+    if (isFocused && evt.ctrl && evt.name === "v") {
+      if (imageLoadingRef.current) return;
+      imageLoadingRef.current = true;
+
+      readClipboardImageAsync()
+        .then((clipImg) => {
+          imageLoadingRef.current = false;
+          if (!clipImg) return;
+          const ta = textareaRef.current;
+          if (!ta) return;
+          const idx = ++imageCounter.current;
+          const label = `image-${String(idx)}`;
+          pendingImages.current.push({
+            label,
+            base64: clipImg.data.toString("base64"),
+            mediaType: clipImg.mediaType,
+          });
+          ta.insertText(`[${label}] `);
+          syncImageExtmarks(ta);
+        })
+        .catch(() => {
+          imageLoadingRef.current = false;
+        });
+      return;
+    }
+
     if (hasMatchesForNav) {
       if (evt.name === "down") {
         setSelectedIdx((prev) => (prev + 1) % matches.length);

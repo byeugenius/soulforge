@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ModelMessage, StreamTextResult, TextPart, ToolCallPart, ToolSet } from "ai";
+import type {
+  ImagePart,
+  ModelMessage,
+  StreamTextResult,
+  TextPart,
+  ToolCallPart,
+  ToolSet,
+} from "ai";
 import { generateText } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StreamSegment } from "../components/chat/StreamSegmentList.js";
@@ -55,6 +62,7 @@ import { useToolsStore } from "../stores/tools.js";
 import type {
   AppConfig,
   ChatMessage,
+  ImageAttachment,
   InteractiveCallbacks,
   MessageSegment,
   PendingPlanReview,
@@ -226,7 +234,7 @@ export interface ChatInstance {
   planMode: boolean;
   planRequest: string | null;
   // Actions
-  handleSubmit: (input: string) => Promise<void>;
+  handleSubmit: (input: string, images?: ImageAttachment[]) => Promise<void>;
   summarizeConversation: (opts?: { skipQueueDrain?: boolean }) => Promise<void>;
   abort: () => void;
   interactiveCallbacks: InteractiveCallbacks;
@@ -1347,7 +1355,7 @@ export function useChat({
   );
 
   const handleSubmit = useCallback(
-    async (input: string) => {
+    async (input: string, images?: ImageAttachment[]) => {
       // Read current config via ref — effectiveConfig object is NOT in deps
       // (new object every render would force constant callback recreation)
       const effectiveConfig = effectiveConfigRef.current;
@@ -1371,11 +1379,27 @@ export function useChat({
         role: "user",
         content: input,
         timestamp: Date.now(),
+        images: images && images.length > 0 ? images : undefined,
       };
       setMessages((prev) => [...prev, userMsg]);
 
       const currentCoreMessages = coreMessagesRef.current;
-      const userCoreMsg: ModelMessage = { role: "user" as const, content: input };
+      // Build user content: text + optional image parts for multimodal models
+      let userContent: string | Array<TextPart | ImagePart>;
+      if (images && images.length > 0) {
+        const parts: Array<TextPart | ImagePart> = [{ type: "text" as const, text: input }];
+        for (const img of images) {
+          parts.push({
+            type: "image" as const,
+            image: Buffer.from(img.base64, "base64"),
+            mediaType: img.mediaType,
+          });
+        }
+        userContent = parts;
+      } else {
+        userContent = input;
+      }
+      const userCoreMsg: ModelMessage = { role: "user" as const, content: userContent };
       // Sanitize: strip empty assistant text blocks that would cause Anthropic to reject.
       // These can persist from prior sessions or aborted streams.
       const sanitized = currentCoreMessages.filter((m, i, arr) => {
@@ -1656,13 +1680,14 @@ export function useChat({
           setLiveToolCalls([]);
         };
 
-        const drainSteering = (): string | null => {
+        const drainSteering = (): { text: string; images?: ImageAttachment[] } | null => {
           if (steeringAbortedRef.current) return null;
           const queue = messageQueueRef.current;
           if (queue.length === 0) return null;
           // Drain ALL queued steering messages at once
           const drained: ChatMessage[] = [];
           const texts: string[] = [];
+          const allImages: ImageAttachment[] = [];
           for (const item of queue) {
             const content = item?.content;
             if (content) {
@@ -1673,8 +1698,10 @@ export function useChat({
                 timestamp: Date.now(),
                 showInChat: true,
                 isSteering: true,
+                images: item.images && item.images.length > 0 ? item.images : undefined,
               });
               texts.push(content);
+              if (item.images) allImages.push(...item.images);
             }
           }
           messageQueueRef.current = [];
@@ -1685,7 +1712,11 @@ export function useChat({
             flushBeforeSteering(drained);
           }
 
-          return texts.length > 0 ? texts.join("\n\n") : null;
+          if (texts.length === 0) return null;
+          return {
+            text: texts.join("\n\n"),
+            images: allImages.length > 0 ? allImages : undefined,
+          };
         };
 
         if (!contextManager.isRepoMapReady()) {

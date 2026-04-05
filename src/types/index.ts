@@ -117,6 +117,7 @@ export interface InteractiveCallbacks {
 export interface QueuedMessage {
   content: string;
   queuedAt: number;
+  images?: ImageAttachment[];
 }
 
 export type MessageSegment =
@@ -124,6 +125,15 @@ export type MessageSegment =
   | { type: "tools"; toolCallIds: string[] }
   | { type: "reasoning"; content: string; id: string }
   | { type: "plan"; plan: Plan };
+
+export interface ImageAttachment {
+  /** Sequential label shown in chat, e.g. "image-1" */
+  label: string;
+  /** Base64-encoded image data */
+  base64: string;
+  /** IANA media type */
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+}
 
 export interface ChatMessage {
   id: string;
@@ -139,6 +149,8 @@ export interface ChatMessage {
   isSteering?: boolean;
   /** How long the assistant response took (ms). Set when the response completes. */
   durationMs?: number;
+  /** Attached images (pasted from clipboard or referenced by path). */
+  images?: ImageAttachment[];
 }
 
 export interface ToolCall {
