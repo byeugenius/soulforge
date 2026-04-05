@@ -70,6 +70,9 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   // Code execution (sandboxed smithy)
   code_execution: "smithy",
 
+  // Vision (inline image display)
+  soul_vision: "soul-map",
+
   // Repo map powered
   soul_grep: "soul-map",
   soul_find: "soul-map",
@@ -155,6 +158,7 @@ const TOOL_ICON_MAP: Record<string, string> = {
   ask_user: "question",
   task_list: "plan",
   code_execution: "smithy",
+  soul_vision: "image",
   _repomap: "repomap",
   soul_grep: "search",
   soul_find: "search",
@@ -206,6 +210,7 @@ export const TOOL_LABELS: Record<string, string> = {
   ask_user: "Asking",
   task_list: "Tasks",
   code_execution: "Forging",
+  soul_vision: "Visualizing",
   soul_grep: "Searching",
   soul_find: "Finding",
   soul_analyze: "Analyzing",
@@ -245,6 +250,7 @@ export const TOOL_LABELS_DONE: Record<string, string> = {
   ask_user: "Asked",
   task_list: "Tasks",
   code_execution: "Forged",
+  soul_vision: "Visualized",
   soul_grep: "Searched",
   soul_find: "Found",
   soul_analyze: "Analyzed",

@@ -19,6 +19,7 @@ import { parsePlanOutput } from "../../types/plan-schema.js";
 import { Spinner } from "../layout/shared.js";
 import { StructuredPlanView } from "../plan/StructuredPlanView.js";
 import { DiffView } from "./DiffView.js";
+import { ImageDisplay } from "./ImageDisplay.js";
 import { filterQuietTools, LOCKIN_EDIT_TOOLS, LockInWrapper } from "./LockInStreamView.js";
 import { Markdown, useCodeExpanded } from "./Markdown.js";
 import { ReasoningBlock } from "./ReasoningBlock.js";
@@ -353,13 +354,8 @@ function ToolCallRow({
   const imageContent =
     hasExpandedContent && props.imageArt && props.imageArt.length > 0
       ? props.imageArt.map((img) => (
-          <box key={img.name} flexDirection="column" marginTop={1}>
-            <ghostty-terminal
-              ansi={img.lines.join("\n")}
-              cols={130}
-              rows={img.lines.length}
-              trimEnd
-            />
+          <box key={img.name} flexDirection="column">
+            <ImageDisplay img={img} />
           </box>
         ))
       : null;

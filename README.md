@@ -118,6 +118,10 @@ SoulForge already knows. On startup it builds a **live dependency graph** of you
 <td>Installable skills for domain work. Destructive actions need confirmation. Auto mode for full autonomy.</td>
 </tr>
 <tr>
+<td><strong>Inline images</strong></td>
+<td>Pixel-perfect images and animated GIFs inline in chat via <code>soul_vision</code>. Kitty graphics protocol with Unicode placeholders. Supports local files, URLs, and code execution output. <a href="#inline-image-support">See terminal support</a></td>
+</tr>
+<tr>
 <td><strong>4-tier intelligence</strong></td>
 <td>LSP, ts-morph, tree-sitter, regex. 33 languages. Dual LSP: Neovim bridge when the editor is open, standalone servers when it's not. <a href="docs/architecture.md">More</a></td>
 </tr>
@@ -132,6 +136,89 @@ SoulForge already knows. On startup it builds a **live dependency graph** of you
 </div>
 
 <img src="assets/separator.svg" width="100%" height="8" />
+
+### Inline image support
+
+The `soul_vision` tool renders images directly in your chat — pixel-perfect on supported terminals, high-quality terminal art everywhere else.
+
+<table>
+<thead>
+<tr>
+<th width="140">Terminal</th>
+<th width="120">Static images</th>
+<th width="120">Animated GIF</th>
+<th>Method</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Kitty</strong></td>
+<td>✅ pixel-perfect</td>
+<td>✅ animated</td>
+<td>Kitty graphics protocol + Unicode placeholders</td>
+<td>Full support — the gold standard</td>
+</tr>
+<tr>
+<td><strong>Ghostty</strong></td>
+<td>✅ pixel-perfect</td>
+<td>⬜ static frame</td>
+<td>Kitty graphics protocol + Unicode placeholders</td>
+<td>Animation not yet implemented (<a href="https://github.com/ghostty-org/ghostty/discussions/5218">#5218</a>)</td>
+</tr>
+<tr>
+<td><strong>Konsole</strong></td>
+<td>✅ pixel-perfect</td>
+<td>⬜ static frame</td>
+<td>Kitty graphics protocol + Unicode placeholders</td>
+<td>Animation not yet implemented</td>
+</tr>
+<tr>
+<td><strong>iTerm2</strong></td>
+<td>🎨 chafa / half-block</td>
+<td>⬜ static frame</td>
+<td>Terminal art (chafa → built-in half-block)</td>
+<td>Has Kitty graphics but no Unicode placeholders (<a href="https://github.com/gnachman/iTerm2/commit/4fe5b21">commit</a>)</td>
+</tr>
+<tr>
+<td><strong>WezTerm</strong></td>
+<td>🎨 chafa / half-block</td>
+<td>⬜ static frame</td>
+<td>Terminal art (chafa → built-in half-block)</td>
+<td>No Unicode placeholders (<a href="https://github.com/wezterm/wezterm/issues/986">#986</a>)</td>
+</tr>
+<tr>
+<td><strong>Warp</strong></td>
+<td>🎨 chafa / half-block</td>
+<td>⬜ static frame</td>
+<td>Terminal art (chafa → built-in half-block)</td>
+<td>No Unicode placeholders (<a href="https://github.com/warpdotdev/Warp/issues/6210">#6210</a>)</td>
+</tr>
+<tr>
+<td><strong>Alacritty</strong></td>
+<td>🎨 chafa / half-block</td>
+<td>⬜ static frame</td>
+<td>Terminal art (chafa → built-in half-block)</td>
+<td>No graphics protocol</td>
+</tr>
+<tr>
+<td><strong>Others</strong></td>
+<td>🎨 half-block art</td>
+<td>⬜ static frame</td>
+<td>Built-in half-block ANSI art</td>
+<td>Any truecolor terminal works</td>
+</tr>
+</tbody>
+</table>
+
+<sub>
+
+**Legend:** ✅ = native pixel rendering &nbsp; 🎨 = terminal art &nbsp; ⬜ = no animation (shows first frame)
+
+**Formats:** PNG, JPG, WebP, GIF, BMP, TIFF — non-PNG auto-converted via `ffmpeg`, `sips` (macOS), or ImageMagick.
+Install `chafa` for higher quality terminal art on non-pixel terminals. Install `ffmpeg` for animated GIF + format conversion.
+
+</sub>
 
 ## How it compares
 

@@ -10,6 +10,7 @@ import {
   type ToolCategory,
 } from "../../core/tool-display.js";
 import { DiffView } from "./DiffView.js";
+import { ImageDisplay } from "./ImageDisplay.js";
 import {
   detectCodeExecution,
   detectOutsideCwd,
@@ -44,8 +45,14 @@ interface StaticToolRowProps {
     impact?: string;
   } | null;
   diffStyle?: "default" | "sidebyside" | "compact";
-  /** Half-block ANSI art for inline image display. */
-  imageArt?: Array<{ name: string; lines: string[] }>;
+  /** Image art for inline display (half-block ANSI or Kitty placeholders). */
+  imageArt?: Array<{
+    name: string;
+    lines: string[];
+    kittyImageId?: number;
+    kittyCols?: number;
+    kittyRows?: number;
+  }>;
   /** When true, skip rendering diff and imageArt — caller handles them in a tree continuation box. */
   suppressExpanded?: boolean;
 }
@@ -134,13 +141,8 @@ export function StaticToolRow({
       ) : null}
       {!suppressExpanded && imageArt && imageArt.length > 0
         ? imageArt.map((img) => (
-            <box key={img.name} flexDirection="column" marginTop={1}>
-              <ghostty-terminal
-                ansi={img.lines.join("\n")}
-                cols={130}
-                rows={img.lines.length}
-                trimEnd
-              />
+            <box key={img.name} flexDirection="column">
+              <ImageDisplay img={img} />
             </box>
           ))
         : null}
@@ -251,7 +253,13 @@ export function buildLiveToolRowProps(
     result?: string;
     error?: string;
     backend?: string;
-    imageArt?: Array<{ name: string; lines: string[] }>;
+    imageArt?: Array<{
+      name: string;
+      lines: string[];
+      kittyImageId?: number;
+      kittyCols?: number;
+      kittyRows?: number;
+    }>;
   },
   extra?: {
     isRepoMapHit?: boolean;
@@ -381,7 +389,13 @@ export function buildFinalToolRowProps(tc: {
     error?: string;
     backend?: string;
   };
-  imageArt?: Array<{ name: string; lines: string[] }>;
+  imageArt?: Array<{
+    name: string;
+    lines: string[];
+    kittyImageId?: number;
+    kittyCols?: number;
+    kittyRows?: number;
+  }>;
 }): StaticToolRowProps {
   const toolDisplay = resolveToolDisplay(tc.name);
   const argsJson = JSON.stringify(tc.args);

@@ -45,6 +45,7 @@ import {
   tryInterceptNavigate,
 } from "./repo-map-intercept.js";
 import { shellTool } from "./shell";
+import { showImage } from "./show-image.js";
 import { createSkillsTool } from "./skills.js";
 import { soulAnalyzeTool } from "./soul-analyze.js";
 import { soulFindTool } from "./soul-find.js";
@@ -812,6 +813,25 @@ export function buildTools(
         resetReadCounter();
         return soulImpactTool.createExecute(opts?.repoMap)(args);
       }),
+    }),
+
+    soul_vision: tool({
+      description:
+        "Display an image inline in the chat. Supports PNG, JPG, WebP, GIF, BMP, TIFF. " +
+        "Accepts a local file path or a URL (https://...). " +
+        "The image is rendered as real pixels in Kitty or half-block art in other terminals.",
+      inputSchema: z.object({
+        path: z.string().describe("Path to the image file or URL (https://...)"),
+        cols: z
+          .number()
+          .nullable()
+          .optional()
+          .transform(nullToUndef)
+          .describe("Display width in terminal columns (default: 120, max: 200)"),
+      }),
+      execute: async (args) => {
+        return showImage(args, effectiveCwd);
+      },
     }),
 
     shell: tool({

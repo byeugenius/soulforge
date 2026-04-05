@@ -1,4 +1,6 @@
-import { readFileSync, statSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { closeSync, openSync, readFileSync, statSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, extname, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 
@@ -22,6 +24,46 @@ export function canRenderImages(): boolean {
     term === "hyper" ||
     term === "alacritty"
   );
+}
+
+/**
+ * Check if the terminal supports the Kitty graphics protocol WITH Unicode placeholders.
+ * Unicode placeholders (U=1) are essential — they let the image integrate with the TUI
+ * by embedding U+10EEEE chars in the cell buffer. Without them, images paint behind the TUI.
+ *
+ * Confirmed Unicode placeholder support:
+ *   Kitty, Ghostty, Konsole
+ *
+ * NO Unicode placeholder support (images break TUI):
+ *   WezTerm — https://github.com/wezterm/wezterm/issues/986 (only in community fork)
+ *   iTerm2  — https://github.com/gnachman/iTerm2/commit/4fe5b21
+ *   Warp    — https://github.com/warpdotdev/Warp/issues/6210
+ */
+export function isKittyGraphicsTerminal(): boolean {
+  const term = process.env.TERM_PROGRAM?.toLowerCase() ?? "";
+
+  // Explicitly excluded — no Unicode placeholder support
+  if (process.env.ITERM_SESSION_ID || term === "iterm.app" || term === "iterm2") return false;
+  if (term === "warp" || term === "wezterm") return false;
+  if (process.env.WEZTERM_PANE !== undefined) return false;
+
+  if (process.env.KITTY_WINDOW_ID) return true;
+  if (term === "kitty" || term === "ghostty") return true;
+
+  // Konsole sets KONSOLE_VERSION
+  if (process.env.KONSOLE_VERSION) return true;
+
+  return false;
+}
+
+/**
+ * Check if the terminal supports Kitty graphics ANIMATION (a=f frames, a=a control).
+ * Currently only Kitty itself supports animation.
+ * Ghostty, WezTerm, Konsole support static images but NOT animation.
+ * See: https://github.com/ghostty-org/ghostty/discussions/5218
+ */
+export function supportsKittyAnimation(): boolean {
+  return !!(process.env.KITTY_WINDOW_ID || process.env.TERM_PROGRAM?.toLowerCase() === "kitty");
 }
 
 // ── Image file validation ──
@@ -156,9 +198,16 @@ function decodePng(data: Buffer): PngData | null {
 
 // ── Half-block art generator ──
 
-/** Default display width in terminal columns. */
-const DEFAULT_COLS = 120;
+/** Max display width in terminal columns. */
 const MAX_COLS = 200;
+const IMAGE_WIDTH_RATIO = 0.6;
+const MIN_IMAGE_COLS = 40;
+
+/** Get responsive image width — 60% of terminal, clamped to [40, MAX_COLS]. */
+function getDefaultCols(): number {
+  const termCols = process.stdout.columns ?? 120;
+  return Math.max(MIN_IMAGE_COLS, Math.min(Math.floor(termCols * IMAGE_WIDTH_RATIO), MAX_COLS));
+}
 
 /**
  * Sample a rectangular region of the image using area averaging.
@@ -217,7 +266,7 @@ export function imageToHalfBlockArt(filePath: string, opts?: { cols?: number }):
   }
   if (!png) return null;
 
-  const targetCols = Math.min(opts?.cols ?? DEFAULT_COLS, MAX_COLS);
+  const targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
   const scaleX = png.width / targetCols;
   // Each display row covers 2 pixel rows (top half + bottom half)
   const scaleY = scaleX; // Keep aspect ratio square per cell
@@ -298,4 +347,410 @@ export function renderImages(paths: string[], cwd?: string): ImageArtResult {
   }
 
   return { rendered, arts };
+}
+
+// ── Kitty graphics protocol ──
+
+/**
+ * Allocate a Kitty image ID with high-entropy RGB encoding.
+ * Sequential IDs (1,2,3) map to nearly-identical fg colors (#000001, #000002, ...)
+ * which TUI renderers may conflate. We hash the counter so each image has a
+ * visually distinct fg color, ensuring opentui always emits the color change.
+ */
+let _kittyCounter = 0;
+function allocateKittyImageId(): number {
+  _kittyCounter++;
+  const n = _kittyCounter;
+  const r = (n * 37) & 0xff;
+  const g = (n * 97) & 0xff;
+  const b = (n * 163) & 0xff;
+  return (r << 16) | (g << 8) | b || 1;
+}
+
+/**
+ * Write a chunked base64 payload to the terminal via the Kitty graphics protocol.
+ * `firstCtrl` is the control string for the first chunk (e.g. `a=t,f=100,i=1,q=2`).
+ * For animation frames, continuation chunks must also include `a=f`.
+ */
+function writeChunkedPayload(
+  fd: number,
+  base64Data: string,
+  firstCtrl: string,
+  isAnimFrame = false,
+): void {
+  const CHUNK_SIZE = 4096;
+  const chunks: string[] = [];
+  for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
+    chunks.push(base64Data.slice(i, i + CHUNK_SIZE));
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    const isFirst = i === 0;
+    const isLast = i === chunks.length - 1;
+    const m = isLast ? 0 : 1;
+
+    let ctrl: string;
+    if (isFirst) {
+      ctrl = `${firstCtrl},m=${String(m)}`;
+    } else {
+      // Animation frame continuation chunks must include a=f per the protocol spec
+      ctrl = isAnimFrame ? `a=f,m=${String(m)}` : `m=${String(m)}`;
+    }
+
+    writeSync(fd, `\x1b_G${ctrl};${chunks[i]}\x1b\\`);
+  }
+}
+
+/** Open /dev/tty for writing. Returns fd or -1 if unavailable. */
+function openTty(): number {
+  try {
+    return openSync("/dev/tty", "w");
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * Transmit a static image to Kitty via the graphics protocol.
+ * Writes directly to /dev/tty to bypass TUI renderer stdout interception.
+ * Uses `a=t` (transmit only) + virtual placement `U=1` for Unicode placeholders.
+ */
+function transmitKittyImage(base64Data: string, imageId: number, cols: number, rows: number): void {
+  const fd = openTty();
+  if (fd < 0) return;
+
+  try {
+    writeChunkedPayload(fd, base64Data, `a=t,f=100,i=${String(imageId)},q=2`);
+    writeSync(
+      fd,
+      `\x1b_Ga=p,i=${String(imageId)},U=1,c=${String(cols)},r=${String(rows)},q=2\x1b\\`,
+    );
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Animation frame: PNG data + delay in milliseconds. */
+export interface KittyAnimFrame {
+  png: Buffer;
+  delay: number;
+}
+
+/**
+ * Transmit an animated image (multiple frames) to Kitty.
+ *
+ * 1. First frame: `a=t` (standard transmit) + virtual placement
+ * 2. Subsequent frames: `a=f` (animation frame) with `z=<delay_ms>`
+ * 3. Set root frame gap: `a=a,r=1,z=<delay_ms>`
+ * 4. Start animation: `a=a,s=3,v=1` (loop infinitely)
+ */
+function transmitKittyAnimation(
+  frames: KittyAnimFrame[],
+  imageId: number,
+  cols: number,
+  rows: number,
+): void {
+  if (frames.length === 0) return;
+  const fd = openTty();
+  if (fd < 0) return;
+
+  try {
+    // 1. Transmit base frame (first frame)
+    const first = frames[0];
+    if (!first) return;
+    const firstBase64 = first.png.toString("base64");
+    writeChunkedPayload(fd, firstBase64, `a=t,f=100,i=${String(imageId)},q=2`);
+
+    // 2. Create virtual placement
+    writeSync(
+      fd,
+      `\x1b_Ga=p,i=${String(imageId)},U=1,c=${String(cols)},r=${String(rows)},q=2\x1b\\`,
+    );
+
+    // 3. Transmit subsequent frames
+    for (let i = 1; i < frames.length; i++) {
+      const frame = frames[i];
+      if (!frame) continue;
+      const delay = Math.max(frame.delay, 20); // min 20ms to avoid 0-gap issues
+      const frameBase64 = frame.png.toString("base64");
+      writeChunkedPayload(
+        fd,
+        frameBase64,
+        `a=f,i=${String(imageId)},z=${String(delay)},f=100,q=2`,
+        true, // animation frame continuation chunks need a=f
+      );
+    }
+
+    // 4. Set the gap for the root frame (frame 1)
+    const rootDelay = Math.max(first.delay, 20);
+    writeSync(fd, `\x1b_Ga=a,i=${String(imageId)},r=1,z=${String(rootDelay)},q=2\x1b\\`);
+
+    // 5. Start looping animation (s=3 = run normally, v=1 = loop infinitely)
+    writeSync(fd, `\x1b_Ga=a,i=${String(imageId)},s=3,v=1,q=2\x1b\\`);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Delete a Kitty image by ID. */
+export function deleteKittyImage(imageId: number): void {
+  const fd = openTty();
+  if (fd < 0) return;
+  try {
+    writeSync(fd, `\x1b_Ga=d,d=i,i=${String(imageId)},q=2\x1b\\`);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Get PNG dimensions from raw data without full decode.
+ */
+function getPngDimensions(data: Buffer | Uint8Array): { width: number; height: number } | null {
+  if (data.length < 24) return null;
+  if (data[0] !== 0x89 || data[1] !== 0x50 || data[2] !== 0x4e || data[3] !== 0x47) return null;
+
+  // IHDR is always the first chunk after the 8-byte signature
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const type = buf.toString("ascii", 12, 16);
+  if (type !== "IHDR") return null;
+
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  if (width === 0 || height === 0) return null;
+  return { width, height };
+}
+
+// ── Render image from raw data (base64 / Buffer) ──
+
+/**
+ * Render an image from raw data for inline display in chat.
+ *
+ * For Kitty terminals: transmits real image via graphics protocol and returns
+ * Unicode placeholder ANSI lines that Kitty renders as actual pixels.
+ *
+ * For other truecolor terminals: decodes PNG and generates half-block ANSI art.
+ *
+ * Returns null if the image can't be rendered (unsupported format, no truecolor, etc.)
+ */
+/** Result from renderImageFromData — includes optional Kitty metadata for direct rendering. */
+export interface ImageArt {
+  name: string;
+  lines: string[];
+  /** Original image width in pixels */
+  width?: number;
+  /** Original image height in pixels */
+  height?: number;
+  /** Kitty graphics: image ID (non-zero = Kitty placeholder mode) */
+  kittyImageId?: number;
+  /** Kitty graphics: number of columns */
+  kittyCols?: number;
+  /** Kitty graphics: number of rows */
+  kittyRows?: number;
+}
+
+// ── chafa fallback for non-Kitty terminals ──
+
+let _chafaAvailable: boolean | null = null;
+
+/**
+ * Render an image using chafa (if installed).
+ * chafa produces much higher quality terminal art than our built-in half-block renderer,
+ * using optimal symbol selection, dithering, and color quantization.
+ * Returns ANSI lines or null if chafa is not available.
+ */
+function renderWithChafa(data: Buffer, _name: string, cols: number): string[] | null {
+  // Cache chafa availability check
+  if (_chafaAvailable === false) return null;
+  if (_chafaAvailable === null) {
+    try {
+      execSync("chafa --version", { stdio: "pipe", timeout: 3000 });
+      _chafaAvailable = true;
+    } catch {
+      _chafaAvailable = false;
+      return null;
+    }
+  }
+
+  const id = `soul-vision-chafa-${String(Date.now())}`;
+  // Use .png extension always — chafa auto-detects format from content, not extension.
+  // This avoids shell injection from user-provided filenames.
+  const tmpPath = resolve(tmpdir(), `${id}.png`);
+
+  try {
+    const fd = openSync(tmpPath, "w");
+    writeSync(fd, data);
+    closeSync(fd);
+
+    const output = execSync(
+      `chafa -f symbols -c full -s ${String(cols)} --animate off "${tmpPath}"`,
+      {
+        timeout: 15_000,
+        stdio: ["pipe", "pipe", "pipe"],
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    );
+
+    const lines = output.split("\n");
+    // chafa adds a trailing newline — remove empty last line
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return lines.length > 0 ? lines : null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      execSync(`rm -f "${tmpPath}"`, { stdio: "pipe", timeout: 2000 });
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+export function renderImageFromData(
+  data: Buffer | Uint8Array,
+  name: string,
+  opts?: { cols?: number },
+): ImageArt | null {
+  if (!canRenderImages()) return null;
+
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  const dims = getPngDimensions(buf);
+  if (!dims) return null; // Only PNG supported for now
+
+  const targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
+
+  if (isKittyGraphicsTerminal()) {
+    const imageId = allocateKittyImageId();
+    const base64 = buf.toString("base64");
+    const cellAspect = 2;
+    const imageAspect = dims.height / dims.width;
+    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / cellAspect));
+
+    transmitKittyImage(base64, imageId, targetCols, targetRows);
+
+    // Return empty placeholder lines + Kitty metadata.
+    // The React component renders U+10EEEE placeholders directly via <text>+<span>
+    // instead of ghostty-terminal (which can't handle supplementary plane PUA chars).
+    const lines = Array.from({ length: targetRows }, () => " ".repeat(targetCols));
+    return {
+      name,
+      lines,
+      width: dims.width,
+      height: dims.height,
+      kittyImageId: imageId,
+      kittyCols: targetCols,
+      kittyRows: targetRows,
+    };
+  }
+
+  // Non-Kitty: try chafa first (much better quality), then built-in half-block art
+  const chafaLines = renderWithChafa(buf, name, targetCols);
+  if (chafaLines) {
+    return { name, lines: chafaLines, width: dims.width, height: dims.height };
+  }
+
+  const png = decodePng(buf);
+  if (!png) return null;
+
+  const lines = halfBlockArtFromPng(png, targetCols);
+  return { name, lines, width: png.width, height: png.height };
+}
+
+/**
+ * Render an animated image (GIF) for inline display in chat.
+ *
+ * For Kitty: transmits all frames via the animation protocol, starts looping.
+ * For non-Kitty: renders just the first frame as half-block art (static).
+ *
+ * @param frames Array of { png: Buffer, delay: number (ms) } for each GIF frame
+ * @param name Display name
+ * @param opts.cols Target column width
+ */
+export function renderAnimatedImage(
+  frames: KittyAnimFrame[],
+  name: string,
+  opts?: { cols?: number },
+): ImageArt | null {
+  if (!canRenderImages() || frames.length === 0) return null;
+
+  const first = frames[0];
+  if (!first) return null;
+  const firstDims = getPngDimensions(first.png);
+  if (!firstDims) return null;
+
+  const targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
+
+  if (supportsKittyAnimation()) {
+    const imageId = allocateKittyImageId();
+    const cellAspect = 2;
+    const imageAspect = firstDims.height / firstDims.width;
+    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / cellAspect));
+
+    transmitKittyAnimation(frames, imageId, targetCols, targetRows);
+
+    const lines = Array.from({ length: targetRows }, () => " ".repeat(targetCols));
+    return {
+      name,
+      lines,
+      width: firstDims.width,
+      height: firstDims.height,
+      kittyImageId: imageId,
+      kittyCols: targetCols,
+      kittyRows: targetRows,
+    };
+  }
+
+  // Non-Kitty: static first frame only
+  const png = decodePng(first.png);
+  if (!png) return null;
+
+  const lines = halfBlockArtFromPng(png, targetCols);
+  return { name, lines, width: png.width, height: png.height };
+}
+
+/**
+ * Core half-block art renderer that works on already-decoded PngData.
+ * Extracted from imageToHalfBlockArt so it can be shared with buffer-based rendering.
+ */
+function halfBlockArtFromPng(png: PngData, targetCols: number): string[] {
+  const scaleX = png.width / targetCols;
+  const scaleY = scaleX;
+  const scaledHeight = Math.ceil(png.height / scaleY);
+  const targetRows = scaledHeight + (scaledHeight % 2);
+
+  const lines: string[] = [];
+
+  for (let cy = 0; cy < targetRows; cy += 2) {
+    let line = "";
+    for (let cx = 0; cx < targetCols; cx++) {
+      const srcX0 = cx * scaleX;
+      const srcX1 = (cx + 1) * scaleX;
+
+      const [r1, g1, b1] = sampleArea(
+        png.pixels,
+        png.width,
+        png.height,
+        srcX0,
+        cy * scaleY,
+        srcX1,
+        (cy + 1) * scaleY,
+      );
+      const [r2, g2, b2] = sampleArea(
+        png.pixels,
+        png.width,
+        png.height,
+        srcX0,
+        (cy + 1) * scaleY,
+        srcX1,
+        (cy + 2) * scaleY,
+      );
+
+      line += `\x1b[38;2;${r1};${g1};${b1}m\x1b[48;2;${r2};${g2};${b2}m▀`;
+    }
+    line += "\x1b[0m";
+    lines.push(line);
+  }
+
+  return lines;
 }

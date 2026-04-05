@@ -146,8 +146,14 @@ export interface ToolCall {
   name: string;
   args: Record<string, unknown>;
   result?: ToolResult;
-  /** Half-block ANSI art for inline image display (shell tool with outputImages). */
-  imageArt?: Array<{ name: string; lines: string[] }>;
+  /** Image art for inline display. Half-block ANSI art or Kitty graphics placeholders. */
+  imageArt?: Array<{
+    name: string;
+    lines: string[];
+    kittyImageId?: number;
+    kittyCols?: number;
+    kittyRows?: number;
+  }>;
   /** Parent code_execution tool call ID — set when this tool was called from code execution. */
   parentId?: string;
 }

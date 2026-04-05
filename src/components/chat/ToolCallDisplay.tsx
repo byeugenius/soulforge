@@ -15,6 +15,7 @@ import { SPINNER_FRAMES, useSpinnerFrame } from "../layout/shared.js";
 import { StructuredPlanView } from "../plan/StructuredPlanView.js";
 import { DiffView } from "./DiffView.js";
 import { useDispatchDisplay } from "./dispatch-display.js";
+import { ImageDisplay } from "./ImageDisplay.js";
 import {
   type AgentInfo,
   CACHE_ICONS,
@@ -38,8 +39,14 @@ export interface LiveToolCall {
   backend?: string;
   /** Parent code_execution tool call ID — set when called from code execution sandbox. */
   parentId?: string;
-  /** Half-block ANSI art lines for inline image display. */
-  imageArt?: Array<{ name: string; lines: string[] }>;
+  /** Image art for inline display (half-block ANSI or Kitty placeholders). */
+  imageArt?: Array<{
+    name: string;
+    lines: string[];
+    kittyImageId?: number;
+    kittyCols?: number;
+    kittyRows?: number;
+  }>;
 }
 
 export const SUBAGENT_NAMES = new Set(["dispatch", "web_search"]);
@@ -753,13 +760,8 @@ const ToolRow = memo(
     const imageContent =
       staticProps.imageArt && staticProps.imageArt.length > 0
         ? staticProps.imageArt.map((img) => (
-            <box key={img.name} flexDirection="column" marginTop={1}>
-              <ghostty-terminal
-                ansi={img.lines.join("\n")}
-                cols={130}
-                rows={img.lines.length}
-                trimEnd
-              />
+            <box key={img.name} flexDirection="column">
+              <ImageDisplay img={img} />
             </box>
           ))
         : null;

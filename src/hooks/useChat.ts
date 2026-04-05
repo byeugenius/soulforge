@@ -2223,6 +2223,39 @@ export function useChat({
               toolCharsRef.current += part.delta.length;
               break;
             }
+            case "file": {
+              // Code execution can generate image files — capture them for inline display
+              const file = (part as { file?: { mediaType?: string; uint8Array?: Uint8Array } })
+                .file;
+              if (
+                file?.mediaType?.startsWith("image/") &&
+                file.uint8Array &&
+                file.uint8Array.length > 0
+              ) {
+                // Find the active code_execution tool call to attach the image to
+                const codeExecTc = tcBuf.find(
+                  (c) => c.toolName === "code_execution" && c.state === "running",
+                );
+                if (codeExecTc) {
+                  try {
+                    const { renderImageFromData } = await import("../core/terminal/image.js");
+                    const art = renderImageFromData(
+                      Buffer.from(file.uint8Array),
+                      `image-${String(Date.now())}.png`,
+                    );
+                    if (art) {
+                      if (!codeExecTc.imageArt) codeExecTc.imageArt = [];
+                      codeExecTc.imageArt.push(art);
+                      toolCallsDirty.current = true;
+                      queueMicrotaskFlush();
+                    }
+                  } catch {
+                    // Image rendering failed — silently skip
+                  }
+                }
+              }
+              break;
+            }
             case "tool-result": {
               markToolEnd();
               toolCallsDirty.current = true;
@@ -2240,7 +2273,13 @@ export function useChat({
                 ) {
                   tc.imageArt = (
                     part.output as {
-                      _imageArt: Array<{ name: string; lines: string[] }>;
+                      _imageArt: Array<{
+                        name: string;
+                        lines: string[];
+                        kittyImageId?: number;
+                        kittyCols?: number;
+                        kittyRows?: number;
+                      }>;
                     }
                   )._imageArt;
                 }
