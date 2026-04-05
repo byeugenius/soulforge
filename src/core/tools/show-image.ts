@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, resolve } from "node:path";
@@ -11,6 +11,7 @@ import {
   renderImageFromData,
   supportsKittyAnimation,
 } from "../terminal/image.js";
+import { emitToolProgress } from "./tool-progress.js";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const SUPPORTED_EXTENSIONS = /\.(png|jpg|jpeg|bmp|gif|webp|tiff|tif)$/i;
@@ -114,7 +115,7 @@ async function fetchImageUrl(
 const _toolCache: Record<string, boolean> = {};
 
 function hasTool(name: string): boolean {
-  if (name in _toolCache) return _toolCache[name]!;
+  if (name in _toolCache) return _toolCache[name] ?? false;
   try {
     // `where` on Windows, `which` everywhere else
     const cmd = process.platform === "win32" ? `where ${name}` : `which ${name}`;
@@ -123,7 +124,7 @@ function hasTool(name: string): boolean {
   } catch {
     _toolCache[name] = false;
   }
-  return _toolCache[name]!;
+  return _toolCache[name] ?? false;
 }
 
 export function hasYtDlp(): boolean {
@@ -139,12 +140,83 @@ const MAX_GIF_DURATION = 10; // seconds — keep GIFs compact
 const MAX_GIF_FPS = 8; // lower fps = much smaller GIF
 const MAX_GIF_WIDTH = 320; // pixels — smaller = much smaller GIF
 
+// ── Fun progress messages matching SoulForge vibe ──
+
+const YT_DL_MESSAGES = [
+  "Summoning the pixels",
+  "Negotiating with the internet",
+  "Convincing the server",
+  "Downloading forbidden knowledge",
+  "Acquiring visual data",
+  "Intercepting the signal",
+  "Extracting the essence",
+  "Pulling frames from the void",
+];
+
+const FFMPEG_MESSAGES = [
+  "Forging the GIF",
+  "Transmuting video to art",
+  "Compressing spacetime",
+  "Weaving pixel tapestry",
+  "Distilling motion",
+  "Crystallizing frames",
+  "Bending light into loops",
+  "Encoding the soul",
+];
+
+function randomMsg(pool: string[]): string {
+  return pool[Math.floor(Math.random() * pool.length)] ?? pool[0] ?? "";
+}
+
+function progress(toolCallId: string | undefined, tag: string, msg: string): void {
+  if (!toolCallId) return;
+  emitToolProgress({ toolCallId, text: `[${tag}] ${msg}` });
+}
+
+// ── Async spawn helper ──
+
+function spawnAsync(
+  cmd: string,
+  args: string[],
+  opts: {
+    timeout?: number;
+    onStderr?: (line: string) => void;
+  } = {},
+): Promise<{ code: number; stdout: Buffer; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: opts.timeout ?? 120_000,
+    });
+    const stdoutChunks: Buffer[] = [];
+    let stderr = "";
+    proc.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    proc.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (opts.onStderr) {
+        for (const line of text.split("\n")) {
+          if (line.trim()) opts.onStderr(line);
+        }
+      }
+    });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      resolve({ code: code ?? 1, stdout: Buffer.concat(stdoutChunks), stderr });
+    });
+  });
+}
+
 /**
- * Convert a video file (local path) to GIF using ffmpeg.
+ * Convert a video file (local path) to GIF using ffmpeg (async).
  * Two-pass encoding: palette generation → dithered GIF.
  * Returns GIF buffer or null.
  */
-function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer | null {
+async function videoToGif(
+  videoPath: string,
+  toolCallId?: string,
+  maxDuration = MAX_GIF_DURATION,
+): Promise<Buffer | null> {
   if (!hasFfmpeg()) return null;
 
   const id = `soul-vision-v2g-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
@@ -152,18 +224,55 @@ function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer |
   const palettePath = resolve(tmpdir(), `${id}-palette.png`);
 
   try {
-    // Two-pass for quality: generate palette then use it
-    // Scale to max width, cap duration and fps
     const filters = `fps=${String(MAX_GIF_FPS)},scale=${String(MAX_GIF_WIDTH)}:-1:flags=lanczos`;
-    // -update 1 required for ffmpeg 8.x single-image output
-    execSync(
-      `ffmpeg -y -t ${String(maxDuration)} -i "${videoPath}" -vf "${filters},palettegen=stats_mode=diff" -update 1 "${palettePath}" 2>/dev/null`,
-      { timeout: 60_000, stdio: "pipe" },
+    const msg = randomMsg(FFMPEG_MESSAGES);
+    progress(toolCallId, "FFMPEG", `${msg}… (palette)`);
+
+    const pass1 = await spawnAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-t",
+        String(maxDuration),
+        "-i",
+        videoPath,
+        "-vf",
+        `${filters},palettegen=stats_mode=diff`,
+        "-update",
+        "1",
+        palettePath,
+      ],
+      { timeout: 60_000 },
     );
-    execSync(
-      `ffmpeg -y -t ${String(maxDuration)} -i "${videoPath}" -i "${palettePath}" -lavfi "${filters} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3" -loop 0 "${gifPath}" 2>/dev/null`,
-      { timeout: 60_000, stdio: "pipe" },
+    if (pass1.code !== 0 || !existsSync(palettePath)) return null;
+
+    progress(toolCallId, "FFMPEG", `${msg}… (encoding)`);
+
+    const pass2 = await spawnAsync(
+      "ffmpeg",
+      [
+        "-y",
+        "-t",
+        String(maxDuration),
+        "-i",
+        videoPath,
+        "-i",
+        palettePath,
+        "-lavfi",
+        `${filters} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=3`,
+        "-loop",
+        "0",
+        gifPath,
+      ],
+      {
+        timeout: 60_000,
+        onStderr: (line) => {
+          const m = line.match(/time=(\d+:\d+:\d+\.\d+)/);
+          if (m) progress(toolCallId, "FFMPEG", `${msg}… ${m[1]}`);
+        },
+      },
     );
+    if (pass2.code !== 0) return null;
 
     if (existsSync(gifPath)) {
       const data = readFileSync(gifPath);
@@ -184,21 +293,23 @@ function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer |
 }
 
 /**
- * Extract a single frame from a video as PNG using ffmpeg.
+ * Extract a single frame from a video as PNG using ffmpeg (async).
  * Much faster than full GIF conversion — used for non-Kitty terminals.
  */
-function videoToFrame(videoPath: string): Buffer | null {
+async function videoToFrame(videoPath: string, toolCallId?: string): Promise<Buffer | null> {
   if (!hasFfmpeg()) return null;
 
   const id = `soul-vision-frame-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
   const framePath = resolve(tmpdir(), `${id}.png`);
 
   try {
-    execSync(`ffmpeg -y -i "${videoPath}" -frames:v 1 -q:v 2 "${framePath}" 2>/dev/null`, {
-      timeout: 15_000,
-      stdio: "pipe",
-    });
-    if (existsSync(framePath)) {
+    progress(toolCallId, "FFMPEG", "Extracting frame…");
+    const result = await spawnAsync(
+      "ffmpeg",
+      ["-y", "-i", videoPath, "-frames:v", "1", "-q:v", "2", framePath],
+      { timeout: 15_000 },
+    );
+    if (result.code === 0 && existsSync(framePath)) {
       const data = readFileSync(framePath);
       if (data.length > 0 && data.length <= MAX_IMAGE_SIZE) return data;
     }
@@ -223,9 +334,10 @@ function videoToFrame(videoPath: string): Buffer | null {
  *   ffmpeg only    → can't download video URLs (need yt-dlp)
  *   neither        → error with install instructions
  */
-function fetchVideoFromUrl(
+async function fetchVideoFromUrl(
   url: string,
-): { data: Buffer; name: string; isGif: boolean } | { error: string } {
+  toolCallId?: string,
+): Promise<{ data: Buffer; name: string; isGif: boolean } | { error: string }> {
   const urlName = (() => {
     try {
       return basename(new URL(url).pathname) || "video";
@@ -267,22 +379,39 @@ function fetchVideoFromUrl(
     // yt-dlp + ffmpeg → download video → convert to GIF
     if (hasFfmpeg()) {
       try {
-        execSync(
-          `yt-dlp -f "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best" ` +
-            `--max-filesize 20M -o "${videoPath}" "${url}"`,
-          { timeout: 120_000, stdio: "pipe" },
+        const dlMsg = randomMsg(YT_DL_MESSAGES);
+        progress(toolCallId, "YT-DL", `${dlMsg}…`);
+
+        const dlResult = await spawnAsync(
+          "yt-dlp",
+          [
+            "-f",
+            "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
+            "--max-filesize",
+            "20M",
+            "-o",
+            videoPath,
+            url,
+          ],
+          {
+            timeout: 120_000,
+            onStderr: (line) => {
+              const m = line.match(/(\d+\.\d+)%/);
+              if (m) progress(toolCallId, "YT-DL", `${dlMsg}… ${m[1]}%`);
+            },
+          },
         );
 
-        if (existsSync(videoPath)) {
+        if (dlResult.code === 0 && existsSync(videoPath)) {
           // Kitty: full animated GIF
           if (supportsKittyAnimation()) {
-            const gif = videoToGif(videoPath);
+            const gif = await videoToGif(videoPath, toolCallId);
             if (gif) {
               return { data: gif, name: `${urlName}.gif`, isGif: true };
             }
           }
           // Others: single frame PNG (much faster)
-          const frame = videoToFrame(videoPath);
+          const frame = await videoToFrame(videoPath, toolCallId);
           if (frame) {
             return { data: frame, name: `${urlName}-frame.png`, isGif: false };
           }
@@ -294,13 +423,23 @@ function fetchVideoFromUrl(
 
     // Fallback: yt-dlp thumbnail only (no ffmpeg needed)
     try {
-      execSync(
-        `yt-dlp --skip-download --write-thumbnail --convert-thumbnails png -o "${thumbBase}" "${url}"`,
-        { timeout: 30_000, stdio: "pipe" },
+      progress(toolCallId, "YT-DL", "Grabbing thumbnail…");
+      const thumbResult = await spawnAsync(
+        "yt-dlp",
+        [
+          "--skip-download",
+          "--write-thumbnail",
+          "--convert-thumbnails",
+          "png",
+          "-o",
+          thumbBase,
+          url,
+        ],
+        { timeout: 30_000 },
       );
       const thumbFile = `${thumbBase}.png`;
       cleanupFiles.push(thumbFile);
-      if (existsSync(thumbFile)) {
+      if (thumbResult.code === 0 && existsSync(thumbFile)) {
         const data = readFileSync(thumbFile);
         if (data.length > 0 && data.length <= MAX_IMAGE_SIZE) {
           const suffix = hasFfmpeg()
@@ -339,10 +478,11 @@ function fetchVideoFromUrl(
 /**
  * Handle a local video file: convert to GIF (Kitty) or extract frame (others).
  */
-function convertLocalVideo(
+async function convertLocalVideo(
   filePath: string,
   displayName: string,
-): { data: Buffer; name: string; isGif: boolean } | { error: string } {
+  toolCallId?: string,
+): Promise<{ data: Buffer; name: string; isGif: boolean } | { error: string }> {
   if (!hasFfmpeg()) {
     return {
       error:
@@ -357,14 +497,14 @@ function convertLocalVideo(
 
   // Kitty: full animated GIF
   if (supportsKittyAnimation()) {
-    const gif = videoToGif(filePath);
+    const gif = await videoToGif(filePath, toolCallId);
     if (gif) {
       return { data: gif, name: `${baseName}.gif`, isGif: true };
     }
   }
 
   // Others: single frame PNG (much faster)
-  const frame = videoToFrame(filePath);
+  const frame = await videoToFrame(filePath, toolCallId);
   if (frame) {
     return { data: frame, name: `${baseName}-frame.png`, isGif: false };
   }
@@ -542,6 +682,7 @@ export function parseGifDelays(data: Buffer): number[] {
 export async function showImage(
   args: SoulVisionArgs,
   cwd: string,
+  toolCallId?: string,
 ): Promise<ToolResult & { _imageArt?: Array<{ name: string; lines: string[] }> }> {
   if (!canRenderImages()) {
     return {
@@ -559,7 +700,7 @@ export async function showImage(
     if ("error" in result) {
       // If the URL returned non-image content, try video extraction
       if (result.error.startsWith("not_image:")) {
-        const videoResult = fetchVideoFromUrl(args.path);
+        const videoResult = await fetchVideoFromUrl(args.path, toolCallId);
         if ("error" in videoResult) {
           return { success: false, output: videoResult.error };
         }
@@ -595,7 +736,7 @@ export async function showImage(
           output: `Video too large (${String(Math.round(stat.size / 1024 / 1024))}MB). Max: 20MB.`,
         };
       }
-      const videoResult = convertLocalVideo(filePath, args.path);
+      const videoResult = await convertLocalVideo(filePath, args.path, toolCallId);
       if ("error" in videoResult) {
         return { success: false, output: videoResult.error };
       }

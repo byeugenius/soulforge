@@ -45,6 +45,7 @@ import {
   completeInProgressTasks,
   resetInProgressTasks,
 } from "../core/tools/task-list.js";
+import { onToolProgress } from "../core/tools/tool-progress.js";
 import { getIOClient } from "../core/workers/io-client.js";
 import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
@@ -326,7 +327,8 @@ export function useChat({
             tc.state === p.state &&
             tc.args === p.args &&
             tc.result === p.result &&
-            tc.error === p.error
+            tc.error === p.error &&
+            tc.progressText === p.progressText
           ) {
             next[i] = p;
             continue;
@@ -1510,6 +1512,15 @@ export function useChat({
           completedResultChars.clear();
           subagentCumulative.clear();
           if (visibleRef.current) useStatusBarStore.getState().setSubagentChars(0);
+          toolCallsDirty.current = true;
+          queueMicrotaskFlush();
+        }
+      });
+
+      const unsubToolProgress = onToolProgress((event) => {
+        const tc = liveToolCallsBuffer.current.find((c) => c.id === event.toolCallId);
+        if (tc && tc.state === "running") {
+          tc.progressText = event.text;
           toolCallsDirty.current = true;
           queueMicrotaskFlush();
         }
@@ -2866,6 +2877,7 @@ export function useChat({
         unsubStallWatch3?.();
         unsubAgentStats();
         unsubMultiAgent();
+        unsubToolProgress();
         if (visibleRef.current) useStatusBarStore.getState().setSubagentChars(0);
         if (abortController.signal.aborted) getWorkspaceCoordinator().releaseAll(tabId);
         if (!stallRetryPendingRef.current) setIsLoading(false);

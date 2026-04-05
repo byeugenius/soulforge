@@ -39,6 +39,8 @@ export interface LiveToolCall {
   backend?: string;
   /** Parent code_execution tool call ID — set when called from code execution sandbox. */
   parentId?: string;
+  /** Live progress text from long-running tools (e.g. "[YT-DL] Summoning the pixels… 42%"). */
+  progressText?: string;
   /** Image art for inline display (half-block ANSI or Kitty placeholders). */
   imageArt?: Array<{
     name: string;
@@ -606,6 +608,9 @@ const ToolRow = memo(
       } else if (tc.state === "done") {
         suffix = ` → ${String(done)}/${String(total)} agents`;
       }
+    } else if (tc.state === "running" && tc.progressText) {
+      suffix = ` · ${tc.progressText}`;
+      if (seconds != null && seconds > 0) suffix += ` · ${formatDuration(seconds)}`;
     } else if (tc.state === "running" && seconds != null && seconds > 0) {
       suffix = ` ${formatDuration(seconds)}`;
     } else if (tc.state === "error" && tc.error) {
@@ -799,6 +804,7 @@ const ToolRow = memo(
     prev.tc.result === next.tc.result &&
     prev.tc.error === next.tc.error &&
     prev.tc.backend === next.tc.backend &&
+    prev.tc.progressText === next.tc.progressText &&
     prev.seconds === next.seconds &&
     prev.diffStyle === next.diffStyle &&
     prev.treePosition?.isFirst === next.treePosition?.isFirst &&
