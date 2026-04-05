@@ -148,9 +148,26 @@ export function hasFfmpeg(): boolean {
 
 const VIDEO_EXTENSIONS = /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp)$/i;
 const MAX_VIDEO_DOWNLOAD = 20 * 1024 * 1024; // 20 MB max download
-const MAX_GIF_DURATION = 10; // seconds — keep GIFs compact
+const MAX_GIF_DURATION = 10; // seconds
 const MAX_GIF_FPS = 8; // lower fps = much smaller GIF
-const MAX_GIF_WIDTH = 320; // pixels — smaller = much smaller GIF
+const MAX_GIF_WIDTH = 320; // pixels
+
+// ── Install instruction constants ──
+
+const INSTALL_FFMPEG =
+  "  macOS:  brew install ffmpeg\n" +
+  "  Linux:  sudo apt install ffmpeg\n" +
+  "  Windows: winget install Gyan.FFmpeg";
+
+const INSTALL_YTDLP =
+  "  macOS:  brew install yt-dlp\n" +
+  "  Linux:  pip install yt-dlp\n" +
+  "  Windows: winget install yt-dlp.yt-dlp";
+
+const INSTALL_BOTH =
+  "  macOS:  brew install yt-dlp ffmpeg\n" +
+  "  Linux:  pip install yt-dlp && sudo apt install ffmpeg\n" +
+  "  Windows: winget install yt-dlp.yt-dlp && winget install Gyan.FFmpeg";
 
 // ── Fun progress messages matching SoulForge vibe ──
 
@@ -392,23 +409,14 @@ async function fetchVideoFromUrl(
   // Neither tool available
   if (!hasYtDlp() && !hasFfmpeg()) {
     return {
-      error:
-        "This URL points to a video page, not a direct image. " +
-        "Install yt-dlp and ffmpeg to extract and display video content:\n" +
-        "  macOS:  brew install yt-dlp ffmpeg\n" +
-        "  Linux:  pip install yt-dlp && sudo apt install ffmpeg\n" +
-        "  Windows: winget install yt-dlp.yt-dlp && winget install Gyan.FFmpeg",
+      error: `This URL points to a video page, not a direct image. Install yt-dlp and ffmpeg:\n${INSTALL_BOTH}`,
     };
   }
 
   // ffmpeg only — can't download video URLs
   if (!hasYtDlp()) {
     return {
-      error:
-        "This URL points to a video page. ffmpeg is installed but yt-dlp is needed to download videos:\n" +
-        "  macOS:  brew install yt-dlp\n" +
-        "  Linux:  pip install yt-dlp\n" +
-        "  Windows: winget install yt-dlp.yt-dlp",
+      error: `This URL points to a video page. yt-dlp is needed to download videos:\n${INSTALL_YTDLP}`,
     };
   }
 
@@ -498,14 +506,10 @@ async function fetchVideoFromUrl(
       // thumbnail extraction failed
     }
 
-    // yt-dlp available but no ffmpeg — explain
+    // yt-dlp available but no ffmpeg
     if (!hasFfmpeg()) {
       return {
-        error:
-          "yt-dlp is installed but ffmpeg is needed to convert video to GIF:\n" +
-          "  macOS:  brew install ffmpeg\n" +
-          "  Linux:  sudo apt install ffmpeg\n" +
-          "  Windows: winget install Gyan.FFmpeg",
+        error: `yt-dlp is installed but ffmpeg is needed to convert video to GIF:\n${INSTALL_FFMPEG}`,
       };
     }
 
@@ -525,13 +529,7 @@ async function convertLocalVideo(
   signal?: AbortSignal,
 ): Promise<{ data: Buffer; name: string; isGif: boolean } | { error: string }> {
   if (!hasFfmpeg()) {
-    return {
-      error:
-        "Video files require ffmpeg to convert:\n" +
-        "  macOS:  brew install ffmpeg\n" +
-        "  Linux:  sudo apt install ffmpeg\n" +
-        "  Windows: winget install Gyan.FFmpeg",
-    };
+    return { error: `Video files require ffmpeg to convert:\n${INSTALL_FFMPEG}` };
   }
 
   const baseName = basename(displayName, extname(displayName));
@@ -843,12 +841,11 @@ export async function showImage(
   if (!pngData) {
     return {
       success: false,
-      output:
-        "Failed to convert image to PNG. Install ffmpeg (brew install ffmpeg / apt install ffmpeg) for non-PNG format support.",
+      output: `Failed to convert image to PNG. Install ffmpeg for non-PNG format support:\n${INSTALL_FFMPEG}`,
     };
   }
 
-  const art = renderImageFromData(pngData, name, { cols: args.cols });
+  const art = await renderImageFromData(pngData, name, { cols: args.cols });
   if (!art) {
     return {
       success: false,
@@ -947,7 +944,9 @@ export async function restoreSessionImages(messages: ChatMessage[], cwd: string)
         if (!art) {
           const pngData = await ensurePng(data, name);
           if (!pngData) continue;
-          art = renderImageFromData(pngData, name, { cols: tc.imageArt?.[imgIdx]?.kittyCols });
+          art = await renderImageFromData(pngData, name, {
+            cols: tc.imageArt?.[imgIdx]?.kittyCols,
+          });
         }
 
         if (art && tc.imageArt) {

@@ -11,17 +11,8 @@
 
 import { basename } from "node:path";
 import { icon } from "../../core/icons.js";
+import type { ImageArt } from "../../core/terminal/image.js";
 import { useTheme } from "../../core/theme/index.js";
-
-interface ImageArtItem {
-  name: string;
-  lines: string[];
-  width?: number;
-  height?: number;
-  kittyImageId?: number;
-  kittyCols?: number;
-  kittyRows?: number;
-}
 
 /** Kitty Unicode placeholder character (Private Use Area Supplementary B). */
 const PLACEHOLDER = "\u{10EEEE}";
@@ -76,7 +67,7 @@ function buildPlaceholderRow(cols: number, row: number): string {
   return result;
 }
 
-function ImageHeader({ img }: { img: ImageArtItem }) {
+function ImageHeader({ img }: { img: ImageArt }) {
   const t = useTheme();
   const filename = basename(img.name);
   const res = img.width && img.height ? `${String(img.width)}×${String(img.height)}` : null;
@@ -119,7 +110,7 @@ function KittyPlaceholder({
   );
 }
 
-export function ImageDisplay({ img }: { img: ImageArtItem }) {
+export function ImageDisplay({ img }: { img: ImageArt }) {
   if (img.kittyImageId && img.kittyCols && img.kittyRows) {
     return (
       <box flexDirection="column" flexShrink={0}>

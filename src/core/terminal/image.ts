@@ -1,5 +1,13 @@
-import { execSync } from "node:child_process";
-import { closeSync, openSync, readFileSync, statSync, writeSync } from "node:fs";
+import { spawn } from "node:child_process";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
@@ -213,6 +221,17 @@ function getDefaultCols(): number {
   return Math.max(MIN_IMAGE_COLS, Math.min(Math.floor(termCols * IMAGE_WIDTH_RATIO), MAX_COLS));
 }
 
+/** Clamp targetCols so the rendered height stays within MAX_ROWS. */
+function clampColsToMaxRows(targetCols: number, imageWidth: number, imageHeight: number): number {
+  const cellAspect = 2;
+  const imageAspect = imageHeight / imageWidth;
+  const estimatedRows = Math.round((targetCols * imageAspect) / cellAspect);
+  if (estimatedRows > MAX_ROWS) {
+    return Math.max(MIN_IMAGE_COLS, Math.floor((MAX_ROWS * cellAspect) / imageAspect));
+  }
+  return targetCols;
+}
+
 /**
  * Sample a rectangular region of the image using area averaging.
  * Returns [r, g, b] averaged over all pixels in the region.
@@ -270,63 +289,12 @@ export function imageToHalfBlockArt(filePath: string, opts?: { cols?: number }):
   }
   if (!png) return null;
 
-  let targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
-
-  // Clamp height: if aspect ratio would exceed MAX_ROWS, reduce cols to fit
-  const cellAspect = 2;
-  const imageAspect = png.height / png.width;
-  const estimatedRows = Math.round((targetCols * imageAspect) / cellAspect);
-  if (estimatedRows > MAX_ROWS) {
-    targetCols = Math.max(MIN_IMAGE_COLS, Math.floor((MAX_ROWS * cellAspect) / imageAspect));
-  }
-
-  const scaleX = png.width / targetCols;
-  // Each display row covers 2 pixel rows (top half + bottom half)
-  const scaleY = scaleX; // Keep aspect ratio square per cell
-  const scaledHeight = Math.ceil(png.height / scaleY);
-  // Round up to even number for half-block pairing
-  const targetRows = scaledHeight + (scaledHeight % 2);
-
-  const lines: string[] = [];
-
-  for (let cy = 0; cy < targetRows; cy += 2) {
-    let line = "";
-    for (let cx = 0; cx < targetCols; cx++) {
-      // Area-average the source pixels that map to this cell
-      const srcX0 = cx * scaleX;
-      const srcX1 = (cx + 1) * scaleX;
-      const srcY1_top = cy * scaleY;
-      const srcY1_bot = (cy + 1) * scaleY;
-      const srcY2_top = (cy + 1) * scaleY;
-      const srcY2_bot = (cy + 2) * scaleY;
-
-      const [r1, g1, b1] = sampleArea(
-        png.pixels,
-        png.width,
-        png.height,
-        srcX0,
-        srcY1_top,
-        srcX1,
-        srcY1_bot,
-      );
-      const [r2, g2, b2] = sampleArea(
-        png.pixels,
-        png.width,
-        png.height,
-        srcX0,
-        srcY2_top,
-        srcX1,
-        srcY2_bot,
-      );
-
-      // ▀ = upper half block: fg = top pixel, bg = bottom pixel
-      line += `\x1b[38;2;${r1};${g1};${b1}m\x1b[48;2;${r2};${g2};${b2}m▀`;
-    }
-    line += "\x1b[0m";
-    lines.push(line);
-  }
-
-  return lines;
+  const targetCols = clampColsToMaxRows(
+    Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS),
+    png.width,
+    png.height,
+  );
+  return halfBlockArtFromPng(png, targetCols);
 }
 
 /** Result from rendering images. */
@@ -568,26 +536,29 @@ export interface ImageArt {
 
 let _chafaAvailable: boolean | null = null;
 
+/** Best-effort sync file removal. */
+function safeUnlink(path: string): void {
+  try {
+    if (existsSync(path)) unlinkSync(path);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
- * Render an image using chafa (if installed).
+ * Render an image using chafa (if installed). Async to avoid blocking the main thread.
  * chafa produces much higher quality terminal art than our built-in half-block renderer,
  * using optimal symbol selection, dithering, and color quantization.
- * Returns ANSI lines or null if chafa is not available.
  */
-function renderWithChafa(data: Buffer, _name: string, cols: number): string[] | null {
+async function renderWithChafa(data: Buffer, cols: number): Promise<string[] | null> {
   // Cache chafa availability check
   if (_chafaAvailable === false) return null;
   if (_chafaAvailable === null) {
-    try {
-      execSync("chafa --version", { stdio: "pipe", timeout: 3000 });
-      _chafaAvailable = true;
-    } catch {
-      _chafaAvailable = false;
-      return null;
-    }
+    _chafaAvailable = await checkToolAvailable("chafa");
+    if (!_chafaAvailable) return null;
   }
 
-  const id = `soul-vision-chafa-${String(Date.now())}`;
+  const id = `soul-vision-chafa-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
   // Use .png extension always — chafa auto-detects format from content, not extension.
   // This avoids shell injection from user-provided filenames.
   const tmpPath = resolve(tmpdir(), `${id}.png`);
@@ -597,62 +568,77 @@ function renderWithChafa(data: Buffer, _name: string, cols: number): string[] | 
     writeSync(fd, data);
     closeSync(fd);
 
-    const output = execSync(
-      `chafa -f symbols -c full -s ${String(cols)} --animate off "${tmpPath}"`,
-      {
-        timeout: 15_000,
-        stdio: ["pipe", "pipe", "pipe"],
-        encoding: "utf-8",
-        maxBuffer: 10 * 1024 * 1024,
-      },
+    const output = await spawnForOutput(
+      "chafa",
+      ["-f", "symbols", "-c", "full", "-s", String(cols), "--animate", "off", tmpPath],
+      15_000,
     );
+    if (!output) return null;
 
     const lines = output.split("\n");
-    // chafa adds a trailing newline — remove empty last line
     if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
     return lines.length > 0 ? lines : null;
   } catch {
     return null;
   } finally {
-    try {
-      execSync(`rm -f "${tmpPath}"`, { stdio: "pipe", timeout: 2000 });
-    } catch {
-      // best-effort
-    }
+    safeUnlink(tmpPath);
   }
 }
 
-export function renderImageFromData(
+/** Async check if a CLI tool is available. */
+function checkToolAvailable(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn(name, ["--version"], { stdio: "pipe", timeout: 3000 });
+    proc.on("error", () => resolve(false));
+    proc.on("close", (code) => resolve(code === 0));
+  });
+}
+
+/** Run a command and return stdout as string, or null on failure. */
+function spawnForOutput(cmd: string, args: string[], timeout: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], timeout });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const MAX_BUF = 10 * 1024 * 1024;
+    proc.stdout.on("data", (chunk: Buffer) => {
+      if (size < MAX_BUF) {
+        chunks.push(chunk);
+        size += chunk.length;
+      }
+    });
+    proc.on("error", () => resolve(null));
+    proc.on("close", (code) => {
+      resolve(code === 0 ? Buffer.concat(chunks).toString("utf-8") : null);
+    });
+  });
+}
+
+export async function renderImageFromData(
   data: Buffer | Uint8Array,
   name: string,
   opts?: { cols?: number },
-): ImageArt | null {
+): Promise<ImageArt | null> {
   if (!canRenderImages()) return null;
 
   const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
   const dims = getPngDimensions(buf);
-  if (!dims) return null; // Only PNG supported for now
+  if (!dims) return null;
 
-  let targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
-
-  // Clamp height: if aspect ratio would exceed MAX_ROWS, reduce cols to fit
-  const cellAspect = 2;
-  const imageAspect = dims.height / dims.width;
-  const estimatedRows = Math.round((targetCols * imageAspect) / cellAspect);
-  if (estimatedRows > MAX_ROWS) {
-    targetCols = Math.max(MIN_IMAGE_COLS, Math.floor((MAX_ROWS * cellAspect) / imageAspect));
-  }
+  const targetCols = clampColsToMaxRows(
+    Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS),
+    dims.width,
+    dims.height,
+  );
 
   if (isKittyGraphicsTerminal()) {
     const imageId = allocateKittyImageId();
     const base64 = buf.toString("base64");
-    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / cellAspect));
+    const imageAspect = dims.height / dims.width;
+    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / 2));
 
     transmitKittyImage(base64, imageId, targetCols, targetRows);
 
-    // Return empty placeholder lines + Kitty metadata.
-    // The React component renders U+10EEEE placeholders directly via <text>+<span>
-    // instead of ghostty-terminal (which can't handle supplementary plane PUA chars).
     const lines = Array.from({ length: targetRows }, () => " ".repeat(targetCols));
     return {
       name,
@@ -666,7 +652,7 @@ export function renderImageFromData(
   }
 
   // Non-Kitty: try chafa first (much better quality), then built-in half-block art
-  const chafaLines = renderWithChafa(buf, name, targetCols);
+  const chafaLines = await renderWithChafa(buf, targetCols);
   if (chafaLines) {
     return { name, lines: chafaLines, width: dims.width, height: dims.height };
   }
@@ -700,19 +686,16 @@ export function renderAnimatedImage(
   const firstDims = getPngDimensions(first.png);
   if (!firstDims) return null;
 
-  let targetCols = Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS);
-
-  // Clamp height: if aspect ratio would exceed MAX_ROWS, reduce cols to fit
-  const cellAspect = 2;
-  const imageAspect = firstDims.height / firstDims.width;
-  const estimatedRows = Math.round((targetCols * imageAspect) / cellAspect);
-  if (estimatedRows > MAX_ROWS) {
-    targetCols = Math.max(MIN_IMAGE_COLS, Math.floor((MAX_ROWS * cellAspect) / imageAspect));
-  }
+  const targetCols = clampColsToMaxRows(
+    Math.min(opts?.cols ?? getDefaultCols(), MAX_COLS),
+    firstDims.width,
+    firstDims.height,
+  );
 
   if (supportsKittyAnimation()) {
     const imageId = allocateKittyImageId();
-    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / cellAspect));
+    const imageAspect = firstDims.height / firstDims.width;
+    const targetRows = Math.max(1, Math.round((targetCols * imageAspect) / 2));
 
     transmitKittyAnimation(frames, imageId, targetCols, targetRows);
 

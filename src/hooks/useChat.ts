@@ -2250,7 +2250,7 @@ export function useChat({
                 if (codeExecTc) {
                   try {
                     const { renderImageFromData } = await import("../core/terminal/image.js");
-                    const art = renderImageFromData(
+                    const art = await renderImageFromData(
                       Buffer.from(file.uint8Array),
                       `image-${String(Date.now())}.png`,
                     );
