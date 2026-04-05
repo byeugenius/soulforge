@@ -134,12 +134,14 @@ export function hasFfmpeg(): boolean {
 }
 
 const VIDEO_EXTENSIONS = /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp)$/i;
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100 MB for video
-const MAX_GIF_DURATION = 15; // seconds — cap GIF length to avoid huge files
-const MAX_GIF_FPS = 12; // keep GIF size reasonable
+const MAX_VIDEO_DOWNLOAD = 20 * 1024 * 1024; // 20 MB max download
+const MAX_GIF_DURATION = 10; // seconds — keep GIFs compact
+const MAX_GIF_FPS = 8; // lower fps = much smaller GIF
+const MAX_GIF_WIDTH = 320; // pixels — smaller = much smaller GIF
 
 /**
  * Convert a video file (local path) to GIF using ffmpeg.
+ * Two-pass encoding: palette generation → dithered GIF.
  * Returns GIF buffer or null.
  */
 function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer | null {
@@ -151,10 +153,11 @@ function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer |
 
   try {
     // Two-pass for quality: generate palette then use it
-    // Scale to max 480px wide, cap duration and fps
-    const filters = `fps=${String(MAX_GIF_FPS)},scale=480:-1:flags=lanczos`;
+    // Scale to max width, cap duration and fps
+    const filters = `fps=${String(MAX_GIF_FPS)},scale=${String(MAX_GIF_WIDTH)}:-1:flags=lanczos`;
+    // -update 1 required for ffmpeg 8.x single-image output
     execSync(
-      `ffmpeg -y -t ${String(maxDuration)} -i "${videoPath}" -vf "${filters},palettegen=stats_mode=diff" "${palettePath}" 2>/dev/null`,
+      `ffmpeg -y -t ${String(maxDuration)} -i "${videoPath}" -vf "${filters},palettegen=stats_mode=diff" -update 1 "${palettePath}" 2>/dev/null`,
       { timeout: 60_000, stdio: "pipe" },
     );
     execSync(
@@ -176,6 +179,37 @@ function videoToGif(videoPath: string, maxDuration = MAX_GIF_DURATION): Buffer |
       } catch {
         /* */
       }
+    }
+  }
+}
+
+/**
+ * Extract a single frame from a video as PNG using ffmpeg.
+ * Much faster than full GIF conversion — used for non-Kitty terminals.
+ */
+function videoToFrame(videoPath: string): Buffer | null {
+  if (!hasFfmpeg()) return null;
+
+  const id = `soul-vision-frame-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
+  const framePath = resolve(tmpdir(), `${id}.png`);
+
+  try {
+    execSync(`ffmpeg -y -i "${videoPath}" -frames:v 1 -q:v 2 "${framePath}" 2>/dev/null`, {
+      timeout: 15_000,
+      stdio: "pipe",
+    });
+    if (existsSync(framePath)) {
+      const data = readFileSync(framePath);
+      if (data.length > 0 && data.length <= MAX_IMAGE_SIZE) return data;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      if (existsSync(framePath)) execSync(`rm -f "${framePath}"`, { stdio: "pipe", timeout: 2000 });
+    } catch {
+      /* */
     }
   }
 }
@@ -235,14 +269,22 @@ function fetchVideoFromUrl(
       try {
         execSync(
           `yt-dlp -f "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best" ` +
-            `--max-filesize 100M -o "${videoPath}" "${url}" 2>/dev/null`,
+            `--max-filesize 20M -o "${videoPath}" "${url}"`,
           { timeout: 120_000, stdio: "pipe" },
         );
 
         if (existsSync(videoPath)) {
-          const gif = videoToGif(videoPath);
-          if (gif) {
-            return { data: gif, name: `${urlName}.gif`, isGif: true };
+          // Kitty: full animated GIF
+          if (supportsKittyAnimation()) {
+            const gif = videoToGif(videoPath);
+            if (gif) {
+              return { data: gif, name: `${urlName}.gif`, isGif: true };
+            }
+          }
+          // Others: single frame PNG (much faster)
+          const frame = videoToFrame(videoPath);
+          if (frame) {
+            return { data: frame, name: `${urlName}-frame.png`, isGif: false };
           }
         }
       } catch {
@@ -253,7 +295,7 @@ function fetchVideoFromUrl(
     // Fallback: yt-dlp thumbnail only (no ffmpeg needed)
     try {
       execSync(
-        `yt-dlp --skip-download --write-thumbnail --convert-thumbnails png -o "${thumbBase}" "${url}" 2>/dev/null`,
+        `yt-dlp --skip-download --write-thumbnail --convert-thumbnails png -o "${thumbBase}" "${url}"`,
         { timeout: 30_000, stdio: "pipe" },
       );
       const thumbFile = `${thumbBase}.png`;
@@ -295,8 +337,7 @@ function fetchVideoFromUrl(
 }
 
 /**
- * Handle a local video file: convert to GIF with ffmpeg.
- * Returns { data, name, isGif } or { error }.
+ * Handle a local video file: convert to GIF (Kitty) or extract frame (others).
  */
 function convertLocalVideo(
   filePath: string,
@@ -305,20 +346,30 @@ function convertLocalVideo(
   if (!hasFfmpeg()) {
     return {
       error:
-        "Video files require ffmpeg to convert to GIF:\n" +
+        "Video files require ffmpeg to convert:\n" +
         "  macOS:  brew install ffmpeg\n" +
         "  Linux:  sudo apt install ffmpeg\n" +
         "  Windows: winget install Gyan.FFmpeg",
     };
   }
 
-  const gif = videoToGif(filePath);
-  if (!gif) {
-    return { error: "Failed to convert video to GIF." };
+  const baseName = basename(displayName, extname(displayName));
+
+  // Kitty: full animated GIF
+  if (supportsKittyAnimation()) {
+    const gif = videoToGif(filePath);
+    if (gif) {
+      return { data: gif, name: `${baseName}.gif`, isGif: true };
+    }
   }
 
-  const baseName = basename(displayName, extname(displayName));
-  return { data: gif, name: `${baseName}.gif`, isGif: true };
+  // Others: single frame PNG (much faster)
+  const frame = videoToFrame(filePath);
+  if (frame) {
+    return { data: frame, name: `${baseName}-frame.png`, isGif: false };
+  }
+
+  return { error: "Failed to convert video." };
 }
 
 /**
@@ -538,10 +589,10 @@ export async function showImage(
 
     // Local video file → convert to GIF
     if (VIDEO_EXTENSIONS.test(filePath)) {
-      if (stat.size > MAX_VIDEO_SIZE) {
+      if (stat.size > MAX_VIDEO_DOWNLOAD) {
         return {
           success: false,
-          output: `Video too large (${String(Math.round(stat.size / 1024 / 1024))}MB). Max: 100MB.`,
+          output: `Video too large (${String(Math.round(stat.size / 1024 / 1024))}MB). Max: 20MB.`,
         };
       }
       const videoResult = convertLocalVideo(filePath, args.path);
