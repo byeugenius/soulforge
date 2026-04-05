@@ -221,15 +221,14 @@ The `soul_vision` tool renders images and videos directly in chat. Pixel-perfect
 </table>
 
 <sub>
-
-**Formats:** PNG, JPG, WebP, GIF, BMP, TIFF, MP4, MKV, WebM, AVI, MOV. Non-PNG images auto-converted via `ffmpeg`, `sips` (macOS), or ImageMagick. Videos converted to GIF with two-pass palette encoding (fps capped, scaled to 320px width).
-Install [`chafa`](https://github.com/hpjansson/chafa) for higher quality terminal art on non-pixel terminals. Install [`ffmpeg`](https://github.com/FFmpeg/FFmpeg) for animated GIF, video conversion, and format support. Install [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) to display videos from URLs.
+<b>Formats:</b> PNG, JPG, WebP, GIF, BMP, TIFF, MP4, MKV, WebM, AVI, MOV. Non-PNG images auto-converted via <code>ffmpeg</code>, <code>sips</code> (macOS), or ImageMagick. Videos converted to GIF with two-pass palette encoding (fps capped, scaled to 320px width).
+<br/>
+Install <a href="https://github.com/hpjansson/chafa"><code>chafa</code></a> for higher quality terminal art on non-pixel terminals. Install <a href="https://github.com/FFmpeg/FFmpeg"><code>ffmpeg</code></a> for animated GIF, video conversion, and format support. Install <a href="https://github.com/yt-dlp/yt-dlp"><code>yt-dlp</code></a> to display videos from URLs.
+</sub>
 
 ```bash
 brew install ffmpeg chafa yt-dlp
 ```
-
-</sub>
 
 ## How it compares
 
