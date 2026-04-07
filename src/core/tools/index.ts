@@ -316,6 +316,13 @@ export function buildTools(
     codeExecution?: boolean;
     computerUse?: boolean;
     anthropicTextEditor?: boolean;
+    /** Override Anthropic tool versions per model capability.
+     *  When set, buildTools uses the specified versions instead of hardcoded defaults. */
+    toolVersions?: {
+      computerUse?: "20251124" | "20250124";
+      textEditor?: "20250728" | "20250124";
+      programmaticToolCalling?: boolean;
+    };
     memoryManager?: MemoryManager;
     contextManager?: import("../context/manager.js").ContextManager;
     agentSkills?: boolean;
@@ -338,10 +345,12 @@ export function buildTools(
       ? createSkillsTool(opts.contextManager, opts?.onApproveDestructive)
       : null;
 
-  // Programmatic tool calling: when code execution is enabled, read/search tools
-  // get allowedCallers so Claude can batch them in Python code. Tool results from
-  // programmatic calls don't count as input/output tokens — only stdout does.
-  const progProviderOpts = opts?.codeExecution ? PROGRAMMATIC_PROVIDER_OPTS : undefined;
+  // Programmatic tool calling: when code execution is enabled AND the model supports it,
+  // read/search tools get allowedCallers so Claude can batch them in Python code.
+  // Tool results from programmatic calls don't count as input/output tokens — only stdout does.
+  const canUseProgrammatic =
+    opts?.codeExecution && (opts?.toolVersions?.programmaticToolCalling ?? true);
+  const progProviderOpts = canUseProgrammatic ? PROGRAMMATIC_PROVIDER_OPTS : undefined;
 
   // Read nudges disabled — tool-result injection causes conversational responses
   // ("You're right, let me stop reading") and interrupts legitimate investigation.
@@ -1702,66 +1711,104 @@ export function buildTools(
       : {}),
 
     ...(opts?.computerUse
-      ? {
-          computer: createAnthropic().tools.computer_20251124({
+      ? (() => {
+          const ver = opts?.toolVersions?.computerUse ?? "20251124";
+          const anthropic = createAnthropic();
+          const computerOpts = {
             displayWidthPx: 1920,
             displayHeightPx: 1080,
-            execute: async ({ action, coordinate, text }) => {
+            execute: async ({
+              action,
+              coordinate,
+              text,
+            }: {
+              action: string;
+              coordinate?: number[];
+              text?: string;
+            }) => {
               return `Computer use action: ${action}${coordinate ? ` at (${coordinate.join(",")})` : ""}${text ? ` text: ${text}` : ""}`;
             },
-          }),
-        }
+          };
+          return {
+            computer:
+              ver === "20251124"
+                ? anthropic.tools.computer_20251124(computerOpts)
+                : anthropic.tools.computer_20250124(computerOpts),
+          };
+        })()
       : {}),
 
     ...(opts?.anthropicTextEditor
-      ? {
-          str_replace_based_edit_tool: createAnthropic().tools.textEditor_20250728({
-            async execute({ command, path, old_str, new_str, insert_text, file_text, view_range }) {
-              // Delegate to our own file operations
-              const fs = await import("node:fs");
-              const absPath = path.startsWith("/") ? path : resolve(effectiveCwd, path);
-              switch (command) {
-                case "view": {
-                  if (!fs.existsSync(absPath)) return `File not found: ${path}`;
-                  const content = fs.readFileSync(absPath, "utf-8");
-                  const lines = content.split("\n");
-                  if (view_range && view_range.length >= 2) {
-                    const start = view_range[0] ?? 1;
-                    const end = view_range[1] ?? lines.length;
-                    return lines
-                      .slice(start - 1, end)
-                      .map((l, i) => `${start + i}\t${l}`)
-                      .join("\n");
-                  }
-                  return lines.map((l, i) => `${i + 1}\t${l}`).join("\n");
+      ? (() => {
+          const ver = opts?.toolVersions?.textEditor ?? "20250728";
+          const anthropic = createAnthropic();
+          const editorExecute = async ({
+            command,
+            path,
+            old_str,
+            new_str,
+            insert_text,
+            file_text,
+            view_range,
+          }: {
+            command: string;
+            path: string;
+            old_str?: string;
+            new_str?: string;
+            insert_text?: string;
+            file_text?: string;
+            view_range?: number[];
+          }) => {
+            // Delegate to our own file operations
+            const fs = await import("node:fs");
+            const absPath = path.startsWith("/") ? path : resolve(effectiveCwd, path);
+            switch (command) {
+              case "view": {
+                if (!fs.existsSync(absPath)) return `File not found: ${path}`;
+                const content = fs.readFileSync(absPath, "utf-8");
+                const lines = content.split("\n");
+                if (view_range && view_range.length >= 2) {
+                  const start = view_range[0] ?? 1;
+                  const end = view_range[1] ?? lines.length;
+                  return lines
+                    .slice(start - 1, end)
+                    .map((l, i) => `${start + i}\t${l}`)
+                    .join("\n");
                 }
-                case "create": {
-                  fs.mkdirSync(resolve(absPath, ".."), { recursive: true });
-                  fs.writeFileSync(absPath, file_text ?? "", "utf-8");
-                  return `Created ${path}`;
-                }
-                case "str_replace": {
-                  if (!fs.existsSync(absPath)) return `File not found: ${path}`;
-                  const src = fs.readFileSync(absPath, "utf-8");
-                  if (!old_str || !src.includes(old_str)) return `old_str not found in ${path}`;
-                  fs.writeFileSync(absPath, src.replace(old_str, new_str ?? ""), "utf-8");
-                  return `Applied replacement in ${path}`;
-                }
-                case "insert": {
-                  if (!fs.existsSync(absPath)) return `File not found: ${path}`;
-                  const orig = fs.readFileSync(absPath, "utf-8");
-                  const origLines = orig.split("\n");
-                  const insertLine = view_range?.[0] ?? origLines.length;
-                  origLines.splice(insertLine, 0, insert_text ?? "");
-                  fs.writeFileSync(absPath, origLines.join("\n"), "utf-8");
-                  return `Inserted text at line ${insertLine} in ${path}`;
-                }
-                default:
-                  return `Unknown command: ${command}`;
+                return lines.map((l, i) => `${i + 1}\t${l}`).join("\n");
               }
-            },
-          }),
-        }
+              case "create": {
+                fs.mkdirSync(resolve(absPath, ".."), { recursive: true });
+                fs.writeFileSync(absPath, file_text ?? "", "utf-8");
+                return `Created ${path}`;
+              }
+              case "str_replace": {
+                if (!fs.existsSync(absPath)) return `File not found: ${path}`;
+                const src = fs.readFileSync(absPath, "utf-8");
+                if (!old_str || !src.includes(old_str)) return `old_str not found in ${path}`;
+                fs.writeFileSync(absPath, src.replace(old_str, new_str ?? ""), "utf-8");
+                return `Applied replacement in ${path}`;
+              }
+              case "insert": {
+                if (!fs.existsSync(absPath)) return `File not found: ${path}`;
+                const orig = fs.readFileSync(absPath, "utf-8");
+                const origLines = orig.split("\n");
+                const insertLine = view_range?.[0] ?? origLines.length;
+                origLines.splice(insertLine, 0, insert_text ?? "");
+                fs.writeFileSync(absPath, origLines.join("\n"), "utf-8");
+                return `Inserted text at line ${insertLine} in ${path}`;
+              }
+              default:
+                return `Unknown command: ${command}`;
+            }
+          };
+          return {
+            str_replace_based_edit_tool:
+              ver === "20250728"
+                ? anthropic.tools.textEditor_20250728({ execute: editorExecute })
+                : anthropic.tools.textEditor_20250124({ execute: editorExecute }),
+          };
+        })()
       : {}),
   };
 }

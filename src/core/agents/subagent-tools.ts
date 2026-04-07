@@ -106,6 +106,10 @@ function guardForgeTools(
         ...(t as object),
         execute: async () => ({ success: false, error: rejectMsg(name) }),
       };
+    } else if (stripProgrammatic && (t as Record<string, unknown>).providerOptions) {
+      // Strip allowedCallers from tools — models like Haiku don't support programmatic tool calling
+      const { providerOptions: _, ...rest } = t as Record<string, unknown>;
+      guarded[name] = rest;
     } else {
       guarded[name] = t;
     }

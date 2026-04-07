@@ -285,6 +285,58 @@ export function supportsProgrammaticToolCalling(modelId: string): boolean {
   return !base.includes("haiku");
 }
 
+/** Resolve which Anthropic server tool versions a model supports.
+ *  Based on https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference */
+export function getAnthropicToolVersions(modelId: string): {
+  /** computer_20251124 (zoom) vs 20250124 vs null */
+  computerUse: "20251124" | "20250124" | null;
+  /** text_editor_20250728 (Claude 4) vs 20250124 (3.7) vs null */
+  textEditor: "20250728" | "20250124" | null;
+  /** Whether allowed_callers / programmatic tool calling is supported */
+  programmaticToolCalling: boolean;
+} {
+  const base = extractBaseModel(modelId);
+  const gen = getClaudeGen(base);
+  const family = detectModelFamily(modelId);
+
+  if (family !== "claude") {
+    return {
+      computerUse: null,
+      textEditor: null,
+      programmaticToolCalling: false,
+    };
+  }
+
+  const isHaiku = base.includes("haiku");
+  const is46 =
+    base.includes("opus-4-6") ||
+    base.includes("sonnet-4-6") ||
+    base.includes("claude-opus-4-6") ||
+    base.includes("claude-sonnet-4-6");
+  const isOpus45 = base.includes("opus-4-5") || base.includes("opus-4.5");
+
+  // Programmatic tool calling: Claude 4+ non-Haiku
+  const programmaticToolCalling = gen === "4+" && !isHaiku;
+
+  // Computer use: 20251124 for Opus 4.6, Sonnet 4.6, Opus 4.5; 20250124 for other Claude 4+/3.5
+  let computerUse: "20251124" | "20250124" | null = null;
+  if (is46 || isOpus45) {
+    computerUse = "20251124";
+  } else if (gen === "4+" || gen === "3.5") {
+    computerUse = "20250124";
+  }
+
+  // Text editor: 20250728 for Claude 4, 20250124 for 3.5/3.7
+  let textEditor: "20250728" | "20250124" | null = null;
+  if (gen === "4+") {
+    textEditor = "20250728";
+  } else if (gen === "3.5") {
+    textEditor = "20250124";
+  }
+
+  return { computerUse, textEditor, programmaticToolCalling };
+}
+
 function supportsAnthropicOptions(modelId: string): boolean {
   return getEffectiveCaps(modelId).anthropicOptions;
 }

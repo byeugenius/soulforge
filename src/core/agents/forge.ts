@@ -11,7 +11,12 @@ import type {
   InteractiveCallbacks,
 } from "../../types/index.js";
 import type { ContextManager } from "../context/manager.js";
-import { detectModelFamily, EPHEMERAL_CACHE, isAnthropicNative } from "../llm/provider-options.js";
+import {
+  detectModelFamily,
+  EPHEMERAL_CACHE,
+  getAnthropicToolVersions,
+  isAnthropicNative,
+} from "../llm/provider-options.js";
 import { getMCPManager } from "../mcp/index.js";
 import {
   buildInteractiveTools,
@@ -467,15 +472,25 @@ export function createForgeAgent({
   // (family-specific prompt selection depends on this)
   if (modelId) contextManager.setActiveModel(modelId);
   const isAnthropic = isAnthropicNative(modelId);
-  const canUseCodeExecution = codeExecution && isAnthropic;
+  const toolVersions = getAnthropicToolVersions(modelId);
+  // Code execution (20260120) requires programmatic tool calling — skip entirely for models
+  // that don't support it (e.g. Haiku). Basic code execution (20250825) isn't useful here
+  // since SoulForge's value comes from programmatic tool batching, and mixing tool versions
+  // causes auto-injection conflicts with the API.
+  const canUseCodeExecution = codeExecution && isAnthropic && toolVersions.programmaticToolCalling;
 
   const onDemandEnabled = !disabledTools?.has("request_tools") && !isRestricted && !planExecution;
   const activeDeferredTools = onDemandEnabled ? new Set<string>() : undefined;
 
   const directTools = buildTools(undefined, editorIntegration, effectiveApproveWebSearch, {
     codeExecution: canUseCodeExecution,
-    computerUse: computerUse && isAnthropic,
-    anthropicTextEditor: anthropicTextEditor && isAnthropic,
+    computerUse: computerUse && isAnthropic && toolVersions.computerUse != null,
+    anthropicTextEditor: anthropicTextEditor && isAnthropic && toolVersions.textEditor != null,
+    toolVersions: {
+      computerUse: toolVersions.computerUse ?? undefined,
+      textEditor: toolVersions.textEditor ?? undefined,
+      programmaticToolCalling: toolVersions.programmaticToolCalling,
+    },
     contextManager,
     agentSkills: !disabledTools?.has("skills"),
     webSearchModel,
@@ -622,9 +637,10 @@ export function createForgeAgent({
         parentMessagesRef,
       });
 
+  const canUseProgrammatic = canUseCodeExecution && toolVersions.programmaticToolCalling;
   const cachedReadFile =
     sharedCacheRef && agentFeatures?.dispatchCache !== false
-      ? wrapReadFileWithDispatchCache(directTools.read, sharedCacheRef, cwd, canUseCodeExecution)
+      ? wrapReadFileWithDispatchCache(directTools.read, sharedCacheRef, cwd, canUseProgrammatic)
       : directTools.read;
 
   const allTools = {
