@@ -19,7 +19,7 @@
 
 <br/><br/>
 
-<img src="assets/main-1.png" alt="SoulForge" width="900" />
+<video src="assets/intro.mov" alt="SoulForge" width="900" autoplay loop muted playsinline></video>
 
 <br/>
 
