@@ -52,6 +52,8 @@ const FILE_REQUIRED_ACTIONS = new Set<NavigateAction>([
 type RepoMapLike = {
   isReady: boolean;
   findSymbols(name: string): Promise<Array<{ path: string; kind: string; isExported: boolean }>>;
+  getFileBlastRadius?(relPath: string): Promise<number>;
+  getFileCoChanges?(relPath: string): Promise<Array<{ path: string; count: number }>>;
 };
 
 type ResolveResult = { resolved: string } | { candidates: string[] } | null;
@@ -206,6 +208,39 @@ async function autoResolveFile(
   return null;
 }
 
+/** Annotate a file path with blast radius + co-changes from the repo map DB. Zero-cost enrichment. */
+async function buildAnnotation(
+  filePath: string | undefined,
+  repoMap: RepoMapLike | undefined,
+): Promise<string | null> {
+  if (!filePath || !repoMap?.isReady) return null;
+  if (!repoMap.getFileBlastRadius || !repoMap.getFileCoChanges) return null;
+
+  try {
+    const cwd = process.cwd();
+    const rel = filePath.startsWith(`${cwd}/`) ? filePath.slice(cwd.length + 1) : filePath;
+
+    const [blastRadius, coChanges] = await Promise.all([
+      repoMap.getFileBlastRadius(rel),
+      repoMap.getFileCoChanges(rel),
+    ]);
+
+    const parts: string[] = [];
+    if (blastRadius >= 2) parts.push(`→${String(blastRadius)} dependents`);
+    if (coChanges.length > 0) {
+      const top = coChanges
+        .slice(0, 3)
+        .map((c) => c.path.replace(/.*\//, ""))
+        .join(", ");
+      parts.push(`co-changes: ${top}`);
+    }
+    if (parts.length === 0) return null;
+    return `\n(${parts.join(", ")})`;
+  } catch {
+    return null;
+  }
+}
+
 export const navigateTool = {
   name: "navigate",
   description:
@@ -300,9 +335,11 @@ export const navigateTool = {
             };
           }
 
+          const defOutput = `Definition of '${symbol}':\n${tracked.value.map(formatLocation).join("\n")}`;
+          const annotation = await buildAnnotation(tracked.value[0]?.file, repoMap);
           return {
             success: true,
-            output: `Definition of '${symbol}':\n${tracked.value.map(formatLocation).join("\n")}`,
+            output: annotation ? `${defOutput}${annotation}` : defOutput,
             backend: tracked.backend,
           };
         }
@@ -344,9 +381,11 @@ export const navigateTool = {
             refs.length > MAX_REFS
               ? `\n+ ${String(refs.length - MAX_REFS)} more — narrow your query`
               : "";
+          const refsOutput = `References to '${symbol}' (${String(refs.length)}):\n${capped.map(formatLocation).join("\n")}${overflow}`;
+          const refsAnnotation = await buildAnnotation(resolvedFile, repoMap);
           return {
             success: true,
-            output: `References to '${symbol}' (${String(refs.length)}):\n${capped.map(formatLocation).join("\n")}${overflow}`,
+            output: refsAnnotation ? `${refsOutput}${refsAnnotation}` : refsOutput,
             backend: tracked.backend,
           };
         }

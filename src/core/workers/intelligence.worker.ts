@@ -136,8 +136,11 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
   recheckModifiedFiles: () => requireRepoMap().recheckModifiedFiles(),
 
   // ── Render ──
-  render: (opts: unknown) =>
-    requireRepoMap().render(opts as import("../intelligence/repo-map.js").RepoMapOptions),
+  render: (opts: unknown) => {
+    const repoMap = requireRepoMap();
+    const content = repoMap.render(opts as import("../intelligence/repo-map.js").RepoMapOptions);
+    return { content, paths: repoMap.lastRenderedPaths };
+  },
 
   // ── Symbol Lookup ──
   findSymbols: (name: unknown) => requireRepoMap().findSymbols(name as string),
@@ -162,6 +165,7 @@ const handlers: Record<string, (...args: unknown[]) => unknown> = {
   getFileCoChanges: (relPath: unknown) => requireRepoMap().getFileCoChanges(relPath as string),
   getFileExportCount: (relPath: unknown) => requireRepoMap().getFileExportCount(relPath as string),
   getFileBlastRadius: (relPath: unknown) => requireRepoMap().getFileBlastRadius(relPath as string),
+  getFileDiffBlock: (relPath: unknown) => requireRepoMap().getFileDiffBlock(relPath as string),
   getFilesByPackage: (pkg: unknown) => requireRepoMap().getFilesByPackage(pkg as string),
   listDirectory: (dirPath: unknown) => requireRepoMap().listDirectory(dirPath as string),
 

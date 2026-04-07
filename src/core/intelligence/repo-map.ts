@@ -109,6 +109,8 @@ export class RepoMap {
   onStaleSymbols: ((count: number) => void) | null = null;
   onError: ((message: string) => void) | null = null;
   private indexErrors = 0;
+  /** File paths included in the last render() output — used by ContextManager for diff detection. */
+  lastRenderedPaths: string[] = [];
 
   constructor(cwd: string) {
     this.cwd = cwd;
@@ -3048,6 +3050,7 @@ export class RepoMap {
       }, 2000);
     }
 
+    this.lastRenderedPaths = currentPaths;
     return lines.join("\n");
   }
 
@@ -3240,6 +3243,38 @@ export class RepoMap {
         line: r.line,
         endLine: r.end_line,
       }));
+  }
+
+  /** Get a compact diff block for a file: exported symbols with signatures + blast radius. */
+  getFileDiffBlock(relPath: string): {
+    blastRadius: number;
+    symbols: Array<{ name: string; kind: string; signature: string | null; line: number }>;
+  } {
+    const fileRow = this.db
+      .query<{ id: number }, [string]>("SELECT id FROM files WHERE path = ?")
+      .get(relPath);
+    if (!fileRow) return { blastRadius: 0, symbols: [] };
+
+    const blastRadius =
+      this.db
+        .query<{ c: number }, [number]>(
+          "SELECT COUNT(DISTINCT source_file_id) AS c FROM edges WHERE target_file_id = ?",
+        )
+        .get(fileRow.id)?.c ?? 0;
+
+    const symbols = this.db
+      .query<{ name: string; kind: string; signature: string | null; line: number }, [number]>(
+        `SELECT s.name, s.kind, s.signature, s.line
+         FROM symbols s
+         WHERE s.file_id = ?
+           AND s.is_exported = 1
+           AND s.kind IN ('interface','type','class','function','enum','method')
+         ORDER BY s.line
+         LIMIT 10`,
+      )
+      .all(fileRow.id);
+
+    return { blastRadius, symbols };
   }
 
   getFileSymbolRanges(relPath: string): Array<{

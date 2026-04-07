@@ -289,8 +289,8 @@ export class IntelligenceClient extends WorkerClient {
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  async render(opts: RepoMapOptions = {}): Promise<string> {
-    return this.call<string>("render", opts);
+  async render(opts: RepoMapOptions = {}): Promise<{ content: string; paths: string[] }> {
+    return this.call<{ content: string; paths: string[] }>("render", opts);
   }
 
   // ── Symbol Lookup ──────────────────────────────────────────────────
@@ -397,6 +397,13 @@ export class IntelligenceClient extends WorkerClient {
 
   async getFileBlastRadius(relPath: string): Promise<number> {
     return this.call("getFileBlastRadius", relPath);
+  }
+
+  async getFileDiffBlock(relPath: string): Promise<{
+    blastRadius: number;
+    symbols: Array<{ name: string; kind: string; signature: string | null; line: number }>;
+  }> {
+    return this.call("getFileDiffBlock", relPath);
   }
 
   async getFilesByPackage(pkg: string): Promise<Array<{ path: string; specifiers: string }>> {

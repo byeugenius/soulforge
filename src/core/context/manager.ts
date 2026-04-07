@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { generateText } from "ai";
@@ -66,7 +67,13 @@ export class ContextManager {
   private conversationTokens = 0;
   private contextWindowTokens = DEFAULT_CONTEXT_WINDOW;
   private repoMapCache: { content: string; at: number } | null = null;
-  private soulMapDiffChangedFiles = new Set<string>();
+  /** Changed files since snapshot, ordered by most recent edit (re-edits move to end). */
+  private soulMapDiffChangedFiles = new Map<string, number>(); // rel path → edit sequence number
+  private soulMapDiffSeq = 0;
+  /** File paths that were included in the frozen soul map snapshot — used to detect new vs modified files in diffs. */
+  private soulMapSnapshotPaths = new Set<string>();
+  /** Pre-rendered diff blocks for changed files. Eagerly populated in onFileChanged via getFileDiffBlock. */
+  private soulMapDiffBlocks = new Map<string, { radiusTag: string; symbolBlock: string }>();
   private taskRouter: TaskRouter | undefined;
   private semanticSummaryLimit = 500;
   private semanticAutoRegen = false;
@@ -339,8 +346,46 @@ export class ContextManager {
     }
     this.editedFiles.add(absPath);
     const rel = absPath.startsWith(`${this.cwd}/`) ? absPath.slice(this.cwd.length + 1) : absPath;
-    this.soulMapDiffChangedFiles.add(rel);
+    this.soulMapDiffChangedFiles.set(rel, ++this.soulMapDiffSeq);
+    this.pendingSoulMapDiff = null; // invalidate so buildSoulMapDiff() rebuilds with new file
     if (this.repoMapCache) this.repoMapCache.at = 0;
+
+    // Eagerly fetch rich diff block (blast radius + symbols with signatures).
+    // Fire-and-forget — by the time the next prepareStep runs, this will have resolved.
+    if (this.repoMapReady) {
+      this.prefetchDiffBlock(rel);
+    }
+  }
+
+  /** Pre-render a rich diff block for a changed file (blast radius + exported symbols with signatures). */
+  private prefetchDiffBlock(rel: string): void {
+    // Delay slightly to let the reindex settle
+    setTimeout(() => {
+      this.repoMap
+        .getFileDiffBlock(rel)
+        .then(({ blastRadius, symbols }) => {
+          const MAX_SYMBOLS = 8;
+          const capped = symbols.slice(0, MAX_SYMBOLS);
+          const parts: string[] = [];
+          for (const s of capped) {
+            const sig = s.signature
+              ? s.signature.replace(/^export\s+(default\s+)?/, "").replace(/\s*\{[\s\S]*$/, "")
+              : `${s.kind} ${s.name}`;
+            parts.push(`  +${sig} :${String(s.line)}`);
+          }
+          if (symbols.length > MAX_SYMBOLS) {
+            parts.push(`  ... +${String(symbols.length - MAX_SYMBOLS)} more exports`);
+          }
+          const radiusTag = blastRadius >= 2 ? ` (→${String(blastRadius)})` : "";
+          this.soulMapDiffBlocks.set(rel, { radiusTag, symbolBlock: parts.join("\n") });
+          // Only invalidate if no diff was emitted yet — avoids re-emitting a thin
+          // diff as rich (the rich data will be included on the next new-file trigger).
+          if (!this.lastEmittedSoulMapDiff) {
+            this.pendingSoulMapDiff = null;
+          }
+        })
+        .catch(() => {});
+    }, 300);
   }
 
   /** Track a file mentioned in conversation (tool reads, grep hits, etc.) */
@@ -363,13 +408,22 @@ export class ContextManager {
     };
   }
 
-  /** Reset per-conversation tracking (call on new session / context clear) */
+  /** Reset per-conversation tracking (call on new session / context clear / compaction) */
   resetConversationTracking(): void {
     this.editedFiles.clear();
     this.mentionedFiles.clear();
 
     this.conversationTokens = 0;
     if (this.repoMapCache) this.repoMapCache.at = 0;
+    // Increment generation so buildInstructions() re-renders the soul map
+    // with fresh DB state instead of returning the stale cached string.
+    this.repoMapGeneration++;
+    this.soulMapDiffChangedFiles.clear();
+    this.soulMapDiffSeq = 0;
+    this.soulMapSnapshotPaths.clear();
+    this.soulMapDiffBlocks.clear();
+    this.pendingSoulMapDiff = null;
+    this.lastEmittedSoulMapDiff = null;
     this.warmRepoMapCache();
   }
 
@@ -393,14 +447,20 @@ export class ContextManager {
     if (this.repoMapRefreshing) return;
     this.repoMapRefreshing = true;
     try {
-      const content = await this.repoMap.render({
+      const result = await this.repoMap.render({
         editorFile: this.editorFile,
         editedFiles: [...this.editedFiles],
         mentionedFiles: [...this.mentionedFiles],
         conversationTokens: this.conversationTokens,
         tokenBudget: this.repoMapTokenBudget,
       });
-      this.repoMapCache = { content, at: Date.now() };
+      this.repoMapCache = { content: result.content, at: Date.now() };
+      // Only set snapshot paths if they haven't been set yet (first render).
+      // Don't update mid-conversation — the diff system relies on a stable
+      // baseline to distinguish new vs modified files.
+      if (this.soulMapSnapshotPaths.size === 0) {
+        this.soulMapSnapshotPaths = new Set(result.paths);
+      }
     } catch {}
     this.repoMapRefreshing = false;
   }
@@ -1039,31 +1099,86 @@ export class ContextManager {
     const isMinimal = this.contextWindowTokens <= 32_000;
     const treeLimit = this.repoMapTokenBudget ? Math.ceil(this.repoMapTokenBudget / 100) : 60;
     const dirTree = buildDirectoryTree(this.cwd, treeLimit);
-    if (clearDiffTracker) this.soulMapDiffChangedFiles.clear();
+
+    // soulMapSnapshotPaths is populated by warmRepoMapCache() from render()'s
+    // lastRenderedPaths — no string parsing needed.
+
+    if (clearDiffTracker) {
+      this.soulMapDiffChangedFiles.clear();
+      this.soulMapDiffSeq = 0;
+      this.soulMapDiffBlocks.clear();
+      this.pendingSoulMapDiff = null;
+      this.lastEmittedSoulMapDiff = null;
+    }
     return buildSoulMapContent(rendered, isMinimal, dirTree);
   }
 
   private pendingSoulMapDiff: string | null = null;
+  /** The diff string that was last emitted — used to detect changes and avoid re-emitting identical diffs. */
+  private lastEmittedSoulMapDiff: string | null = null;
 
+  /**
+   * Build a cumulative soul map diff covering ALL files changed since the snapshot.
+   * Returns null if nothing changed, or if the diff is identical to the last emitted one
+   * (avoids duplicate content across injects — coalescing).
+   */
   buildSoulMapDiff(): string | null {
-    if (this.pendingSoulMapDiff) return this.pendingSoulMapDiff;
     if (!this.isRepoMapReady()) return null;
     if (this.soulMapDiffChangedFiles.size === 0) return null;
-    const changed = [...this.soulMapDiffChangedFiles];
 
-    const lines = ["<soul_map_update>"];
-    for (const file of changed.slice(0, 15)) {
-      lines.push(`  ${file}`);
+    // Rebuild the diff string if the file set changed since last build
+    if (!this.pendingSoulMapDiff) {
+      // Sort by most recent edit so the 15-file cap shows latest changes, not earliest
+      const changed = [...this.soulMapDiffChangedFiles.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([path]) => path);
+      const hasSnapshot = this.soulMapSnapshotPaths.size > 0;
+      const lines = ["<soul_map_update>"];
+      const MAX_RICH_BLOCKS = 5;
+      let richBlockCount = 0;
+
+      for (const file of changed.slice(0, 15)) {
+        const absPath = join(this.cwd, file);
+        const fileExists = existsSync(absPath);
+        const block = this.soulMapDiffBlocks.get(file);
+
+        if (!fileExists) {
+          // Deleted file
+          lines.push(`- ${file}`);
+        } else if (hasSnapshot && !this.soulMapSnapshotPaths.has(file)) {
+          // New file — not in the frozen snapshot
+          const tag = block ? `${file}:${block.radiusTag} [NEW FILE]` : `${file}: [NEW FILE]`;
+          lines.push(tag);
+          if (block?.symbolBlock && richBlockCount < MAX_RICH_BLOCKS) {
+            lines.push(block.symbolBlock);
+            richBlockCount++;
+          }
+        } else {
+          // Modified file — include blast radius + symbols if prefetched
+          const tag = block ? `${file}:${block.radiusTag}` : `${file}:`;
+          lines.push(tag);
+          if (block?.symbolBlock && richBlockCount < MAX_RICH_BLOCKS) {
+            lines.push(block.symbolBlock);
+            richBlockCount++;
+          }
+        }
+      }
+      if (changed.length > 15) lines.push(`(+${String(changed.length - 15)} more)`);
+      lines.push("</soul_map_update>");
+      this.pendingSoulMapDiff = lines.join("\n");
     }
-    if (changed.length > 15) lines.push(`  (+${String(changed.length - 15)} more)`);
-    lines.push("</soul_map_update>");
-    this.pendingSoulMapDiff = lines.join("\n");
+
+    // Skip if identical to what was already injected in a previous step
+    if (this.pendingSoulMapDiff === this.lastEmittedSoulMapDiff) return null;
     return this.pendingSoulMapDiff;
   }
 
   commitSoulMapDiff(): void {
     if (this.pendingSoulMapDiff) {
-      this.soulMapDiffChangedFiles.clear();
+      // Don't clear soulMapDiffChangedFiles — keep accumulating so the diff
+      // is always cumulative since the snapshot. Only clear the built string
+      // so it rebuilds if new files are added.
+      this.lastEmittedSoulMapDiff = this.pendingSoulMapDiff;
       this.pendingSoulMapDiff = null;
     }
   }
