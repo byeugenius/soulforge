@@ -2,6 +2,18 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.7.0] — 2026-04-07
+
+### Bug Fixes
+
+- sanitize MCP tool names to match API pattern ^[a-zA-Z0-9_-]{1,128}$
+- restore session after crash — synchronous emergency save (#18)
+### Documentation
+
+- fix task router slots — replace legacy fields with spark/ember (#17)
+### Features
+
+- add MCP servers support
 ## [2.6.5] — 2026-04-06
 
 ### Miscellaneous
