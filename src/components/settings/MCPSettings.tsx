@@ -8,7 +8,15 @@ import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import { type MCPServerState, type MCPServerStatus, useMCPStore } from "../../stores/mcp.js";
 import type { MCPServerConfig } from "../../types/index.js";
 import type { ConfigScope } from "../layout/shared.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow, Spinner } from "../layout/shared.js";
+import {
+  Overlay,
+  POPUP_BG,
+  POPUP_HL,
+  PopupFooterHints,
+  PopupRow,
+  PopupSeparator,
+  Spinner,
+} from "../layout/shared.js";
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -163,6 +171,44 @@ const MAX_WIDTH = 96;
 const CHROME_ROWS = 8;
 
 type View = "list" | "tools" | "form" | "detail";
+
+type HintPair = { key: string; label: string };
+
+function mcpFooterHints(view: View, isForm: boolean, detailDisabled?: boolean): HintPair[] {
+  if (view === "detail")
+    return [
+      { key: "⏎", label: "expand" },
+      { key: "e", label: "edit" },
+      { key: "r", label: "retry" },
+      { key: "p", label: "ping" },
+      { key: "d", label: detailDisabled ? "enable" : "disable" },
+      { key: "esc", label: "back" },
+    ];
+  if (isForm)
+    return [
+      { key: "tab", label: "next" },
+      { key: "^S", label: "save" },
+      { key: "^T", label: "transport" },
+      { key: "^G", label: "scope" },
+      { key: "esc", label: "cancel" },
+    ];
+  if (view === "list")
+    return [
+      { key: "↑↓", label: "nav" },
+      { key: "^A", label: "add" },
+      { key: "^D", label: "del" },
+      { key: "^T", label: "toggle" },
+      { key: "⏎", label: "detail" },
+      { key: "tab", label: "tools" },
+      { key: "esc", label: "close" },
+    ];
+  // tools view
+  return [
+    { key: "↑↓", label: "nav" },
+    { key: "tab", label: "switch" },
+    { key: "esc", label: "close" },
+  ];
+}
 
 // ─── Main ─────────────────────────────────────────────────
 
@@ -691,9 +737,14 @@ export function MCPSettings({
           </>
         )}
 
-        <Sep w={innerW} />
-
-        <Footer view={view} isForm={isForm} innerW={innerW} detailName={detailName} />
+        <PopupFooterHints
+          w={innerW}
+          hints={mcpFooterHints(
+            view,
+            isForm,
+            detailName ? runtimeServers[detailName]?.status === "disabled" : undefined,
+          )}
+        />
       </box>
     </Overlay>
   );
@@ -702,14 +753,7 @@ export function MCPSettings({
 // ─── Small pieces ─────────────────────────────────────────
 
 function Sep({ w }: { w: number }) {
-  const t = useTheme();
-  return (
-    <PopupRow w={w}>
-      <text bg={POPUP_BG} fg={t.textFaint}>
-        {"─".repeat(w - 2)}
-      </text>
-    </PopupRow>
-  );
+  return <PopupSeparator w={w} />;
 }
 
 const MCP_TABS: { id: "list" | "tools"; label: string; ic: string }[] = [
@@ -745,129 +789,6 @@ const TabRow = memo(function TabRow({ view, innerW }: { view: View; innerW: numb
     </PopupRow>
   );
 });
-
-function K({ children, c }: { children: string; c?: string }) {
-  const t = useTheme();
-  return (
-    <text bg={POPUP_BG} fg={c ?? t.textSecondary} attributes={TextAttributes.BOLD}>
-      {children}
-    </text>
-  );
-}
-function L({ children }: { children: string }) {
-  const t = useTheme();
-  return (
-    <text bg={POPUP_BG} fg={t.textMuted}>
-      {children}
-    </text>
-  );
-}
-function D() {
-  const t = useTheme();
-  return (
-    <text bg={POPUP_BG} fg={t.textFaint}>
-      {" │ "}
-    </text>
-  );
-}
-
-function Footer({
-  view,
-  isForm,
-  innerW,
-  detailName,
-}: {
-  view: View;
-  isForm: boolean;
-  innerW: number;
-  detailName?: string | null;
-}) {
-  const t = useTheme();
-  const detailStatus = useMCPStore((s) => (detailName ? s.servers[detailName]?.status : undefined));
-  if (view === "detail")
-    return (
-      <PopupRow w={innerW}>
-        <K>{"⏎"}</K>
-        <L>{" expand error"}</L>
-        <D />
-        <K c={t.info}>{"<e>"}</K>
-        <L>{" edit"}</L>
-        <D />
-        <K>{"<r>"}</K>
-        <L>{" retry"}</L>
-        <D />
-        <K>{"<p>"}</K>
-        <L>{" ping"}</L>
-        <D />
-        <K>{"<d>"}</K>
-        <L>{detailStatus === "disabled" ? " enable" : " disable"}</L>
-        <D />
-        <K>{"esc"}</K>
-        <L>{" back"}</L>
-      </PopupRow>
-    );
-  if (isForm)
-    return (
-      <PopupRow w={innerW}>
-        <K>{"tab"}</K>
-        <L>{" next"}</L>
-        <D />
-        <K c={t.success}>{"^S"}</K>
-        <L>{" save"}</L>
-        <D />
-        <K>{"⏎"}</K>
-        <L>{" next"}</L>
-        <D />
-        <K>{"^T"}</K>
-        <L>{" transport"}</L>
-        <D />
-        <K>{"^G"}</K>
-        <L>{" scope"}</L>
-        <D />
-        <K>{"esc"}</K>
-        <L>{" cancel"}</L>
-      </PopupRow>
-    );
-  if (view === "list")
-    return (
-      <PopupRow w={innerW}>
-        <K>{"↑↓"}</K>
-        <L>{" nav"}</L>
-        <D />
-        <L>{"type to filter"}</L>
-        <D />
-        <K c={t.success}>{"^A"}</K>
-        <L>{" add"}</L>
-        <D />
-        <K>{"^D"}</K>
-        <L>{" del"}</L>
-        <D />
-        <K>{"^T"}</K>
-        <L>{" toggle"}</L>
-        <D />
-        <K>{"⏎"}</K>
-        <L>{" detail"}</L>
-        <D />
-        <K>{"tab"}</K>
-        <D />
-        <K>{"esc"}</K>
-      </PopupRow>
-    );
-  return (
-    <PopupRow w={innerW}>
-      <K>{"↑↓"}</K>
-      <L>{" nav"}</L>
-      <D />
-      <L>{"type to filter"}</L>
-      <D />
-      <K>{"tab"}</K>
-      <L>{" switch"}</L>
-      <D />
-      <K>{"esc"}</K>
-      <L>{" close"}</L>
-    </PopupRow>
-  );
-}
 
 const EmptyState = memo(function EmptyState({ innerW }: { innerW: number }) {
   const t = useTheme();

@@ -1,10 +1,10 @@
 import { TextAttributes } from "@opentui/core";
-import { useEffect, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
 import { getModeColor, getModeLabel } from "../../hooks/useForgeMode.js";
 import type { Tab, TabActivity } from "../../hooks/useTabs.js";
 import type { ForgeMode } from "../../types/index.js";
+import { SPINNER_FRAMES, useSpinnerFrame } from "./shared.js";
 
 interface TabBarProps {
   tabs: Tab[];
@@ -19,8 +19,6 @@ function truncateLabel(str: string, max: number): string {
   return str.length > max ? `${str.slice(0, max - 1)}…` : str;
 }
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
 export function TabBar({
   tabs,
   activeTabId,
@@ -29,19 +27,9 @@ export function TabBar({
   getMode,
   getModelLabel,
 }: TabBarProps) {
-  const [spinFrame, setSpinFrame] = useState(0);
+  const spinFrame = useSpinnerFrame();
 
   const activities = new Map(tabs.map((t) => [t.id, getActivity(t.id)]));
-  const hasBusy = tabs.some((t) => {
-    const a = activities.get(t.id);
-    return a?.isLoading || a?.isCompacting;
-  });
-
-  useEffect(() => {
-    if (!hasBusy) return;
-    const timer = setInterval(() => setSpinFrame((f) => (f + 1) % SPINNER_FRAMES.length), 80);
-    return () => clearInterval(timer);
-  }, [hasBusy]);
 
   const t = useTheme();
 

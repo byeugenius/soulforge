@@ -21,7 +21,7 @@ import {
   useStatusBarStore,
 } from "../../stores/statusbar.js";
 import { useWorkerStore } from "../../stores/workers.js";
-import { Overlay, POPUP_BG, PopupRow } from "../layout/shared.js";
+import { Popup, POPUP_BG, PopupRow } from "../layout/shared.js";
 
 const CHROME_ROWS = 6;
 const TABS = ["Context", "System"] as const;
@@ -984,20 +984,21 @@ export function StatusDashboard({
 
   if (!visible) return null;
 
+  const footerHints = [
+    { key: "tab", label: "panel" },
+    ...(isMultiTab && tab === "Context" ? [{ key: "←→", label: "scope" }] : []),
+    { key: "↑↓", label: "scroll" },
+    { key: "esc", label: "close" },
+  ];
+
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={TAB_COLORS[tab]}
-        width={popupWidth}
-      >
-        {/* Title + tabs */}
-        <PopupRow w={innerW}>
-          <text fg={TAB_COLORS[tab]} bg={POPUP_BG}>
-            {icon("gauge")}{" "}
-          </text>
+    <Popup
+      width={popupWidth}
+      title=""
+      icon={icon("gauge")}
+      borderColor={TAB_COLORS[tab]}
+      headerRight={
+        <>
           {TABS.map((tabName, i) => {
             const isActive = tabName === tab;
             const color = TAB_COLORS[tabName];
@@ -1013,46 +1014,38 @@ export function StatusDashboard({
               </text>
             );
           })}
-        </PopupRow>
+        </>
+      }
+      footer={footerHints}
+    >
+      {/* Separator */}
+      <PopupRow w={innerW}>
+        <text fg={t.textSubtle} bg={POPUP_BG}>
+          {"─".repeat(innerW - 4)}
+        </text>
+      </PopupRow>
 
-        {/* Separator */}
-        <PopupRow w={innerW}>
-          <text fg={t.textSubtle} bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
+      {/* Content */}
+      <box
+        flexDirection="column"
+        height={Math.min(activeLines.length, maxVisible)}
+        overflow="hidden"
+      >
+        {visibleLines}
+      </box>
 
-        {/* Content */}
-        <box
-          flexDirection="column"
-          height={Math.min(activeLines.length, maxVisible)}
-          overflow="hidden"
-        >
-          {visibleLines}
-        </box>
-
-        {/* Scroll */}
-        {activeLines.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textDim} bg={POPUP_BG}>
-              {clampedScroll > 0 ? "↑ " : "  "}
-              {String(clampedScroll + 1)}-
-              {String(Math.min(clampedScroll + maxVisible, activeLines.length))}/
-              {String(activeLines.length)}
-              {clampedScroll + maxVisible < activeLines.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        {/* Footer */}
+      {/* Scroll */}
+      {activeLines.length > maxVisible && (
         <PopupRow w={innerW}>
           <text fg={t.textDim} bg={POPUP_BG}>
-            {isMultiTab && tab === "Context"
-              ? "<⇥> panel | <←→> scope | <↑↓> scroll | <esc> close"
-              : "<⇥> panel | <↑↓> scroll | <esc> close"}
+            {clampedScroll > 0 ? "↑ " : "  "}
+            {String(clampedScroll + 1)}-
+            {String(Math.min(clampedScroll + maxVisible, activeLines.length))}/
+            {String(activeLines.length)}
+            {clampedScroll + maxVisible < activeLines.length ? " ↓" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+    </Popup>
   );
 }

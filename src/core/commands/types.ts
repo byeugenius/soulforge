@@ -41,7 +41,7 @@ export interface CommandContext {
   vimHints: boolean;
   verbose: boolean;
   diffStyle: "default" | "sidebyside" | "compact";
-  autoCompactDiffs: boolean;
+  collapseDiffs: boolean;
   compactionStrategy: CompactionStrategy;
   showReasoning: boolean;
   setShowReasoning: (v: boolean) => void;

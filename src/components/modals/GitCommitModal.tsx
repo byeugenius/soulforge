@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getGitDiff, getGitStatus, gitAdd, gitCommit } from "../../core/git/status.js";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupFooterHints, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 64;
 
@@ -112,8 +112,11 @@ export function GitCommitModal({ visible, cwd, coAuthor, onClose, onCommitted, o
         backgroundColor={POPUP_BG}
       >
         <PopupRow w={innerW}>
+          <text fg={t.brand} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
+            {icon("git")}{" "}
+          </text>
           <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            {icon("git")} Git Commit
+            Git Commit
           </text>
         </PopupRow>
         <PopupRow w={innerW}>
@@ -205,14 +208,14 @@ export function GitCommitModal({ visible, cwd, coAuthor, onClose, onCommitted, o
           </PopupRow>
         )}
 
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            {"⏎"} commit | tab stage-all | esc cancel
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={innerW}
+          hints={[
+            { key: "⏎", label: "commit" },
+            { key: "tab", label: "stage-all" },
+            { key: "esc", label: "cancel" },
+          ]}
+        />
       </box>
     </Overlay>
   );

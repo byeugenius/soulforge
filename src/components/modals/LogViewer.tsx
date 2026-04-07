@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupFooterHints, PopupRow } from "../layout/shared.js";
 
 const CHROME_ROWS = 7;
 
@@ -267,14 +267,14 @@ export function LogViewer<T extends LogViewerEntry>({
             </PopupRow>
           )}
 
-          <PopupRow w={innerW}>
-            <text>{""}</text>
-          </PopupRow>
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              ↑↓ scroll | ^Y copy | esc back
-            </text>
-          </PopupRow>
+          <PopupFooterHints
+            w={innerW}
+            hints={[
+              { key: "↑↓", label: "scroll" },
+              { key: "^Y", label: "copy" },
+              { key: "esc", label: "back" },
+            ]}
+          />
         </box>
       </Overlay>
     );
@@ -395,14 +395,15 @@ export function LogViewer<T extends LogViewerEntry>({
           </PopupRow>
         )}
 
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            ↑↓ nav | ⏎ detail | ^Y copy | esc close
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={innerW}
+          hints={[
+            { key: "↑↓", label: "nav" },
+            { key: "⏎", label: "detail" },
+            { key: "^Y", label: "copy" },
+            { key: "esc", label: "close" },
+          ]}
+        />
       </box>
     </Overlay>
   );

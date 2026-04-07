@@ -1,36 +1,40 @@
-import { useEffect, useMemo, useState } from "react";
-import { useTheme } from "../../core/theme/index.js";
+import { fg as fgStyle, StyledText, type TextRenderable } from "@opentui/core";
+import { useEffect, useRef } from "react";
+import { getThemeTokens } from "../../core/theme/index.js";
 
-/** Animated divider — a bright cursor sweeps across a dim line. */
+function buildScanLine(pos: number, w: number): StyledText {
+  const tk = getThemeTokens();
+  const segments: ReturnType<ReturnType<typeof fgStyle>>[] = [];
+  for (let i = 0; i < w; i++) {
+    const dist = Math.abs(i - pos);
+    const color =
+      dist === 0
+        ? tk.brandAlt
+        : dist === 1
+          ? tk.brand
+          : dist === 2
+            ? tk.brandDim
+            : tk.bgPopupHighlight;
+    segments.push(fgStyle(color)(dist === 0 ? "━" : "─"));
+  }
+  return new StyledText(segments);
+}
+
+/** Animated divider — a bright cursor sweeps across a dim line.
+ *  Uses a single <text> with imperative StyledText updates (zero React re-renders). */
 export function ScanDivider({ width: w, speed = 120 }: { width: number; speed?: number }) {
-  const t = useTheme();
-  const [pos, setPos] = useState(0);
+  const ref = useRef<TextRenderable>(null);
+  const posRef = useRef(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setPos((p) => (p + 1) % (w + 6)), speed);
+    const timer = setInterval(() => {
+      posRef.current = (posRef.current + 1) % (w + 6);
+      try {
+        if (ref.current) ref.current.content = buildScanLine(posRef.current, w);
+      } catch {}
+    }, speed);
     return () => clearInterval(timer);
   }, [w, speed]);
 
-  const chars = useMemo(() => {
-    const out: { ch: string; color: string }[] = [];
-    for (let i = 0; i < w; i++) {
-      const dist = Math.abs(i - pos);
-      if (dist === 0) out.push({ ch: "━", color: t.brandAlt });
-      else if (dist === 1) out.push({ ch: "─", color: t.brand });
-      else if (dist === 2) out.push({ ch: "─", color: t.brandDim });
-      else out.push({ ch: "─", color: t.bgPopupHighlight });
-    }
-    return out;
-  }, [pos, w, t]);
-
-  return (
-    <box flexDirection="row">
-      {chars.map((c, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: positional divider chars
-        <text key={i} fg={c.color}>
-          {c.ch}
-        </text>
-      ))}
-    </box>
-  );
+  return <text ref={ref} content={buildScanLine(posRef.current, w)} />;
 }

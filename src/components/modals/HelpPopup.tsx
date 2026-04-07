@@ -3,7 +3,7 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, PopupRow } from "../layout/shared.js";
+import { Popup, POPUP_BG, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 88;
 const CHROME_ROWS = 6;
@@ -125,103 +125,74 @@ export function HelpPopup({ visible, onClose }: Props) {
   if (!visible) return null;
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.brand} attributes={TextAttributes.BOLD}>
-            {icon("info")}
-          </text>
-          <text bg={POPUP_BG} fg={t.textPrimary} attributes={TextAttributes.BOLD}>
-            {" "}
-            SoulForge Help
-          </text>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"  "}↑↓ scroll
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <box flexDirection="column" height={Math.min(LINES.length, maxVisible)} overflow="hidden">
-          {LINES.slice(scrollOffset, scrollOffset + maxVisible).map((line, vi) => {
-            const key = String(vi + scrollOffset);
-            switch (line.type) {
-              case "header":
-                return (
-                  <PopupRow key={key} w={innerW}>
-                    <text bg={POPUP_BG} fg={t.brandAlt} attributes={TextAttributes.BOLD}>
-                      {line.label}
-                    </text>
-                  </PopupRow>
-                );
-              case "separator":
-                return (
-                  <PopupRow key={key} w={innerW}>
-                    <text bg={POPUP_BG} fg={t.textFaint}>
-                      {"─".repeat(innerW - 2)}
-                    </text>
-                  </PopupRow>
-                );
-              case "entry":
-                return (
-                  <PopupRow key={key} w={innerW}>
-                    <text bg={POPUP_BG} fg={line.color ?? t.brandSecondary}>
-                      {(line.label ?? "").padEnd(20)}
-                    </text>
-                    <text bg={POPUP_BG} fg={t.textMuted}>
-                      {line.desc}
-                    </text>
-                  </PopupRow>
-                );
-              case "text":
-                return (
-                  <PopupRow key={key} w={innerW}>
-                    <text bg={POPUP_BG} fg={t.textMuted}>
-                      {line.label}
-                    </text>
-                  </PopupRow>
-                );
-              case "spacer":
-                return (
-                  <PopupRow key={key} w={innerW}>
-                    <text bg={POPUP_BG}>{""}</text>
-                  </PopupRow>
-                );
-              default:
-                return null;
-            }
-          })}
-        </box>
-        {LINES.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {scrollOffset + 1}-{Math.min(scrollOffset + maxVisible, LINES.length)}/{LINES.length}
-              {scrollOffset + maxVisible < LINES.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG}>{""}</text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"↑↓"} scroll | esc close
-          </text>
-        </PopupRow>
+    <Popup
+      width={popupWidth}
+      title="SoulForge Help"
+      icon={icon("info")}
+      footer={[
+        { key: "↑↓", label: "scroll" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <box flexDirection="column" height={Math.min(LINES.length, maxVisible)} overflow="hidden">
+        {LINES.slice(scrollOffset, scrollOffset + maxVisible).map((line, vi) => {
+          const key = String(vi + scrollOffset);
+          switch (line.type) {
+            case "header":
+              return (
+                <PopupRow key={key} w={innerW}>
+                  <text bg={POPUP_BG} fg={t.brandAlt} attributes={TextAttributes.BOLD}>
+                    {line.label}
+                  </text>
+                </PopupRow>
+              );
+            case "separator":
+              return (
+                <PopupRow key={key} w={innerW}>
+                  <text bg={POPUP_BG} fg={t.textFaint}>
+                    {"─".repeat(innerW - 2)}
+                  </text>
+                </PopupRow>
+              );
+            case "entry":
+              return (
+                <PopupRow key={key} w={innerW}>
+                  <text bg={POPUP_BG} fg={line.color ?? t.brandSecondary}>
+                    {(line.label ?? "").padEnd(20)}
+                  </text>
+                  <text bg={POPUP_BG} fg={t.textMuted}>
+                    {line.desc}
+                  </text>
+                </PopupRow>
+              );
+            case "text":
+              return (
+                <PopupRow key={key} w={innerW}>
+                  <text bg={POPUP_BG} fg={t.textMuted}>
+                    {line.label}
+                  </text>
+                </PopupRow>
+              );
+            case "spacer":
+              return (
+                <PopupRow key={key} w={innerW}>
+                  <text bg={POPUP_BG}>{""}</text>
+                </PopupRow>
+              );
+            default:
+              return null;
+          }
+        })}
       </box>
-    </Overlay>
+      {LINES.length > maxVisible && (
+        <PopupRow w={innerW}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {scrollOffset + 1}-{Math.min(scrollOffset + maxVisible, LINES.length)}/{LINES.length}
+            {scrollOffset + maxVisible < LINES.length ? " ↓" : ""}
+          </text>
+        </PopupRow>
+      )}
+    </Popup>
   );
 }

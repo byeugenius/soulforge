@@ -12,7 +12,7 @@ import type {
   ThinkingMode,
 } from "../../types/index.js";
 import type { ConfigScope } from "../layout/shared.js";
-import { CONFIG_SCOPES, Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { CONFIG_SCOPES, POPUP_BG, POPUP_HL, Popup, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 88;
 const CHROME_ROWS = 7;
@@ -424,144 +424,131 @@ export function ProviderSettings({
   const valW = 10;
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.brand} attributes={TextAttributes.BOLD}>
-            {icon("system")}
-          </text>
-          <text bg={POPUP_BG} fg={t.textPrimary} attributes={TextAttributes.BOLD}>
-            {" "}
-            Provider Options
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          {TABS.map((tabItem, i) => (
-            <text key={tabItem} bg={POPUP_BG}>
-              {i > 0 ? (
-                <span fg={t.textFaint} bg={POPUP_BG}>
-                  {" │ "}
-                </span>
-              ) : (
-                ""
-              )}
-              <span
-                fg={tabItem === tab ? t.brandSecondary : t.textMuted}
-                attributes={tabItem === tab ? TextAttributes.BOLD : undefined}
-                bg={tabItem === tab ? POPUP_HL : POPUP_BG}
-              >
-                {` ${TAB_ICONS[tabItem]} ${TAB_LABELS[tabItem]} `}
+    <Popup
+      width={popupWidth}
+      title="Provider Options"
+      icon={icon("system")}
+      footer={[
+        { key: "tab", label: "switch" },
+        { key: "\u2191\u2193", label: "nav" },
+        { key: "\u23CE", label: "cycle" },
+        { key: "\u2190\u2192", label: "scope" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <PopupRow w={innerW}>
+        {TABS.map((tabItem, i) => (
+          <text key={tabItem} bg={POPUP_BG}>
+            {i > 0 ? (
+              <span fg={t.textFaint} bg={POPUP_BG}>
+                {" │ "}
               </span>
-            </text>
-          ))}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
-          {items.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
-            const i = vi + scrollOffset;
-            const isSelected = i === cursor;
-            const disabled = item.key === "budgetTokens" && isBudgetDisabled;
-            const bg = isSelected ? POPUP_HL : POPUP_BG;
-            const raw = vals[item.key as keyof CurrentValues];
-
-            const valColor = disabled
-              ? t.textFaint
-              : item.type === "toggle"
-                ? raw
-                  ? t.success
-                  : t.textMuted
-                : raw === "off"
-                  ? t.textMuted
-                  : t.brandAlt;
-
-            const displayVal =
-              item.type === "toggle" ? (raw ? "x" : " ") : String(raw).padStart(valW - 2);
-
-            const srcScope = detectValueScope(item.key, projectConfig);
-            const srcTag = srcScope === "project" ? "proj" : "glob";
-            const srcColor = srcScope === "project" ? t.info : t.textMuted;
-
-            return (
-              <box key={item.key} flexDirection="column" flexShrink={0}>
-                <PopupRow bg={bg} w={innerW}>
-                  <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
-                    {isSelected ? "› " : "  "}
-                  </text>
-                  <text
-                    bg={bg}
-                    fg={disabled ? t.textFaint : "white"}
-                    attributes={TextAttributes.BOLD}
-                  >
-                    {item.label.padEnd(labelW)}
-                  </text>
-                  <text bg={bg} fg={valColor}>
-                    [{displayVal}]
-                  </text>
-                  <text bg={bg} fg={srcColor}>
-                    {" "}
-                    {srcTag}
-                  </text>
-                </PopupRow>
-                <PopupRow bg={bg} w={innerW}>
-                  <text bg={bg} fg={t.textDim}>
-                    {"    "}
-                    {item.desc}
-                  </text>
-                </PopupRow>
-              </box>
-            );
-          })}
-          {items.length === 0 && (
-            <PopupRow w={innerW}>
-              <text bg={POPUP_BG} fg={t.textMuted}>
-                {"  "}No options for this provider yet.
-              </text>
-            </PopupRow>
-          )}
-        </box>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"Scope: "}
-          </text>
-          {CONFIG_SCOPES.map((s) => (
-            <text
-              key={s}
-              bg={POPUP_BG}
-              fg={s === scope ? t.brandAlt : t.textDim}
-              attributes={s === scope ? TextAttributes.BOLD : undefined}
+            ) : (
+              ""
+            )}
+            <span
+              fg={tabItem === tab ? t.brandSecondary : t.textMuted}
+              attributes={tabItem === tab ? TextAttributes.BOLD : undefined}
+              bg={tabItem === tab ? POPUP_HL : POPUP_BG}
             >
-              {s === scope ? `[${s}]` : ` ${s} `}
-              {"  "}
-            </text>
-          ))}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            tab switch | {"↑↓"} nav | {"⏎"} cycle | {"← →"} scope | esc close
+              {` ${TAB_ICONS[tabItem]} ${TAB_LABELS[tabItem]} `}
+            </span>
           </text>
-        </PopupRow>
+        ))}
+      </PopupRow>
+
+      <PopupRow w={innerW}>
+        <text fg={t.textFaint} bg={POPUP_BG}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
+
+      <box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+        {items.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
+          const i = vi + scrollOffset;
+          const isSelected = i === cursor;
+          const disabled = item.key === "budgetTokens" && isBudgetDisabled;
+          const bg = isSelected ? POPUP_HL : POPUP_BG;
+          const raw = vals[item.key as keyof CurrentValues];
+
+          const valColor = disabled
+            ? t.textFaint
+            : item.type === "toggle"
+              ? raw
+                ? t.success
+                : t.textMuted
+              : raw === "off"
+                ? t.textMuted
+                : t.brandAlt;
+
+          const displayVal =
+            item.type === "toggle" ? (raw ? "x" : " ") : String(raw).padStart(valW - 2);
+
+          const srcScope = detectValueScope(item.key, projectConfig);
+          const srcTag = srcScope === "project" ? "proj" : "glob";
+          const srcColor = srcScope === "project" ? t.info : t.textMuted;
+
+          return (
+            <box key={item.key} flexDirection="column" flexShrink={0}>
+              <PopupRow bg={bg} w={innerW}>
+                <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
+                  {isSelected ? "› " : "  "}
+                </text>
+                <text
+                  bg={bg}
+                  fg={disabled ? t.textFaint : "white"}
+                  attributes={TextAttributes.BOLD}
+                >
+                  {item.label.padEnd(labelW)}
+                </text>
+                <text bg={bg} fg={valColor}>
+                  [{displayVal}]
+                </text>
+                <text bg={bg} fg={srcColor}>
+                  {" "}
+                  {srcTag}
+                </text>
+              </PopupRow>
+              <PopupRow bg={bg} w={innerW}>
+                <text bg={bg} fg={t.textDim}>
+                  {"    "}
+                  {item.desc}
+                </text>
+              </PopupRow>
+            </box>
+          );
+        })}
+        {items.length === 0 && (
+          <PopupRow w={innerW}>
+            <text bg={POPUP_BG} fg={t.textMuted}>
+              {"  "}No options for this provider yet.
+            </text>
+          </PopupRow>
+        )}
       </box>
-    </Overlay>
+
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textFaint}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
+
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {"Scope: "}
+        </text>
+        {CONFIG_SCOPES.map((s) => (
+          <text
+            key={s}
+            bg={POPUP_BG}
+            fg={s === scope ? t.brandAlt : t.textDim}
+            attributes={s === scope ? TextAttributes.BOLD : undefined}
+          >
+            {s === scope ? `[${s}]` : ` ${s} `}
+            {"  "}
+          </text>
+        ))}
+      </PopupRow>
+    </Popup>
   );
 }

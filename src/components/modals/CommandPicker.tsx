@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import type { ConfigScope } from "../layout/shared.js";
-import { CONFIG_SCOPES, Overlay, PopupRow } from "../layout/shared.js";
+import { CONFIG_SCOPES, Popup, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 60;
 const CHROME_ROWS = 7;
@@ -505,208 +505,193 @@ export function CommandPicker({ visible, config, onClose }: Props) {
   const POPUP_HL = t.bgPopupHighlight;
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
-          {config.icon && (
-            <text fg={t.brand} bg={POPUP_BG}>
-              {config.icon}{" "}
-            </text>
-          )}
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            {config.title}
-          </text>
-        </PopupRow>
-
-        {config.searchable && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {"🔍 "}
-            </text>
-            <text fg={t.textPrimary} bg={POPUP_BG}>
-              {search || ""}
-            </text>
-            <text fg={t.brand} bg={POPUP_BG}>
-              {"▌"}
-            </text>
-            {search.length === 0 && (
-              <text fg={t.textDim} bg={POPUP_BG}>
-                {" type to filter..."}
-              </text>
-            )}
-          </PopupRow>
-        )}
-
-        <PopupRow w={innerW}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        <box
-          flexDirection="column"
-          height={Math.min(
-            filteredOptions.reduce((sum, o) => sum + 1 + (o.description ? 1 : 0), 0) || 1,
-            maxVisible,
-          )}
-          overflow="hidden"
-        >
-          {filteredOptions.length === 0 ? (
-            <PopupRow w={innerW}>
-              <text fg={t.textMuted} bg={POPUP_BG}>
-                {"  No matches"}
-              </text>
-            </PopupRow>
-          ) : (
-            filteredOptions
-              .slice(clampedOffset, clampedOffset + maxVisible)
-              .map((option, vi) => (
-                <OptionRow
-                  key={option.value}
-                  option={option}
-                  isActive={vi + clampedOffset === cursor}
-                  isCurrent={option.value === config.currentValue}
-                  innerW={innerW}
-                  popupBg={POPUP_BG}
-                  popupHl={POPUP_HL}
-                  brandSecondary={t.brandSecondary}
-                  textPrimary={t.textPrimary}
-                  textSecondary={t.textSecondary}
-                  textMuted={t.textMuted}
-                  textDim={t.textDim}
-                  textFaint={t.textFaint}
-                  successColor={t.success}
-                />
-              ))
-          )}
-        </box>
-        {filteredOptions.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textSecondary} bg={POPUP_BG}>
-              {clampedOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(filteredOptions.length)}
-              {clampedOffset + maxVisible < filteredOptions.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-
-        {hasControls && (
-          <>
-            <PopupRow w={innerW}>
-              <text fg={t.textFaint} bg={POPUP_BG}>
-                {"─".repeat(innerW - 4)}
-              </text>
-            </PopupRow>
-            {controls.map((ctrl, ci) => {
-              const focused = focusZone === ci;
-              const bg = focused ? POPUP_HL : POPUP_BG;
-              if (ctrl.type === "toggle") {
-                const toggle = config.toggles?.find((tg) => tg.key === ctrl.key);
-                if (!toggle) return null;
-                const on = toggleState[toggle.key] ?? toggle.value;
-                return (
-                  <PopupRow key={ctrl.key} bg={bg} w={innerW}>
-                    <text bg={bg} fg={focused ? t.brandAlt : on ? t.success : t.textDim}>
-                      {focused ? "› " : "  "}
-                      {on ? "◉" : "◯"}{" "}
-                    </text>
-                    <text
-                      bg={bg}
-                      fg={focused ? t.textPrimary : on ? t.textPrimary : t.textMuted}
-                      attributes={focused ? TextAttributes.BOLD : undefined}
-                    >
-                      {toggleLabels[toggle.key] ?? toggle.label}
-                    </text>
-                    <text bg={bg} fg={t.textMuted}>
-                      {"  "}
-                      <span fg={on ? t.success : t.textDim} attributes={TextAttributes.BOLD}>
-                        {"<"}
-                        {toggle.key === "tab" ? "TAB" : toggle.key}
-                        {">"}
-                      </span>
-                    </text>
-                  </PopupRow>
-                );
-              }
-              // selector
-              const sel = config.selectors?.find((s) => s.key === ctrl.key);
-              if (!sel) return null;
-              const cur = selectorState[sel.key] ?? sel.value;
-              return (
-                <PopupRow key={ctrl.key} bg={bg} w={innerW}>
-                  <text bg={bg} fg={focused ? t.brandAlt : t.textMuted}>
-                    {focused ? "› " : "  "}
-                    {sel.label}
-                    {"  "}
-                  </text>
-                  {sel.options.map((opt, i) => (
-                    <text
-                      key={opt}
-                      bg={bg}
-                      fg={i === cur ? t.brandAlt : t.textDim}
-                      attributes={i === cur ? TextAttributes.BOLD : undefined}
-                    >
-                      {i === cur ? `[${opt}]` : ` ${opt} `}
-                    </text>
-                  ))}
-                  {!focused && (
-                    <text bg={bg} fg={t.textDim}>
-                      {"  "}
-                      <span fg={t.textFaint} attributes={TextAttributes.BOLD}>
-                        {"<"}
-                        {sel.key.toUpperCase()}
-                        {">"}
-                      </span>
-                    </text>
-                  )}
-                  {focused && (
-                    <text bg={bg} fg={t.textDim}>
-                      {"  ← →"}
-                    </text>
-                  )}
-                </PopupRow>
-              );
-            })}
-          </>
-        )}
-
-        {config.scopeEnabled && (
-          <PopupRow w={innerW}>
-            <text bg={POPUP_BG} fg={t.textMuted}>
-              {"Save to: "}
-            </text>
-            {CONFIG_SCOPES.map((s) => (
-              <text
-                key={s}
-                bg={POPUP_BG}
-                fg={s === scope ? t.brandAlt : t.textDim}
-                attributes={s === scope ? TextAttributes.BOLD : undefined}
-              >
-                {s === scope ? `[${s}]` : ` ${s} `}
-                {"  "}
-              </text>
-            ))}
-          </PopupRow>
-        )}
-
+    <Popup
+      width={popupWidth}
+      title={config.title}
+      icon={config.icon}
+      footer={[
+        { key: "\u2191\u2193", label: "navigate" },
+        ...(hasControls ? [{ key: "\u2190\u2192", label: "adjust" }] : []),
+        { key: "\u23CE", label: "select" },
+        ...(config.searchable ? [{ key: "type", label: "filter" }] : []),
+        ...(config.scopeEnabled ? [{ key: "\u2190\u2192", label: "scope" }] : []),
+        { key: "esc", label: "close" },
+      ]}
+    >
+      {config.searchable && (
         <PopupRow w={innerW}>
           <text fg={t.textMuted} bg={POPUP_BG}>
-            {"↑↓"} navigate{hasControls ? " | ← → adjust" : ""}
-            {" | ⏎ "}select{config.searchable ? " | type to filter" : ""}
-            {config.scopeEnabled ? " | ← → scope" : ""} | esc
+            {"🔍 "}
+          </text>
+          <text fg={t.textPrimary} bg={POPUP_BG}>
+            {search || ""}
+          </text>
+          <text fg={t.brand} bg={POPUP_BG}>
+            {"▌"}
+          </text>
+          {search.length === 0 && (
+            <text fg={t.textDim} bg={POPUP_BG}>
+              {" type to filter..."}
+            </text>
+          )}
+        </PopupRow>
+      )}
+
+      <PopupRow w={innerW}>
+        <text fg={t.textFaint} bg={POPUP_BG}>
+          {"─".repeat(innerW - 4)}
+        </text>
+      </PopupRow>
+
+      <box
+        flexDirection="column"
+        height={Math.min(
+          filteredOptions.reduce((sum, o) => sum + 1 + (o.description ? 1 : 0), 0) || 1,
+          maxVisible,
+        )}
+        overflow="hidden"
+      >
+        {filteredOptions.length === 0 ? (
+          <PopupRow w={innerW}>
+            <text fg={t.textMuted} bg={POPUP_BG}>
+              {"  No matches"}
+            </text>
+          </PopupRow>
+        ) : (
+          filteredOptions
+            .slice(clampedOffset, clampedOffset + maxVisible)
+            .map((option, vi) => (
+              <OptionRow
+                key={option.value}
+                option={option}
+                isActive={vi + clampedOffset === cursor}
+                isCurrent={option.value === config.currentValue}
+                innerW={innerW}
+                popupBg={POPUP_BG}
+                popupHl={POPUP_HL}
+                brandSecondary={t.brandSecondary}
+                textPrimary={t.textPrimary}
+                textSecondary={t.textSecondary}
+                textMuted={t.textMuted}
+                textDim={t.textDim}
+                textFaint={t.textFaint}
+                successColor={t.success}
+              />
+            ))
+        )}
+      </box>
+      {filteredOptions.length > maxVisible && (
+        <PopupRow w={innerW}>
+          <text fg={t.textSecondary} bg={POPUP_BG}>
+            {clampedOffset > 0 ? "↑ " : "  "}
+            {String(cursor + 1)}/{String(filteredOptions.length)}
+            {clampedOffset + maxVisible < filteredOptions.length ? " ↓" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+
+      <PopupRow w={innerW}>
+        <text>{""}</text>
+      </PopupRow>
+
+      {hasControls && (
+        <>
+          <PopupRow w={innerW}>
+            <text fg={t.textFaint} bg={POPUP_BG}>
+              {"─".repeat(innerW - 4)}
+            </text>
+          </PopupRow>
+          {controls.map((ctrl, ci) => {
+            const focused = focusZone === ci;
+            const bg = focused ? POPUP_HL : POPUP_BG;
+            if (ctrl.type === "toggle") {
+              const toggle = config.toggles?.find((tg) => tg.key === ctrl.key);
+              if (!toggle) return null;
+              const on = toggleState[toggle.key] ?? toggle.value;
+              return (
+                <PopupRow key={ctrl.key} bg={bg} w={innerW}>
+                  <text bg={bg} fg={focused ? t.brandAlt : on ? t.success : t.textDim}>
+                    {focused ? "› " : "  "}
+                    {on ? "◉" : "◯"}{" "}
+                  </text>
+                  <text
+                    bg={bg}
+                    fg={focused ? t.textPrimary : on ? t.textPrimary : t.textMuted}
+                    attributes={focused ? TextAttributes.BOLD : undefined}
+                  >
+                    {toggleLabels[toggle.key] ?? toggle.label}
+                  </text>
+                  <text bg={bg} fg={t.textMuted}>
+                    {"  "}
+                    <span fg={on ? t.success : t.textDim} attributes={TextAttributes.BOLD}>
+                      {"<"}
+                      {toggle.key === "tab" ? "TAB" : toggle.key}
+                      {">"}
+                    </span>
+                  </text>
+                </PopupRow>
+              );
+            }
+            // selector
+            const sel = config.selectors?.find((s) => s.key === ctrl.key);
+            if (!sel) return null;
+            const cur = selectorState[sel.key] ?? sel.value;
+            return (
+              <PopupRow key={ctrl.key} bg={bg} w={innerW}>
+                <text bg={bg} fg={focused ? t.brandAlt : t.textMuted}>
+                  {focused ? "› " : "  "}
+                  {sel.label}
+                  {"  "}
+                </text>
+                {sel.options.map((opt, i) => (
+                  <text
+                    key={opt}
+                    bg={bg}
+                    fg={i === cur ? t.brandAlt : t.textDim}
+                    attributes={i === cur ? TextAttributes.BOLD : undefined}
+                  >
+                    {i === cur ? `[${opt}]` : ` ${opt} `}
+                  </text>
+                ))}
+                {!focused && (
+                  <text bg={bg} fg={t.textDim}>
+                    {"  "}
+                    <span fg={t.textFaint} attributes={TextAttributes.BOLD}>
+                      {"<"}
+                      {sel.key.toUpperCase()}
+                      {">"}
+                    </span>
+                  </text>
+                )}
+                {focused && (
+                  <text bg={bg} fg={t.textDim}>
+                    {"  ← →"}
+                  </text>
+                )}
+              </PopupRow>
+            );
+          })}
+        </>
+      )}
+
+      {config.scopeEnabled && (
+        <PopupRow w={innerW}>
+          <text bg={POPUP_BG} fg={t.textMuted}>
+            {"Save to: "}
+          </text>
+          {CONFIG_SCOPES.map((s) => (
+            <text
+              key={s}
+              bg={POPUP_BG}
+              fg={s === scope ? t.brandAlt : t.textDim}
+              attributes={s === scope ? TextAttributes.BOLD : undefined}
+            >
+              {s === scope ? `[${s}]` : ` ${s} `}
+              {"  "}
+            </text>
+          ))}
+        </PopupRow>
+      )}
+    </Popup>
   );
 }

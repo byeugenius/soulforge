@@ -17,7 +17,14 @@ import {
   setSecret,
 } from "../../core/secrets.js";
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow, usePopupColors } from "../layout/shared.js";
+import {
+  Overlay,
+  POPUP_BG,
+  POPUP_HL,
+  PopupFooterHints,
+  PopupRow,
+  usePopupColors,
+} from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 76;
 const CHROME_ROWS = 10;
@@ -477,11 +484,13 @@ export function ApiKeySettings({ visible, onClose }: Props) {
 
           <Hr iw={innerW} />
 
-          <PopupRow w={innerW}>
-            <text bg={POPUP_BG} fg={t.textMuted}>
-              {"⏎"} save · esc cancel · {backendLabel}
-            </text>
-          </PopupRow>
+          <PopupFooterHints
+            w={innerW}
+            hints={[
+              { key: "⏎", label: "save" },
+              { key: "esc", label: "cancel" },
+            ]}
+          />
         </box>
       </Overlay>
     );

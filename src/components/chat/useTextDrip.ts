@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-const TICK_MS = 12; // ~83fps drain loop
+const TICK_MS = 32; // ~30fps drain loop
 const MIN_SPEED = 0.8; // chars/tick floor
-const MAX_SPEED = 10; // chars/tick ceiling
+const MAX_SPEED = 16; // chars/tick ceiling
 const ACCEL = 0.15; // velocity ramp-up per tick (easing)
 const DECEL = 0.4; // velocity ramp-down when buffer drains
-const CATCHUP_RAMP = 0.25; // extra accel when buffer is large (smooth catch-up)
+const CATCHUP_RAMP = 0.4; // extra accel when buffer is large (smooth catch-up)
 const CATCHUP_THRESHOLD = 60; // buffer size to trigger catch-up
 
 /**
@@ -24,8 +24,7 @@ export function useTextDrip(
   fullText: string,
   streaming: boolean,
 ): { text: string; freshCount: number } {
-  const [revealed, setRevealed] = useState(0);
-  const [freshCount, setFreshCount] = useState(0);
+  const [drip, setDrip] = useState({ revealed: 0, fresh: 0 });
   const bufferRef = useRef(0);
   const prevLenRef = useRef(0);
   const velocityRef = useRef(MIN_SPEED);
@@ -44,8 +43,7 @@ export function useTextDrip(
   // Flush on stream end
   useEffect(() => {
     if (!streaming) {
-      setRevealed(fullTextRef.current.length);
-      setFreshCount(0);
+      setDrip({ revealed: fullTextRef.current.length, fresh: 0 });
       bufferRef.current = 0;
       prevLenRef.current = fullTextRef.current.length;
       velocityRef.current = MIN_SPEED;
@@ -59,13 +57,11 @@ export function useTextDrip(
     const timer = setInterval(() => {
       const buf = bufferRef.current;
       if (buf <= 0) {
-        // Nothing to drain — decelerate
         velocityRef.current = Math.max(MIN_SPEED, velocityRef.current * DECEL);
-        setFreshCount(0);
+        setDrip((prev) => (prev.fresh === 0 ? prev : { ...prev, fresh: 0 }));
         return;
       }
 
-      // Accelerate — faster when buffer is large (catch-up)
       const accel = buf > CATCHUP_THRESHOLD ? ACCEL + CATCHUP_RAMP : ACCEL;
       const targetSpeed = Math.min(MAX_SPEED, MIN_SPEED + buf * 0.08);
       velocityRef.current = Math.min(
@@ -76,14 +72,12 @@ export function useTextDrip(
       const rawChars = Math.max(1, Math.round(velocityRef.current));
       const drain = Math.min(rawChars, buf);
 
-      // Word-aware snap: try to land on a word boundary
-      setRevealed((prev) => {
-        const target = Math.min(prev + drain, fullTextRef.current.length);
-        const snapped = snapToWordBoundary(fullTextRef.current, prev, target);
-        const actual = snapped - prev;
+      setDrip((prev) => {
+        const target = Math.min(prev.revealed + drain, fullTextRef.current.length);
+        const snapped = snapToWordBoundary(fullTextRef.current, prev.revealed, target);
+        const actual = snapped - prev.revealed;
         bufferRef.current = Math.max(0, bufferRef.current - actual);
-        setFreshCount(actual);
-        return snapped;
+        return { revealed: snapped, fresh: actual };
       });
     }, TICK_MS);
 
@@ -92,7 +86,7 @@ export function useTextDrip(
 
   if (!streaming) return { text: fullText, freshCount: 0 };
 
-  return { text: fullText.slice(0, revealed), freshCount };
+  return { text: fullText.slice(0, drip.revealed), freshCount: drip.fresh };
 }
 
 /**

@@ -5,7 +5,7 @@ import { getGitLog, gitPull, gitPush, gitStash, gitStashPop } from "../../core/g
 import { icon } from "../../core/icons.js";
 
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { POPUP_BG, POPUP_HL, Popup, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 54;
 const CHROME_ROWS = 7;
@@ -182,83 +182,62 @@ export function GitMenu({
   const innerW = popupWidth - 2;
 
   return (
-    <Overlay>
+    <Popup
+      width={popupWidth}
+      title="Git"
+      icon={icon("git")}
+      footer={[
+        { key: "↑↓", label: "navigate" },
+        { key: "⏎", label: "select" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <PopupRow w={innerW}>
+        <text>{""}</text>
+      </PopupRow>
+
       <box
         flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
+        height={Math.min(MENU_ITEMS.length, maxVisible)}
+        overflow="hidden"
       >
-        <PopupRow w={innerW}>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            {icon("git")} Git
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-
-        <box
-          flexDirection="column"
-          height={Math.min(MENU_ITEMS.length, maxVisible)}
-          overflow="hidden"
-        >
-          {MENU_ITEMS.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
-            const i = vi + scrollOffset;
-            const isActive = i === cursor;
-            const bg = isActive ? POPUP_HL : POPUP_BG;
-            return (
-              <PopupRow key={item.action} bg={bg} w={innerW}>
-                <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                  {isActive ? "› " : "  "}
-                </text>
-                <text
-                  bg={bg}
-                  fg={isActive ? t.warning : t.textMuted}
-                  attributes={isActive ? TextAttributes.BOLD : undefined}
-                >
-                  {item.key}
-                </text>
-                <text
-                  bg={bg}
-                  fg={isActive ? t.brandSecondary : t.textSecondary}
-                  attributes={isActive ? TextAttributes.BOLD : undefined}
-                >
-                  {"  "}
-                  {item.label}
-                </text>
-              </PopupRow>
-            );
-          })}
-        </box>
-        {MENU_ITEMS.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(MENU_ITEMS.length)}
-              {scrollOffset + maxVisible < MENU_ITEMS.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-
+        {MENU_ITEMS.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
+          const i = vi + scrollOffset;
+          const isActive = i === cursor;
+          const bg = isActive ? POPUP_HL : POPUP_BG;
+          return (
+            <PopupRow key={item.action} bg={bg} w={innerW}>
+              <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
+                {isActive ? "› " : "  "}
+              </text>
+              <text
+                bg={bg}
+                fg={isActive ? t.warning : t.textMuted}
+                attributes={isActive ? TextAttributes.BOLD : undefined}
+              >
+                {item.key}
+              </text>
+              <text
+                bg={bg}
+                fg={isActive ? t.brandSecondary : t.textSecondary}
+                attributes={isActive ? TextAttributes.BOLD : undefined}
+              >
+                {"  "}
+                {item.label}
+              </text>
+            </PopupRow>
+          );
+        })}
+      </box>
+      {MENU_ITEMS.length > maxVisible && (
         <PopupRow w={innerW}>
           <text fg={t.textMuted} bg={POPUP_BG}>
-            {"↑↓"} navigate | {"⏎"}/key select | esc close
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {String(cursor + 1)}/{String(MENU_ITEMS.length)}
+            {scrollOffset + maxVisible < MENU_ITEMS.length ? " ↓" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+    </Popup>
   );
 }

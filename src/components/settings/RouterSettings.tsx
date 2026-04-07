@@ -6,7 +6,7 @@ import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import type { TaskRouter } from "../../types/index.js";
 import type { ConfigScope } from "../layout/shared.js";
-import { CONFIG_SCOPES, Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { CONFIG_SCOPES, Popup, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 76;
 const CHROME_ROWS = 12;
@@ -291,117 +291,100 @@ export function RouterSettings({
   const selectedHint = selectedSlot?.row.hint ?? "";
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        {/* ── Title ── */}
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.brand} attributes={TextAttributes.BOLD}>
-            {icon("router")}
-          </text>
-          <text bg={POPUP_BG} fg={t.textPrimary} attributes={TextAttributes.BOLD}>
-            {" "}
-            Task Router
-          </text>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {" — assign models to different tasks"}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textSubtle}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        {/* ── Scrollable body ── */}
-        <box flexDirection="column" overflow="hidden">
-          {ROWS.slice(renderStart, lastRowIdx + 1).map((row, _vi) => {
-            if (row.kind === "section") {
-              return (
-                <SectionHeader
-                  key={row.title}
-                  title={row.title}
-                  subtitle={row.subtitle}
-                  innerW={innerW}
-                />
-              );
-            }
-            // Find which selectable index this slot corresponds to
-            const selIdx = SELECTABLE.findIndex((s) => s.row.key === row.key);
-            const isSelected = selIdx === cursor;
-            const modelId = router?.[row.key] ?? null;
+    <Popup
+      width={popupWidth}
+      title="Task Router"
+      icon={icon("router")}
+      headerRight={
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {" — assign models to different tasks"}
+        </text>
+      }
+      footer={[
+        { key: "↑↓", label: "navigate" },
+        { key: "⏎", label: "pick model" },
+        { key: "d", label: "reset" },
+        { key: "←→", label: "scope" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      {/* ── Scrollable body ── */}
+      <box flexDirection="column" overflow="hidden">
+        {ROWS.slice(renderStart, lastRowIdx + 1).map((row, _vi) => {
+          if (row.kind === "section") {
             return (
-              <SlotRowView
-                key={row.key}
-                slot={row}
-                modelId={modelId}
-                activeModel={activeModel}
-                selected={isSelected}
+              <SectionHeader
+                key={row.title}
+                title={row.title}
+                subtitle={row.subtitle}
                 innerW={innerW}
               />
             );
-          })}
-        </box>
-
-        {/* ── Scroll indicator ── */}
-        {SELECTABLE.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {"  "}
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(SELECTABLE.length)}
-              {visibleSelectableEnd < SELECTABLE.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        {/* ── Selected slot hint ── */}
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textSubtle}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textSecondary}>
-            {selectedHint}
-          </text>
-        </PopupRow>
-
-        {/* ── Scope selector ── */}
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textSubtle}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"Scope "}
-          </text>
-          {CONFIG_SCOPES.map((s) => (
-            <text
-              key={s}
-              bg={POPUP_BG}
-              fg={s === scope ? t.brandAlt : t.textDim}
-              attributes={s === scope ? TextAttributes.BOLD : undefined}
-            >
-              {s === scope ? ` [${s}] ` : `  ${s}  `}
-            </text>
-          ))}
-        </PopupRow>
-
-        {/* ── Keybindings ── */}
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"↑↓"} navigate {"│"} {"⏎"} pick model {"│"} d reset {"│"} {"←→"} scope {"│"} esc close
-          </text>
-        </PopupRow>
+          }
+          // Find which selectable index this slot corresponds to
+          const selIdx = SELECTABLE.findIndex((s) => s.row.key === row.key);
+          const isSelected = selIdx === cursor;
+          const modelId = router?.[row.key] ?? null;
+          return (
+            <SlotRowView
+              key={row.key}
+              slot={row}
+              modelId={modelId}
+              activeModel={activeModel}
+              selected={isSelected}
+              innerW={innerW}
+            />
+          );
+        })}
       </box>
-    </Overlay>
+
+      {/* ── Scroll indicator ── */}
+      {SELECTABLE.length > maxVisible && (
+        <PopupRow w={innerW}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {"  "}
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {String(cursor + 1)}/{String(SELECTABLE.length)}
+            {visibleSelectableEnd < SELECTABLE.length ? " ↓" : ""}
+          </text>
+        </PopupRow>
+      )}
+
+      {/* ── Selected slot hint ── */}
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textSubtle}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textSecondary}>
+          {selectedHint}
+        </text>
+      </PopupRow>
+
+      {/* ── Scope selector ── */}
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textSubtle}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {"Scope "}
+        </text>
+        {CONFIG_SCOPES.map((s) => (
+          <text
+            key={s}
+            bg={POPUP_BG}
+            fg={s === scope ? t.brandAlt : t.textDim}
+            attributes={s === scope ? TextAttributes.BOLD : undefined}
+          >
+            {s === scope ? ` [${s}] ` : `  ${s}  `}
+          </text>
+        ))}
+      </PopupRow>
+
+      {/* ── Keybindings ── */}
+    </Popup>
   );
 }

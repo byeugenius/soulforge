@@ -4,7 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { type ThemeTokens, useTheme } from "../../core/theme/index.js";
 import { type RepoMapStatus, useRepoMapStore } from "../../stores/repomap.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow, SPINNER_FRAMES } from "../layout/shared.js";
+import {
+  Overlay,
+  POPUP_BG,
+  POPUP_HL,
+  PopupFooterHints,
+  PopupRow,
+  SPINNER_FRAMES,
+} from "../layout/shared.js";
 
 const LABEL_W = 18;
 const POPUP_W = 72;
@@ -653,38 +660,31 @@ export function RepoMapStatusPopup({
               </text>
             </PopupRow>
 
-            <PopupRow w={innerW}>
-              <text bg={POPUP_BG}>{""}</text>
-            </PopupRow>
-
-            <PopupRow w={innerW}>
-              <text bg={POPUP_BG} fg={t.textFaint}>
-                {"\u2500".repeat(innerW - 2)}
-              </text>
-            </PopupRow>
-
-            <PopupRow w={innerW}>
-              <text bg={POPUP_BG} fg={t.textMuted}>
-                {"\u2191\u2193 focus | \u2190\u2192 change | tab scope | 1-5 mode | "}
-                {isModified ? (
-                  <span fg={t.success} attributes={TextAttributes.BOLD}>
-                    {"\u23CE apply"}
-                  </span>
-                ) : (
-                  <span fg={t.textMuted}>{"\u23CE apply"}</span>
-                )}
-                <span fg={t.textMuted}>{" | esc close"}</span>
-              </text>
-            </PopupRow>
+            <PopupFooterHints
+              w={innerW}
+              hints={[
+                { key: "↑↓", label: "focus" },
+                { key: "←→", label: "change" },
+                { key: "tab", label: "scope" },
+                { key: "1-5", label: "mode" },
+                { key: "⏎", label: "apply" },
+                { key: "esc", label: "close" },
+              ]}
+            />
           </>
         )}
 
         {!hasConfig && (
-          <PopupRow w={innerW}>
-            <text bg={POPUP_BG} fg={t.textMuted}>
-              {`  [E] ${enabled ? "disable" : "enable"} | [R] refresh | [X] clear | tab scope | esc close`}
-            </text>
-          </PopupRow>
+          <PopupFooterHints
+            w={innerW}
+            hints={[
+              { key: "E", label: enabled ? "disable" : "enable" },
+              { key: "R", label: "refresh" },
+              { key: "X", label: "clear" },
+              { key: "tab", label: "scope" },
+              { key: "esc", label: "close" },
+            ]}
+          />
         )}
       </box>
     </Overlay>

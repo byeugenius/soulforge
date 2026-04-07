@@ -11,7 +11,7 @@ import {
   setSecret,
 } from "../../core/secrets.js";
 import { useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupFooterHints, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 72;
 const CHROME_ROWS = 10;
@@ -287,11 +287,13 @@ export function WebSearchSettings({ visible, onClose }: Props) {
             </text>
           </PopupRow>
 
-          <PopupRow w={innerW}>
-            <text bg={POPUP_BG} fg={t.textMuted}>
-              {"⏎"} save | esc cancel | stored in {backendLabel}
-            </text>
-          </PopupRow>
+          <PopupFooterHints
+            w={innerW}
+            hints={[
+              { key: "⏎", label: "save" },
+              { key: "esc", label: "cancel" },
+            ]}
+          />
         </box>
       </Overlay>
     );
@@ -435,11 +437,14 @@ export function WebSearchSettings({ visible, onClose }: Props) {
           </PopupRow>
         )}
 
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"↑↓"} nav | {"⏎"} set key | esc close
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={innerW}
+          hints={[
+            { key: "↑↓", label: "nav" },
+            { key: "⏎", label: "set key" },
+            { key: "esc", label: "close" },
+          ]}
+        />
       </box>
     </Overlay>
   );

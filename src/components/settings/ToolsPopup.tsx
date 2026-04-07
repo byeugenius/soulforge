@@ -1,10 +1,9 @@
-import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { memo, useState } from "react";
 import { useTheme } from "../../core/theme/index.js";
 import { TOOL_CATALOG } from "../../core/tools/constants.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { POPUP_BG, POPUP_HL, Popup, PopupRow } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 100;
 const CHROME_ROWS = 5;
@@ -63,10 +62,8 @@ const ToolRow = memo(function ToolRow({
 });
 
 export function ToolsPopup({ visible, disabledTools, onToggleTool, onClose }: Props) {
-  const t = useTheme();
   const { width: termCols, height: termRows } = useTerminalDimensions();
   const popupW = Math.min(MAX_POPUP_WIDTH, termCols - 4);
-  const innerW = popupW - 2;
   const maxVisible = Math.max(5, termRows - CHROME_ROWS - 4);
 
   const { cursor, setCursor, scrollOffset, adjustScroll } = usePopupScroll(maxVisible);
@@ -107,37 +104,30 @@ export function ToolsPopup({ visible, disabledTools, onToggleTool, onClose }: Pr
   const visibleItems = ALL_TOOLS.slice(scrollOffset, scrollOffset + maxVisible);
 
   return (
-    <Overlay>
-      <box
-        borderStyle="rounded"
-        border
-        borderColor={t.brandAlt}
-        flexDirection="column"
-        width={popupW}
-      >
-        <PopupRow w={innerW}>
-          <text fg={t.brandAlt} attributes={TextAttributes.BOLD}>
-            Tools
-          </text>
-          <text fg={t.textMuted}> — space to toggle, esc to close</text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text fg={t.textFaint}>{"─".repeat(innerW)}</text>
-        </PopupRow>
-
-        {visibleItems.map((tool, i) => {
-          const idx = scrollOffset + i;
-          return (
-            <ToolRow
-              key={tool.name}
-              tool={tool}
-              enabled={!disabledTools.has(tool.name)}
-              selected={cursor === idx}
-              w={innerW}
-            />
-          );
-        })}
-      </box>
-    </Overlay>
+    <Popup
+      width={popupW}
+      title="Tools"
+      footer={
+        visibleItems.length > 0
+          ? [
+              { key: "space", label: "toggle" },
+              { key: "esc", label: "close" },
+            ]
+          : []
+      }
+    >
+      {visibleItems.map((tool, i) => {
+        const idx = scrollOffset + i;
+        return (
+          <ToolRow
+            key={tool.name}
+            tool={tool}
+            enabled={!disabledTools.has(tool.name)}
+            selected={cursor === idx}
+            w={popupW - 2}
+          />
+        );
+      })}
+    </Popup>
   );
 }

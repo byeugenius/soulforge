@@ -6,7 +6,7 @@ import { type SessionListEntry, SessionManager } from "../../core/sessions/manag
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import { timeAgo } from "../../utils/time.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { POPUP_BG, POPUP_HL, Popup, PopupRow } from "../layout/shared.js";
 
 const POPUP_CHROME = 8;
 const COL_MSGS = 7;
@@ -202,136 +202,120 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
   const SEARCH_HL = t.bgPopupHighlight;
 
   return (
-    <Overlay>
+    <Popup
+      width={popupWidth}
+      title="Sessions"
+      icon={icon("clock_alt")}
+      headerRight={
+        <text fg={t.textMuted} bg={POPUP_BG}>
+          {" "}
+          {String(sessions.length)} sessions {"\u00B7"} {formatSize(totalSize)}
+        </text>
+      }
+      footer={[
+        { key: "\u2191\u2193", label: "navigate" },
+        { key: "\u23CE", label: "restore" },
+        { key: "^D", label: "delete" },
+        { key: "^X", label: "clear all" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      {/* Search */}
+      <PopupRow w={innerW} bg={SEARCH_HL}>
+        <text fg={t.brand} bg={SEARCH_HL}>
+          {"\uD83D\uDD0D"}{" "}
+        </text>
+        <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={SEARCH_HL}>
+          {query}
+        </text>
+        <text fg={t.brandAlt} bg={SEARCH_HL}>
+          {"\u258E"}
+        </text>
+        {!query ? (
+          <text fg={t.textDim} bg={SEARCH_HL}>
+            {" type to search\u2026"}
+          </text>
+        ) : (
+          <text fg={t.textMuted} bg={SEARCH_HL}>
+            {` ${String(filtered.length)} result${filtered.length === 1 ? "" : "s"}`}
+          </text>
+        )}
+      </PopupRow>
+
+      {/* Separator */}
+      <PopupRow w={innerW}>
+        <text fg={t.textSubtle} bg={POPUP_BG}>
+          {"\u2500".repeat(innerW - 4)}
+        </text>
+      </PopupRow>
+
+      {/* Column headers */}
+      <PopupRow w={innerW}>
+        <text fg={t.textMuted} bg={POPUP_BG} attributes={TextAttributes.BOLD}>
+          {"  "}
+          {rpad("Title", titleColW)}
+          {lpad("Msgs", COL_MSGS)}
+          {lpad("Size", COL_SIZE)}
+          {lpad("Updated", COL_TIME)}
+        </text>
+      </PopupRow>
+
+      {/* Separator */}
+      <PopupRow w={innerW}>
+        <text fg={t.textSubtle} bg={POPUP_BG}>
+          {"\u2500".repeat(innerW - 4)}
+        </text>
+      </PopupRow>
+
+      {/* List */}
       <box
         flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
+        height={Math.min(filtered.length || 1, maxVisible)}
+        overflow="hidden"
       >
-        {/* Title */}
-        <PopupRow w={innerW}>
-          <text fg={t.brand} bg={POPUP_BG}>
-            {icon("clock_alt")}{" "}
-          </text>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            Sessions
-          </text>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            {" "}
-            {String(sessions.length)} sessions {"\u00B7"} {formatSize(totalSize)}
-          </text>
-        </PopupRow>
-
-        {/* Search */}
-        <PopupRow w={innerW} bg={SEARCH_HL}>
-          <text fg={t.brand} bg={SEARCH_HL}>
-            {"\uD83D\uDD0D"}{" "}
-          </text>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={SEARCH_HL}>
-            {query}
-          </text>
-          <text fg={t.brandAlt} bg={SEARCH_HL}>
-            {"\u258E"}
-          </text>
-          {!query ? (
-            <text fg={t.textDim} bg={SEARCH_HL}>
-              {" type to search\u2026"}
-            </text>
-          ) : (
-            <text fg={t.textMuted} bg={SEARCH_HL}>
-              {` ${String(filtered.length)} result${filtered.length === 1 ? "" : "s"}`}
-            </text>
-          )}
-        </PopupRow>
-
-        {/* Separator */}
-        <PopupRow w={innerW}>
-          <text fg={t.textSubtle} bg={POPUP_BG}>
-            {"\u2500".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        {/* Column headers */}
-        <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG} attributes={TextAttributes.BOLD}>
-            {"  "}
-            {rpad("Title", titleColW)}
-            {lpad("Msgs", COL_MSGS)}
-            {lpad("Size", COL_SIZE)}
-            {lpad("Updated", COL_TIME)}
-          </text>
-        </PopupRow>
-
-        {/* Separator */}
-        <PopupRow w={innerW}>
-          <text fg={t.textSubtle} bg={POPUP_BG}>
-            {"\u2500".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        {/* List */}
-        <box
-          flexDirection="column"
-          height={Math.min(filtered.length || 1, maxVisible)}
-          overflow="hidden"
-        >
-          {filtered.length === 0 ? (
-            <PopupRow w={innerW}>
-              <text fg={t.textMuted} bg={POPUP_BG}>
-                {"  "}
-                {icon("clock_alt")}{" "}
-                {query ? "no matching sessions" : "no sessions yet \u2014 start chatting!"}
-              </text>
-            </PopupRow>
-          ) : (
-            filtered.slice(scrollOffset, scrollOffset + maxVisible).map((session, vi) => {
-              const i = vi + scrollOffset;
-              return (
-                <SessionRow
-                  key={session.id}
-                  session={session}
-                  isActive={i === cursor}
-                  titleColW={titleColW}
-                  innerW={innerW}
-                />
-              );
-            })
-          )}
-        </box>
-
-        {/* Scroll */}
-        {filtered.length > maxVisible && (
+        {filtered.length === 0 ? (
           <PopupRow w={innerW}>
             <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "\u2191 " : "  "}
-              {String(cursor + 1)}/{String(filtered.length)}
-              {scrollOffset + maxVisible < filtered.length ? " \u2193" : ""}
+              {"  "}
+              {icon("clock_alt")}{" "}
+              {query ? "no matching sessions" : "no sessions yet \u2014 start chatting!"}
             </text>
           </PopupRow>
+        ) : (
+          filtered.slice(scrollOffset, scrollOffset + maxVisible).map((session, vi) => {
+            const i = vi + scrollOffset;
+            return (
+              <SessionRow
+                key={session.id}
+                session={session}
+                isActive={i === cursor}
+                titleColW={titleColW}
+                innerW={innerW}
+              />
+            );
+          })
         )}
+      </box>
 
-        {/* Confirm clear */}
-        {confirmClear && (
-          <PopupRow w={innerW} bg={t.error}>
-            <text fg="#fff" attributes={TextAttributes.BOLD} bg={t.error}>
-              Delete all {String(sessions.length)} sessions? (y/n)
-            </text>
-          </PopupRow>
-        )}
-
+      {/* Scroll */}
+      {filtered.length > maxVisible && (
         <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-
-        {/* Footer */}
-        <PopupRow w={innerW}>
-          <text fg={t.textDim} bg={POPUP_BG}>
-            {"\u2191\u2193"} navigate | {"\u23CE"} restore | ^D delete | ^X clear all | esc close
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {scrollOffset > 0 ? "\u2191 " : "  "}
+            {String(cursor + 1)}/{String(filtered.length)}
+            {scrollOffset + maxVisible < filtered.length ? " \u2193" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+
+      {/* Confirm clear */}
+      {confirmClear && (
+        <PopupRow w={innerW} bg={t.error}>
+          <text fg="#fff" attributes={TextAttributes.BOLD} bg={t.error}>
+            Delete all {String(sessions.length)} sessions? (y/n)
+          </text>
+        </PopupRow>
+      )}
+    </Popup>
   );
 }

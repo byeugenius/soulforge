@@ -1,6 +1,6 @@
+import { TextAttributes } from "@opentui/core";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { TextAttributes } from "@opentui/core";
 import {
   createContext,
   memo,
@@ -41,8 +41,8 @@ function useReasoningExpanded(): boolean {
   return useContext(ReasoningExpandedContext);
 }
 
-const REVEAL_INTERVAL = 30;
-const MAX_REVEAL_STEPS = 15;
+const REVEAL_INTERVAL = 45;
+const MAX_REVEAL_STEPS = 8;
 const CURSOR_CHAR = "\u2588"; // █
 
 export const RAIL_BORDER = {
@@ -62,7 +62,7 @@ interface Props {
   messages: ChatMessage[];
   chatStyle: ChatStyle;
   diffStyle?: "default" | "sidebyside" | "compact";
-  autoCompactDiffs?: boolean;
+  collapseDiffs?: boolean;
   showReasoning?: boolean;
   reasoningExpanded?: boolean;
   lockIn?: boolean;
@@ -277,13 +277,13 @@ function isDenied(error?: string): boolean {
 function ToolCallRow({
   tc,
   diffStyle,
-  autoCompactDiffs = false,
+  collapseDiffs = false,
   connectorChar,
   treePosition,
 }: {
   tc: ToolCall;
   diffStyle?: "default" | "sidebyside" | "compact";
-  autoCompactDiffs?: boolean;
+  collapseDiffs?: boolean;
   connectorChar?: string;
   treePosition?: TreePosition;
 }) {
@@ -292,9 +292,9 @@ function ToolCallRow({
   const errorsExpanded = useReasoningExpanded();
   const props = buildFinalToolRowProps(tc);
 
-  // For edit tools, use compact diff by default (unless autoCompactDiffs is off), expanded on Ctrl+O
+  // For edit tools, collapse to compact by default, expanded on Ctrl+O
   const effectiveDiffStyle = props.diff
-    ? expanded || !autoCompactDiffs
+    ? expanded || !collapseDiffs
       ? diffStyle
       : "compact"
     : diffStyle;
@@ -701,7 +701,7 @@ function renderSegments(
   segments: MessageSegment[],
   toolCallMap: Map<string, ToolCall>,
   diffStyle: "default" | "sidebyside" | "compact" = "default",
-  autoCompactDiffs = false,
+  collapseDiffs = false,
   showReasoning = true,
   reasoningExpanded = false,
   t: ThemeTokens = getThemeTokens(),
@@ -967,7 +967,7 @@ function renderSegments(
                 <ToolCallRow
                   tc={g.tc}
                   diffStyle={diffStyle}
-                  autoCompactDiffs={autoCompactDiffs}
+                  collapseDiffs={collapseDiffs}
                   connectorChar={connChar}
                   treePosition={treePos}
                 />
@@ -992,7 +992,7 @@ function renderSegments(
                         key={child.id}
                         tc={child}
                         diffStyle={diffStyle}
-                        autoCompactDiffs={autoCompactDiffs}
+                        collapseDiffs={collapseDiffs}
                       />
                     ))}
                   </box>
@@ -1009,14 +1009,14 @@ function renderSegments(
 const AssistantMessage = memo(function AssistantMessage({
   msg,
   diffStyle = "default",
-  autoCompactDiffs = false,
+  collapseDiffs = false,
   showReasoning = true,
   reasoningExpanded = false,
   lockIn = false,
 }: {
   msg: ChatMessage;
   diffStyle?: "default" | "sidebyside" | "compact";
-  autoCompactDiffs?: boolean;
+  collapseDiffs?: boolean;
   showReasoning?: boolean;
   reasoningExpanded?: boolean;
   lockIn?: boolean;
@@ -1115,7 +1115,7 @@ const AssistantMessage = memo(function AssistantMessage({
           >
             {lockInDispatchCalls.length > 0
               ? lockInDispatchCalls.map((tc) => (
-                  <ToolCallRow key={tc.id} tc={tc} diffStyle="compact" autoCompactDiffs />
+                  <ToolCallRow key={tc.id} tc={tc} diffStyle="compact" collapseDiffs />
                 ))
               : null}
           </LockInWrapper>
@@ -1143,7 +1143,7 @@ const AssistantMessage = memo(function AssistantMessage({
           msg.segments as MessageSegment[],
           toolCallMap,
           diffStyle,
-          autoCompactDiffs,
+          collapseDiffs,
           showReasoning,
           reasoningExpanded,
           t,
@@ -1158,11 +1158,7 @@ const AssistantMessage = memo(function AssistantMessage({
                 ?.filter((tc) => tc.name !== "task_list" && tc.name !== "update_plan_step")
                 .map((tc) => (
                   <box key={tc.id} flexDirection="column">
-                    <ToolCallRow
-                      tc={tc}
-                      diffStyle={diffStyle}
-                      autoCompactDiffs={autoCompactDiffs}
-                    />
+                    <ToolCallRow tc={tc} diffStyle={diffStyle} collapseDiffs={collapseDiffs} />
                   </box>
                 ))}
             </box>
@@ -1177,7 +1173,7 @@ export const StaticMessage = memo(function StaticMessage({
   msg,
   chatStyle,
   diffStyle = "default",
-  autoCompactDiffs = false,
+  collapseDiffs = false,
   showReasoning = true,
   reasoningExpanded = false,
   animate = false,
@@ -1186,7 +1182,7 @@ export const StaticMessage = memo(function StaticMessage({
   msg: ChatMessage;
   chatStyle: ChatStyle;
   diffStyle?: "default" | "sidebyside" | "compact";
-  autoCompactDiffs?: boolean;
+  collapseDiffs?: boolean;
   showReasoning?: boolean;
   reasoningExpanded?: boolean;
   animate?: boolean;
@@ -1211,7 +1207,7 @@ export const StaticMessage = memo(function StaticMessage({
       <AssistantMessage
         msg={msg}
         diffStyle={diffStyle}
-        autoCompactDiffs={autoCompactDiffs}
+        collapseDiffs={collapseDiffs}
         showReasoning={showReasoning}
         reasoningExpanded={reasoningExpanded}
         lockIn={lockIn}
@@ -1224,7 +1220,7 @@ export const MessageList = memo(function MessageList({
   messages,
   chatStyle,
   diffStyle = "default",
-  autoCompactDiffs = false,
+  collapseDiffs = false,
   showReasoning = true,
   lockIn = false,
 }: Props) {
@@ -1268,7 +1264,7 @@ export const MessageList = memo(function MessageList({
             key={msg.id}
             msg={msg}
             diffStyle={diffStyle}
-            autoCompactDiffs={autoCompactDiffs}
+            collapseDiffs={collapseDiffs}
             showReasoning={showReasoning}
             lockIn={lockIn}
           />

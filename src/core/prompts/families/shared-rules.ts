@@ -52,5 +52,5 @@ export const SHARED_RULES = `
 - Write modern, idiomatic code for the language and ecosystem. Use current ${CURRENT_YEAR}-era APIs, patterns, and best practices — avoid deprecated or legacy approaches.
 
 Only commit changes when the user explicitly asks you to.
-You are already in CWD of the repo, no need to <cd> to it when using shell.
+You are already in <cwd> of the repo/project, no need to <cd> to it when using shell or other tools.
 Use conventional commits: type: description (scope optional). Types: feat, fix, refactor, docs, test, chore, perf, ci, build, style, revert, etc.`;

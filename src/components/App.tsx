@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
-import { join } from "node:path";
 import { type Selection, TextAttributes } from "@opentui/core";
 import { useRenderer, useTerminalDimensions } from "@opentui/react";
+import { spawn } from "node:child_process";
+import { join } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -922,7 +922,7 @@ export function App({
         vimHints: effectiveConfig.vimHints !== false,
         verbose: effectiveConfig.verbose === true,
         diffStyle: effectiveConfig.diffStyle ?? "default",
-        autoCompactDiffs: effectiveConfig.autoCompactDiffs === true,
+        collapseDiffs: effectiveConfig.collapseDiffs === true,
         compactionStrategy: effectiveConfig.compaction?.strategy ?? "v2",
         showReasoning: uiState.showReasoning,
         setShowReasoning: uiState.setShowReasoning,
@@ -966,7 +966,7 @@ export function App({
       effectiveConfig.vimHints,
       effectiveConfig.verbose,
       effectiveConfig.diffStyle,
-      effectiveConfig.autoCompactDiffs,
+      effectiveConfig.collapseDiffs,
       effectiveConfig.compaction?.strategy,
       saveToScope,
       detectScope,

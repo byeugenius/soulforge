@@ -5,7 +5,7 @@ import { type ThemeTokens, useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import type { AgentEditorAccess, EditorIntegration } from "../../types/index.js";
 import type { ConfigScope } from "../layout/shared.js";
-import { CONFIG_SCOPES, Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { CONFIG_SCOPES, Popup, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
 
 const AGENT_ACCESS_MODES: AgentEditorAccess[] = ["on", "off", "when-open"];
 const AGENT_ACCESS_LABELS: Record<AgentEditorAccess, string> = {
@@ -158,118 +158,103 @@ export function EditorSettings({ visible, settings, initialScope, onUpdate, onCl
   if (!visible) return null;
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
+    <Popup
+      width={popupWidth}
+      title="Editor Integrations"
+      icon=""
+      footer={[
+        { key: "↑↓", label: "navigate" },
+        { key: "⏎", label: "toggle" },
+        { key: "a", label: "all" },
+        { key: "n", label: "none" },
+        { key: "e", label: "agent access" },
+        { key: "←→", label: "scope" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <box flexDirection="column" height={Math.min(ITEMS.length, maxVisible)} overflow="hidden">
+        {ITEMS.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
+          const i = vi + scrollOffset;
+          const isSelected = i === cursor;
+          const isEnabled = current[item.key];
+          const bg = isSelected ? POPUP_HL : POPUP_BG;
+          return (
+            <PopupRow key={item.key} bg={bg} w={innerW}>
+              <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
+                {isSelected ? "› " : "  "}
+              </text>
+              <text bg={bg} fg={isEnabled ? t.success : t.textMuted}>
+                [{isEnabled ? "x" : " "}]
+              </text>
+              <text bg={bg} fg={isEnabled ? "white" : t.textMuted}>
+                {" "}
+                {item.label.padEnd(20)}
+              </text>
+              <text bg={bg} fg={t.textMuted} truncate>
+                {item.desc}
+              </text>
+            </PopupRow>
+          );
+        })}
+      </box>
+      {ITEMS.length > maxVisible && (
         <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.brand} attributes={TextAttributes.BOLD}></text>
-          <text bg={POPUP_BG} fg={t.textPrimary} attributes={TextAttributes.BOLD}>
-            {" "}
-            Editor Integrations
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {String(cursor + 1)}/{String(ITEMS.length)}
+            {scrollOffset + maxVisible < ITEMS.length ? " ↓" : ""}
           </text>
         </PopupRow>
+      )}
 
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textFaint}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
+
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {"Scope: "}
+        </text>
+        {CONFIG_SCOPES.map((s) => (
+          <text
+            key={s}
+            bg={POPUP_BG}
+            fg={s === scope ? t.brandAlt : t.textDim}
+            attributes={s === scope ? TextAttributes.BOLD : undefined}
+          >
+            {s === scope ? `[${s}]` : ` ${s} `}
+            {"  "}
           </text>
-        </PopupRow>
+        ))}
+      </PopupRow>
 
-        <box flexDirection="column" height={Math.min(ITEMS.length, maxVisible)} overflow="hidden">
-          {ITEMS.slice(scrollOffset, scrollOffset + maxVisible).map((item, vi) => {
-            const i = vi + scrollOffset;
-            const isSelected = i === cursor;
-            const isEnabled = current[item.key];
-            const bg = isSelected ? POPUP_HL : POPUP_BG;
-            return (
-              <PopupRow key={item.key} bg={bg} w={innerW}>
-                <text bg={bg} fg={isSelected ? t.brandSecondary : t.textMuted}>
-                  {isSelected ? "› " : "  "}
-                </text>
-                <text bg={bg} fg={isEnabled ? t.success : t.textMuted}>
-                  [{isEnabled ? "x" : " "}]
-                </text>
-                <text bg={bg} fg={isEnabled ? "white" : t.textMuted}>
-                  {" "}
-                  {item.label.padEnd(20)}
-                </text>
-                <text bg={bg} fg={t.textMuted} truncate>
-                  {item.desc}
-                </text>
-              </PopupRow>
-            );
-          })}
-        </box>
-        {ITEMS.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(ITEMS.length)}
-              {scrollOffset + maxVisible < ITEMS.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textFaint}>
+          {"─".repeat(innerW - 2)}
+        </text>
+      </PopupRow>
 
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"Scope: "}
-          </text>
-          {CONFIG_SCOPES.map((s) => (
+      <PopupRow w={innerW}>
+        <text bg={POPUP_BG} fg={t.textSecondary}>
+          {"  Agent editor access: "}
+        </text>
+        {AGENT_ACCESS_MODES.map((mode) => {
+          const active = (current.agentAccess ?? "on") === mode;
+          return (
             <text
-              key={s}
+              key={mode}
               bg={POPUP_BG}
-              fg={s === scope ? t.brandAlt : t.textDim}
-              attributes={s === scope ? TextAttributes.BOLD : undefined}
+              fg={active ? getAgentAccessColors(t)[mode] : t.textDim}
+              attributes={active ? TextAttributes.BOLD : undefined}
             >
-              {s === scope ? `[${s}]` : ` ${s} `}
+              {active ? `[${AGENT_ACCESS_LABELS[mode]}]` : ` ${AGENT_ACCESS_LABELS[mode]} `}
               {"  "}
             </text>
-          ))}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textSecondary}>
-            {"  Agent editor access: "}
-          </text>
-          {AGENT_ACCESS_MODES.map((mode) => {
-            const active = (current.agentAccess ?? "on") === mode;
-            return (
-              <text
-                key={mode}
-                bg={POPUP_BG}
-                fg={active ? getAgentAccessColors(t)[mode] : t.textDim}
-                attributes={active ? TextAttributes.BOLD : undefined}
-              >
-                {active ? `[${AGENT_ACCESS_LABELS[mode]}]` : ` ${AGENT_ACCESS_LABELS[mode]} `}
-                {"  "}
-              </text>
-            );
-          })}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"↑↓"} navigate | {"⏎"} toggle | a all | n none | e agent access | {"← →"} scope | esc
-          </text>
-        </PopupRow>
-      </box>
-    </Overlay>
+          );
+        })}
+      </PopupRow>
+    </Popup>
   );
 }

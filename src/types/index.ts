@@ -304,7 +304,7 @@ export interface AppConfig {
   /** Diff display style: "default" | "sidebyside" | "compact". Default: "default" */
   diffStyle?: "default" | "sidebyside" | "compact";
   /** Auto-compact diffs after streaming ends (Ctrl+O to expand). Default: false */
-  autoCompactDiffs?: boolean;
+  collapseDiffs?: boolean;
   /** Whether the terminal uses a Nerd Font. null = auto-detect from installed fonts. */
   nerdFont?: boolean | null;
   /** Chat layout style. Default: "accent" */

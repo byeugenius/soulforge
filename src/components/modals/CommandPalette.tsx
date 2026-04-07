@@ -6,7 +6,7 @@ import { fuzzyMatch } from "../../core/history/fuzzy.js";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { POPUP_BG, POPUP_HL, Popup, PopupRow, PopupSeparator } from "../layout/shared.js";
 
 const MAX_POPUP_WIDTH = 64;
 const CHROME_ROWS = 6;
@@ -354,119 +354,97 @@ export function CommandPalette({ visible, onClose, onExecute }: Props) {
   const searchBg = t.bgPopupHighlight;
 
   return (
-    <Overlay>
+    <Popup
+      width={popupWidth}
+      title="Command Palette"
+      icon={icon("lightning")}
+      footer={[
+        { key: "\u2191\u2193", label: "navigate" },
+        ...(!query ? [{ key: "tab", label: "jump" }] : []),
+        { key: "\u23CE", label: "run" },
+        { key: "esc", label: query ? "clear" : "close" },
+      ]}
+    >
+      {/* Search input */}
+      <PopupRow w={innerW} bg={searchBg}>
+        <text fg={t.brandAlt} bg={searchBg}>
+          {"\uD83D\uDD0D"}{" "}
+        </text>
+        <text fg={t.textPrimary} bg={searchBg}>
+          {query}
+        </text>
+        <text fg={t.brandAlt} bg={searchBg}>
+          {"▎"}
+        </text>
+        {!query && (
+          <text fg={t.textDim} bg={searchBg}>
+            {" type to search…"}
+          </text>
+        )}
+        {query && (
+          <text fg={t.textDim} bg={searchBg}>
+            {"  "}
+            {String(commandCount)} result{commandCount !== 1 ? "s" : ""}
+          </text>
+        )}
+      </PopupRow>
+
+      {/* Separator */}
+      <PopupSeparator w={innerW} />
+
+      {/* Items */}
       <box
         flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
+        height={Math.min(items.length || 1, maxVisible)}
+        overflow="hidden"
       >
-        {/* Title */}
-        <PopupRow w={innerW}>
-          <text fg={t.brand} bg={POPUP_BG}>
-            {icon("lightning")}{" "}
-          </text>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            Command Palette
-          </text>
-        </PopupRow>
+        {visibleItems.map((item, vi) => {
+          const idx = vi + scrollOffset;
 
-        {/* Search input */}
-        <PopupRow w={innerW} bg={searchBg}>
-          <text fg={t.brandAlt} bg={searchBg}>
-            {"\uD83D\uDD0D"}{" "}
-          </text>
-          <text fg={t.textPrimary} bg={searchBg}>
-            {query}
-          </text>
-          <text fg={t.brandAlt} bg={searchBg}>
-            {"▎"}
-          </text>
-          {!query && (
-            <text fg={t.textDim} bg={searchBg}>
-              {" type to search…"}
-            </text>
-          )}
-          {query && (
-            <text fg={t.textDim} bg={searchBg}>
-              {"  "}
-              {String(commandCount)} result{commandCount !== 1 ? "s" : ""}
-            </text>
-          )}
-        </PopupRow>
-
-        {/* Separator */}
-        <PopupRow w={innerW}>
-          <text fg={t.textSubtle} bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        {/* Items */}
-        <box
-          flexDirection="column"
-          height={Math.min(items.length || 1, maxVisible)}
-          overflow="hidden"
-        >
-          {visibleItems.map((item, vi) => {
-            const idx = vi + scrollOffset;
-
-            if (item.type === "header") {
-              const cat = item.category ?? "";
-              return (
-                <HeaderRow
-                  key={`h-${cat}`}
-                  category={cat}
-                  catColor={categoryColors[cat] ?? t.textMuted}
-                  catIcon={CATEGORY_ICONS[cat]}
-                  innerW={innerW}
-                />
-              );
-            }
-
-            const def = item.def;
-            if (!def) return null;
-
+          if (item.type === "header") {
+            const cat = item.category ?? "";
             return (
-              <CommandRow
-                key={def.cmd}
-                def={def}
-                isActive={idx === cursor}
-                catColor={categoryColors[item.category ?? ""] ?? t.brandAlt}
+              <HeaderRow
+                key={`h-${cat}`}
+                category={cat}
+                catColor={categoryColors[cat] ?? t.textMuted}
+                catIcon={CATEGORY_ICONS[cat]}
                 innerW={innerW}
-                matchIndices={item.matchIndices}
-                textSecondary={t.textSecondary}
-                textMuted={t.textMuted}
-                textFaint={t.textFaint}
-                textPrimary={t.textPrimary}
               />
             );
-          })}
-        </box>
+          }
 
-        {/* Scroll indicator */}
-        {items.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textDim} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {String(Math.max(1, items.slice(0, cursor + 1).filter(isSelectable).length))}/
-              {String(commandCount)}
-              {scrollOffset + maxVisible < items.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
+          const def = item.def;
+          if (!def) return null;
 
-        {/* Footer */}
+          return (
+            <CommandRow
+              key={def.cmd}
+              def={def}
+              isActive={idx === cursor}
+              catColor={categoryColors[item.category ?? ""] ?? t.brandAlt}
+              innerW={innerW}
+              matchIndices={item.matchIndices}
+              textSecondary={t.textSecondary}
+              textMuted={t.textMuted}
+              textFaint={t.textFaint}
+              textPrimary={t.textPrimary}
+            />
+          );
+        })}
+      </box>
+
+      {/* Scroll indicator */}
+      {items.length > maxVisible && (
         <PopupRow w={innerW}>
           <text fg={t.textDim} bg={POPUP_BG}>
-            {"↑↓"} navigate
-            {!query ? " │ ⇥ jump" : ""}
-            {" │ ⏎ run │ esc "}
-            {query ? "clear" : "close"}
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {String(Math.max(1, items.slice(0, cursor + 1).filter(isSelectable).length))}/
+            {String(commandCount)}
+            {scrollOffset + maxVisible < items.length ? " ↓" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+    </Popup>
   );
 }

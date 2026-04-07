@@ -484,7 +484,7 @@ async function handleInstructions(_input: string, ctx: CommandContext): Promise<
 
 function handleDiffStyle(_input: string, ctx: CommandContext): void {
   const patch = (v: string) => ({ diffStyle: v as "default" | "sidebyside" | "compact" });
-  let autoCompact = ctx.autoCompactDiffs;
+  let collapse = ctx.collapseDiffs;
   ctx.openCommandPicker({
     title: "Diff Style",
     icon: icon("git"),
@@ -495,31 +495,31 @@ function handleDiffStyle(_input: string, ctx: CommandContext): void {
         value: "default",
         label: "Default",
         description: "Full inline diff with syntax highlighting",
-        icon: "📄",
+        icon: icon("file"),
       },
       {
         value: "sidebyside",
         label: "Side by Side",
         description: "Old and new shown in columns",
-        icon: "📊",
+        icon: icon("panel"),
       },
       {
         value: "compact",
         label: "Compact",
         description: "File name + line count summary only",
-        icon: "📝",
+        icon: icon("compact"),
       },
     ],
     currentValue: ctx.diffStyle,
     toggles: [
       {
         key: "tab",
-        label: `Auto-compact: ${autoCompact ? "on" : "off"}`,
-        value: autoCompact,
+        label: `Collapse diffs: ${collapse ? "on" : "off"}`,
+        value: collapse,
         onToggle: () => {
-          autoCompact = !autoCompact;
-          ctx.saveToScope({ autoCompactDiffs: autoCompact }, ctx.detectScope("autoCompactDiffs"));
-          return `Auto-compact: ${autoCompact ? "on" : "off"}`;
+          collapse = !collapse;
+          ctx.saveToScope({ collapseDiffs: collapse }, ctx.detectScope("collapseDiffs"));
+          return `Collapse diffs: ${collapse ? "on" : "off"}`;
         },
       },
     ],
@@ -725,10 +725,6 @@ const handleTheme: CommandHandler = (input: string, ctx: CommandContext) => {
   if (!arg || arg === "list") {
     const themes = listThemes();
     const originalTheme = current;
-    const originalTransparent = isTransparent;
-    const originalMsgOp = savedMsgOpacity;
-    const originalDiffOp = savedDiffOpacity;
-    const originalBdrStr = savedBorderStr;
     let transparent = isTransparent;
     let userMsgOpacity = savedMsgOpacity;
     let diffOpacity = savedDiffOpacity;
@@ -813,15 +809,10 @@ const handleTheme: CommandHandler = (input: string, ctx: CommandContext) => {
         applyAll(value, transparent, userMsgOpacity, diffOpacity, borderStr);
       },
       onCancel: () => {
-        applyAll(originalTheme, originalTransparent, originalMsgOp, originalDiffOp, originalBdrStr);
+        // Revert theme name preview but keep any toggle/selector changes the user made
+        applyAll(originalTheme, transparent, userMsgOpacity, diffOpacity, borderStr);
         ctx.saveToScope(
-          themePatch(
-            originalTheme,
-            originalTransparent,
-            originalMsgOp,
-            originalDiffOp,
-            originalBdrStr,
-          ),
+          themePatch(originalTheme, transparent, userMsgOpacity, diffOpacity, borderStr),
           "global",
         );
       },

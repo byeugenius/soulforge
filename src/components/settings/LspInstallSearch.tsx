@@ -21,9 +21,9 @@ import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import type { AppConfig } from "../../types/index.js";
 import {
   type ConfigScope,
-  Overlay,
   POPUP_BG,
   POPUP_HL,
+  Popup,
   PopupRow,
   usePopupColors,
 } from "../layout/shared.js";
@@ -492,200 +492,190 @@ export function LspInstallSearch({
   const visibleItems = currentItems.slice(scrollOffset, scrollOffset + maxVisible);
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
-          <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-            {"\uDB80\uDCA6"} LSP Servers
+    <Popup
+      width={popupWidth}
+      title={"󰂦 LSP Servers"}
+      headerRight={
+        tab === "search" ? (
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {" "}
+            [{categoryFilter}]
           </text>
-          {tab === "search" && (
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {" "}
-              [{categoryFilter}]
-            </text>
-          )}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          {TABS.map((tabItem, i) => {
-            const active = i === tabIdx;
-            return (
-              <text key={tabItem} bg={POPUP_BG}>
-                {i > 0 ? (
-                  <span fg={t.textFaint} bg={POPUP_BG}>
-                    {" │ "}
-                  </span>
-                ) : (
-                  ""
-                )}
-                <span
-                  fg={active ? t.brandSecondary : t.textMuted}
-                  attributes={active ? TextAttributes.BOLD : undefined}
-                  bg={active ? pc.hl : POPUP_BG}
-                >
-                  {` ${TAB_LABELS[tabItem]} `}
+        ) : undefined
+      }
+      footer={[
+        { key: "↑↓", label: "nav" },
+        { key: "⏎", label: tab === "installed" || tab === "disabled" ? "toggle" : "install" },
+        { key: "^D", label: "disable" },
+        { key: "^U", label: "uninstall" },
+        { key: "^F", label: "category" },
+        { key: "tab", label: "tab" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <PopupRow w={innerW}>
+        {TABS.map((tabItem, i) => {
+          const active = i === tabIdx;
+          return (
+            <text key={tabItem} bg={POPUP_BG}>
+              {i > 0 ? (
+                <span fg={t.textFaint} bg={POPUP_BG}>
+                  {" │ "}
                 </span>
-              </text>
-            );
-          })}
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"─".repeat(innerW - 4)}
-          </text>
-        </PopupRow>
-
-        <PopupRow bg={pc.hl} w={innerW}>
-          <text fg={t.brand} bg={pc.hl}>
-            {"🔍 "}
-          </text>
-          {query ? (
-            <>
-              <text fg={t.textPrimary} bg={pc.hl}>
-                {query}
-              </text>
-              <text fg={t.brandSecondary} bg={pc.hl}>
-                {"█"}
-              </text>
-            </>
-          ) : (
-            <>
-              <text fg={t.brandSecondary} bg={pc.hl}>
-                {"█"}
-              </text>
-              <text fg={t.textMuted} bg={pc.hl}>
-                {tab === "search"
-                  ? "type to search 576+ packages..."
-                  : tab === "installed"
-                    ? "type to filter installed..."
-                    : tab === "disabled"
-                      ? "type to filter disabled..."
-                      : "type to filter recommended..."}
-              </text>
-            </>
-          )}
-          <text fg={t.textFaint} bg={pc.hl}>
-            {`  ${String(currentItems.length)} results`}
-          </text>
-          {tab === "search" && categoryFilter !== "All" && (
-            <text fg={t.info} bg={pc.hl}>
-              {`  [${categoryFilter}]`}
+              ) : (
+                ""
+              )}
+              <span
+                fg={active ? t.brandSecondary : t.textMuted}
+                attributes={active ? TextAttributes.BOLD : undefined}
+                bg={active ? pc.hl : POPUP_BG}
+              >
+                {` ${TAB_LABELS[tabItem]} `}
+              </span>
             </text>
-          )}
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
+          );
+        })}
+      </PopupRow>
 
-        {registryLoading ? (
-          <PopupRow w={innerW}>
-            <text fg={t.brand} bg={POPUP_BG}>
-              {registryLoaded ? "scanning installed packages..." : "loading Mason registry..."}
-            </text>
-          </PopupRow>
-        ) : !registryLoaded ? (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              no registry available — install Mason or check network
-            </text>
-          </PopupRow>
-        ) : (
-          <box
-            flexDirection="column"
-            height={Math.min(currentItems.length || 1, maxVisible)}
-            overflow="hidden"
-          >
-            {currentItems.length === 0 ? (
-              <PopupRow w={innerW}>
-                <text fg={t.textMuted} bg={POPUP_BG}>
-                  {query ? "no matching packages" : "no packages"}
-                </text>
-              </PopupRow>
-            ) : (
-              visibleItems.map((status, i) => {
-                const idx = scrollOffset + i;
-                return (
-                  <PackageRow
-                    key={status.pkg.name}
-                    status={status}
-                    isActive={idx === cursor}
-                    isDisabled={disabledServers.includes(status.pkg.name)}
-                    isRecommended={recommendedNames.has(status.pkg.name)}
-                    innerW={innerW}
-                  />
-                );
-              })
-            )}
-          </box>
-        )}
+      <PopupRow w={innerW}>
+        <text fg={t.textFaint} bg={POPUP_BG}>
+          {"─".repeat(innerW - 4)}
+        </text>
+      </PopupRow>
 
-        {currentItems.length > maxVisible && (
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {String(cursor + 1)}/{String(currentItems.length)}
-              {scrollOffset + maxVisible < currentItems.length ? " ↓" : ""}
-            </text>
-          </PopupRow>
-        )}
-
-        {pendingToggle && (
+      <PopupRow bg={pc.hl} w={innerW}>
+        <text fg={t.brand} bg={pc.hl}>
+          {"🔍 "}
+        </text>
+        {query ? (
           <>
-            <PopupRow w={innerW}>
-              <text>{""}</text>
-            </PopupRow>
-            <PopupRow w={innerW}>
-              <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
-                {disabledServers.includes(pendingToggle.pkg.name) ? "Enable" : "Disable"} "
-                {pendingToggle.pkg.name}" scope:
-              </text>
-            </PopupRow>
-            {(["Project", "Global"] as const).map((label, i) => {
-              const isActive = i === scopeCursor;
-              const bg = isActive ? POPUP_HL : POPUP_BG;
-              return (
-                <PopupRow key={label} bg={bg} w={innerW}>
-                  <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
-                    {isActive ? "› " : "  "}
-                  </text>
-                  <text
-                    bg={bg}
-                    fg={isActive ? t.brandSecondary : t.textSecondary}
-                    attributes={isActive ? TextAttributes.BOLD : undefined}
-                  >
-                    {label}
-                  </text>
-                </PopupRow>
-              );
-            })}
+            <text fg={t.textPrimary} bg={pc.hl}>
+              {query}
+            </text>
+            <text fg={t.brandSecondary} bg={pc.hl}>
+              {"█"}
+            </text>
+          </>
+        ) : (
+          <>
+            <text fg={t.brandSecondary} bg={pc.hl}>
+              {"█"}
+            </text>
+            <text fg={t.textMuted} bg={pc.hl}>
+              {tab === "search"
+                ? "type to search 576+ packages..."
+                : tab === "installed"
+                  ? "type to filter installed..."
+                  : tab === "disabled"
+                    ? "type to filter disabled..."
+                    : "type to filter recommended..."}
+            </text>
           </>
         )}
-
-        {installing && (
-          <PopupRow w={innerW}>
-            <text fg={t.brand} bg={POPUP_BG}>
-              installing...
-            </text>
-          </PopupRow>
+        <text fg={t.textFaint} bg={pc.hl}>
+          {`  ${String(currentItems.length)} results`}
+        </text>
+        {tab === "search" && categoryFilter !== "All" && (
+          <text fg={t.info} bg={pc.hl}>
+            {`  [${categoryFilter}]`}
+          </text>
         )}
+      </PopupRow>
+      <PopupRow w={innerW}>
+        <text>{""}</text>
+      </PopupRow>
 
+      {registryLoading ? (
         <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-        <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            {"↑↓"} nav | {"⏎"} {tab === "installed" || tab === "disabled" ? "toggle" : "install"} |
-            {"^D"} disable | {"^U"} uninstall | {"^F"} category | {"⇥"} tab | esc close
+          <text fg={t.brand} bg={POPUP_BG}>
+            {registryLoaded ? "scanning installed packages..." : "loading Mason registry..."}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      ) : !registryLoaded ? (
+        <PopupRow w={innerW}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            no registry available — install Mason or check network
+          </text>
+        </PopupRow>
+      ) : (
+        <box
+          flexDirection="column"
+          height={Math.min(currentItems.length || 1, maxVisible)}
+          overflow="hidden"
+        >
+          {currentItems.length === 0 ? (
+            <PopupRow w={innerW}>
+              <text fg={t.textMuted} bg={POPUP_BG}>
+                {query ? "no matching packages" : "no packages"}
+              </text>
+            </PopupRow>
+          ) : (
+            visibleItems.map((status, i) => {
+              const idx = scrollOffset + i;
+              return (
+                <PackageRow
+                  key={status.pkg.name}
+                  status={status}
+                  isActive={idx === cursor}
+                  isDisabled={disabledServers.includes(status.pkg.name)}
+                  isRecommended={recommendedNames.has(status.pkg.name)}
+                  innerW={innerW}
+                />
+              );
+            })
+          )}
+        </box>
+      )}
+
+      {currentItems.length > maxVisible && (
+        <PopupRow w={innerW}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {String(cursor + 1)}/{String(currentItems.length)}
+            {scrollOffset + maxVisible < currentItems.length ? " ↓" : ""}
+          </text>
+        </PopupRow>
+      )}
+
+      {pendingToggle && (
+        <>
+          <PopupRow w={innerW}>
+            <text>{""}</text>
+          </PopupRow>
+          <PopupRow w={innerW}>
+            <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
+              {disabledServers.includes(pendingToggle.pkg.name) ? "Enable" : "Disable"} "
+              {pendingToggle.pkg.name}" scope:
+            </text>
+          </PopupRow>
+          {(["Project", "Global"] as const).map((label, i) => {
+            const isActive = i === scopeCursor;
+            const bg = isActive ? POPUP_HL : POPUP_BG;
+            return (
+              <PopupRow key={label} bg={bg} w={innerW}>
+                <text bg={bg} fg={isActive ? t.brandSecondary : t.textMuted}>
+                  {isActive ? "› " : "  "}
+                </text>
+                <text
+                  bg={bg}
+                  fg={isActive ? t.brandSecondary : t.textSecondary}
+                  attributes={isActive ? TextAttributes.BOLD : undefined}
+                >
+                  {label}
+                </text>
+              </PopupRow>
+            );
+          })}
+        </>
+      )}
+
+      {installing && (
+        <PopupRow w={innerW}>
+          <text fg={t.brand} bg={POPUP_BG}>
+            installing...
+          </text>
+        </PopupRow>
+      )}
+    </Popup>
   );
 }

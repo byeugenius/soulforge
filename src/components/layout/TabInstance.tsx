@@ -1,6 +1,6 @@
+import { type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { ContextManager, type SharedContextResources } from "../../core/context/manager.js";
@@ -34,8 +34,8 @@ import { filterQuietTools, LOCKIN_EDIT_TOOLS, LockInWrapper } from "../chat/Lock
 import { CodeExpandedProvider } from "../chat/Markdown.js";
 import { RAIL_BORDER, ReasoningExpandedProvider, StaticMessage } from "../chat/MessageList.js";
 import { StreamSegmentList } from "../chat/StreamSegmentList.js";
-import { SUBAGENT_NAMES, ToolCallDisplay } from "../chat/ToolCallDisplay.js";
 import { formatArgs } from "../chat/tool-formatters.js";
+import { SUBAGENT_NAMES, ToolCallDisplay } from "../chat/ToolCallDisplay.js";
 import { PlanProgress } from "../plan/PlanProgress.js";
 import { PlanReviewPrompt } from "../plan/PlanReviewPrompt.js";
 import { TaskProgress, useTaskList } from "../plan/TaskProgress.js";
@@ -82,7 +82,7 @@ interface TabInstanceProps {
   clearEditorSelection: () => void;
 }
 
-const MAX_RENDERED = 60;
+const MAX_RENDERED = 40;
 const SCROLLBOX_STYLE = { contentOptions: { justifyContent: "flex-end" as const } };
 const SCROLLBAR_HIDDEN = { visible: false } as const;
 function getScrollbarVisible(tk: ThemeTokens) {
@@ -473,6 +473,7 @@ export const TabInstance = memo(function TabInstance({
               ref={scrollRef}
               stickyScroll={true}
               stickyStart="bottom"
+              viewportCulling={true}
               focusable={false}
               flexGrow={1}
               flexShrink={1}
@@ -496,7 +497,7 @@ export const TabInstance = memo(function TabInstance({
                       msg={msg}
                       chatStyle={chatStyle}
                       diffStyle={effectiveConfig.diffStyle}
-                      autoCompactDiffs={effectiveConfig.autoCompactDiffs === true}
+                      collapseDiffs={effectiveConfig.collapseDiffs === true}
                       showReasoning={showReasoning}
                       reasoningExpanded={reasoningExpanded}
                       animate={false}

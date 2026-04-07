@@ -1,6 +1,5 @@
 import { memo } from "react";
-import { useTheme } from "../../../core/theme/index.js";
-import { PopupRow, usePopupColors } from "../../layout/shared.js";
+import { PopupFooterHints } from "../../layout/shared.js";
 import { STEPS, type Step } from "./data.js";
 
 export const FooterNav = memo(function FooterNav({
@@ -12,19 +11,19 @@ export const FooterNav = memo(function FooterNav({
   stepIdx: number;
   step: Step;
 }) {
-  const t = useTheme();
-  const { bg } = usePopupColors();
   const isFirst = stepIdx === 0;
   const isLast = stepIdx === STEPS.length - 1;
-  const actionLabel = step === "setup" ? "→ next step" : isLast ? "⏎ start forging" : "⏎/→ next";
+  const actionLabel = step === "setup" ? "next step" : isLast ? "start forging" : "next";
+  const actionKey = step === "setup" ? "→" : isLast ? "⏎" : "⏎";
 
   return (
-    <PopupRow w={iw}>
-      <text fg={t.textMuted} bg={bg}>
-        {isFirst ? "" : "← back │ "}
-        {actionLabel}
-        <span fg={t.textDim}>{" │ esc close"}</span>
-      </text>
-    </PopupRow>
+    <PopupFooterHints
+      w={iw}
+      hints={[
+        ...(isFirst ? [] : [{ key: "←", label: "back" }]),
+        { key: actionKey, label: actionLabel },
+        { key: "esc", label: "close" },
+      ]}
+    />
   );
 });

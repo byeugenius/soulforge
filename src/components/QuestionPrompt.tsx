@@ -6,6 +6,7 @@ import { useTheme } from "../core/theme/index.js";
 import type { ThemeTokens } from "../core/theme/tokens.js";
 import type { PendingQuestion } from "../types/index.js";
 import { Markdown } from "./chat/Markdown.js";
+import { PopupFooterHints } from "./layout/shared.js";
 
 interface Props {
   question: PendingQuestion;
@@ -140,10 +141,16 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
             <OptionRow key={opt.value} label={opt.label} isSelected={i === selectedIdx} t={t} />
           ))}
           {showOther && <OptionRow label="Other" isSelected={selectedIdx === OTHER_IDX} t={t} />}
-          <text fg={t.textDim}>
-            {"  "}↑↓ select · ⏎ confirm
-            {question.allowSkip ? " · esc skip" : ""}
-          </text>
+          <box paddingLeft={1}>
+            <PopupFooterHints
+              w={40}
+              hints={[
+                { key: "↑↓", label: "select" },
+                { key: "⏎", label: "confirm" },
+                ...(question.allowSkip ? [{ key: "esc", label: "skip" }] : []),
+              ]}
+            />
+          </box>
         </box>
       )}
     </box>

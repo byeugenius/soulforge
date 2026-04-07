@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
 import type { Plan } from "../../types/index.js";
+import { PopupFooterHints } from "../layout/shared.js";
 
 interface Props {
   onAccept: () => void;
@@ -179,7 +180,17 @@ export function PlanReviewPrompt({
             flexGrow={1}
             placeholder="what should change..."
           />
-          <text fg={t.textMuted}>⏎ submit · esc back</text>
+          <text fg={t.textMuted}>
+            <span fg={t.brandSecondary} attributes={1}>
+              ⏎
+            </span>{" "}
+            submit
+            <span fg={t.textFaint}> │ </span>
+            <span fg={t.brandSecondary} attributes={1}>
+              esc
+            </span>{" "}
+            back
+          </text>
         </box>
       ) : (
         <box flexDirection="column">
@@ -197,7 +208,16 @@ export function PlanReviewPrompt({
               </text>
             );
           })}
-          <text fg={t.textDim}>{"  "}↑↓ select · ⏎ confirm · esc cancel</text>
+          <box paddingLeft={1}>
+            <PopupFooterHints
+              w={44}
+              hints={[
+                { key: "↑↓", label: "select" },
+                { key: "⏎", label: "confirm" },
+                { key: "esc", label: "cancel" },
+              ]}
+            />
+          </box>
         </box>
       )}
     </box>

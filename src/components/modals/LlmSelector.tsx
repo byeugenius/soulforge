@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fuzzyMatch } from "../../core/history/fuzzy.js";
 import { icon, providerIcon } from "../../core/icons.js";
 import { PROVIDER_CONFIGS } from "../../core/llm/models.js";
@@ -9,7 +9,16 @@ import { useTheme } from "../../core/theme/index.js";
 import { useAllProviderModels } from "../../hooks/useAllProviderModels.js";
 import { isModelFree } from "../../stores/statusbar.js";
 import { useUIStore } from "../../stores/ui.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow, SPINNER_FRAMES } from "../layout/shared.js";
+import {
+  Overlay,
+  POPUP_BG,
+  POPUP_HL,
+  PopupFooterHints,
+  PopupRow,
+  PopupSeparator,
+  SPINNER_FRAMES,
+  useSpinnerFrameRef,
+} from "../layout/shared.js";
 
 const MAX_W = 72;
 
@@ -188,12 +197,12 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
   // Chrome: title(1) + sep(1) + search(1) + hint(1) + sep(1) + spacer(1) + sep(1) + footer(1) = 8
   const maxVis = Math.max(6, termRows - 4 - 8);
 
-  const { providerData: provData, availability, anyLoading } = useAllProviderModels(visible);
+  const { providerData: provData, availability } = useAllProviderModels(visible);
 
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [scrollOff, setScrollOff] = useState(0);
-  const [spinFrame, setSpinFrame] = useState(0);
+  const spinFrameRef = useSpinnerFrameRef();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -209,14 +218,6 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
     setCollapsed(init);
   }, [visible, activeModel]);
 
-  useEffect(() => {
-    if (!anyLoading || !visible) return;
-    const timer = setInterval(() => {
-      setSpinFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, 120);
-    return () => clearInterval(timer);
-  }, [anyLoading, visible]);
-
   const { providerFilter, modelFilter } = (() => {
     const raw = query.toLowerCase().trim();
     const slashIdx = raw.indexOf("/");
@@ -226,7 +227,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
     return { providerFilter: "", modelFilter: raw };
   })();
 
-  const entries = (() => {
+  const entries = useMemo(() => {
     const out: Entry[] = [];
 
     for (const cfg of PROVIDER_CONFIGS) {
@@ -304,7 +305,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
       }
     }
     return out;
-  })();
+  }, [provData, availability, providerFilter, modelFilter]);
 
   const displayEntries = query
     ? entries
@@ -529,10 +530,16 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
     visRows += h;
   }
 
+  // Build index map for O(1) lookup instead of O(n) indexOf per entry
+  const entryIndexMap = new Map<Entry, number>();
+  for (let i = 0; i < displayEntries.length; i++) {
+    const e = displayEntries[i];
+    if (e) entryIndexMap.set(e, i);
+  }
+
   const totalModels = entries.filter((e) => e.kind === "model").length;
   const filteredModels = displayEntries.filter((e) => e.kind === "model").length;
-  const canScrollUp = scrollOff > 0;
-  const canScrollDown = scrollOff + visEntries.length < displayEntries.length;
+  const spinFrame = spinFrameRef.current;
 
   return (
     <Overlay>
@@ -546,11 +553,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
           </text>
         </PopupRow>
 
-        <PopupRow w={iw}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"─".repeat(iw - 4)}
-          </text>
-        </PopupRow>
+        <PopupSeparator w={iw} />
 
         <PopupRow w={iw} bg={query ? POPUP_HL : POPUP_BG}>
           <text fg={t.brand} bg={query ? POPUP_HL : POPUP_BG}>
@@ -564,7 +567,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
           </text>
           {!query && (
             <text fg={t.textFaint} bg={POPUP_BG}>
-              {" search…"}
+              {" <provider>/<model>"}
             </text>
           )}
           {query && (
@@ -575,21 +578,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
           )}
         </PopupRow>
 
-        <PopupRow w={iw}>
-          <text fg={t.textFaint} bg={POPUP_BG}>
-            {"<provider>/<model>"}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={iw}>
-          <text fg={t.textSubtle} bg={POPUP_BG}>
-            {"─".repeat(iw - 4)}
-          </text>
-        </PopupRow>
-
-        <PopupRow w={iw}>
-          <text>{""}</text>
-        </PopupRow>
+        <PopupSeparator w={iw} />
 
         {displayEntries.length === 0 ? (
           <PopupRow w={iw}>
@@ -600,7 +589,7 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
         ) : (
           <box flexDirection="column" height={Math.min(visualRowCount, maxVis)} overflow="hidden">
             {visEntries.map((entry) => {
-              const entryIdx = displayEntries.indexOf(entry);
+              const entryIdx = entryIndexMap.get(entry) ?? -1;
               const active = entryIdx === cursor;
 
               if (entry.kind === "header") {
@@ -637,23 +626,16 @@ export function LlmSelector({ visible, activeModel, onSelect, onClose }: Props) 
           </box>
         )}
 
-        <PopupRow w={iw}>
-          <text>{""}</text>
-        </PopupRow>
-
-        <PopupRow w={iw}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            {"↑↓"} navigate {"←→"} fold {"⏎"} select {"⇥"} next {"⎋"} {query ? "clear" : "close"}
-          </text>
-          {totalModels > 0 && (
-            <text fg={t.textDim} bg={POPUP_BG}>
-              {" "}
-              {canScrollUp ? "↑" : " "}
-              {String(totalModels)}
-              {canScrollDown ? "↓" : " "}
-            </text>
-          )}
-        </PopupRow>
+        <PopupFooterHints
+          w={iw}
+          hints={[
+            { key: "↑↓", label: "navigate" },
+            { key: "←→", label: "fold" },
+            { key: "⏎", label: "select" },
+            { key: "tab", label: "next" },
+            { key: "esc", label: query ? "clear" : "close" },
+          ]}
+        />
       </box>
     </Overlay>
   );

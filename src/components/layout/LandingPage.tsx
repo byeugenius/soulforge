@@ -1,6 +1,6 @@
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { getShortModelLabel } from "../../core/llm/models.js";
 import type { ProviderStatus } from "../../core/llm/provider.js";
@@ -9,7 +9,7 @@ import { useTheme } from "../../core/theme/index.js";
 import { garble, WISP_FRAMES, WORDMARK } from "../../core/utils/splash.js";
 import { useRepoMapStore } from "../../stores/repomap.js";
 import { ScanDivider } from "./ScanDivider.js";
-import { SPINNER_FRAMES } from "./shared.js";
+import { SPINNER_FRAMES, useSpinnerFrame } from "./shared.js";
 
 const BOLD = TextAttributes.BOLD;
 const ITALIC = TextAttributes.ITALIC;
@@ -248,8 +248,7 @@ function IndexingStatus() {
       lspStatus: s.lspStatus,
     };
   });
-  const spinnerRef = useRef(0);
-  const [tick, setTick] = useState(0);
+  const spinFrame = useSpinnerFrame();
 
   useEffect(
     () =>
@@ -273,20 +272,8 @@ function IndexingStatus() {
     [],
   );
 
-  useEffect(() => {
-    if (state.status !== "scanning") return;
-    const timer = setInterval(() => {
-      spinnerRef.current++;
-      setTick((t) => t + 1);
-    }, 80);
-    return () => clearInterval(timer);
-  }, [state.status]);
-
-  // Suppress unused var — tick drives re-renders for spinner animation
-  void tick;
-
   const { status, files, scanProgress, lspStatus } = state;
-  const frame = SPINNER_FRAMES[spinnerRef.current % SPINNER_FRAMES.length] ?? "⠋";
+  const frame = SPINNER_FRAMES[spinFrame % SPINNER_FRAMES.length] ?? "⠋";
 
   if (status === "scanning") {
     return (

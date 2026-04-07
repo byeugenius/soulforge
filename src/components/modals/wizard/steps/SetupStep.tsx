@@ -11,7 +11,7 @@ import {
   setSecret,
 } from "../../../../core/secrets.js";
 import { useTheme } from "../../../../core/theme/index.js";
-import { PopupRow, usePopupColors } from "../../../layout/shared.js";
+import { PopupFooterHints, PopupRow, usePopupColors } from "../../../layout/shared.js";
 import { Gap, StepHeader } from "../primitives.js";
 import { BOLD } from "../theme.js";
 
@@ -528,11 +528,13 @@ export function SetupStep({
           </text>
         </PopupRow>
         <Gap iw={iw} />
-        <PopupRow w={iw}>
-          <text fg={t.textFaint} bg={popupBg}>
-            {"   ⏎ re-enter key · esc back"}
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={iw}
+          hints={[
+            { key: "⏎", label: "re-enter key" },
+            { key: "esc", label: "back" },
+          ]}
+        />
       </>
     );
   }
@@ -586,11 +588,13 @@ export function SetupStep({
 
         <Gap iw={iw} />
 
-        <PopupRow w={iw}>
-          <text fg={t.textFaint} bg={popupBg}>
-            {"   ⏎ save & fetch models · esc cancel"}
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={iw}
+          hints={[
+            { key: "⏎", label: "save & fetch" },
+            { key: "esc", label: "cancel" },
+          ]}
+        />
       </>
     );
   }
@@ -681,13 +685,14 @@ export function SetupStep({
       )}
 
       <Gap iw={iw} />
-      <PopupRow w={iw}>
-        <text fg={t.textFaint} bg={popupBg}>
-          {anyKeySet
-            ? "   ↑↓ select · ⏎ set up · → next step"
-            : "   ↑↓ select · ⏎ set up · esc close"}
-        </text>
-      </PopupRow>
+      <PopupFooterHints
+        w={iw}
+        hints={[
+          { key: "↑↓", label: "select" },
+          { key: "⏎", label: "set up" },
+          { key: anyKeySet ? "→" : "esc", label: anyKeySet ? "next step" : "close" },
+        ]}
+      />
     </>
   );
 }

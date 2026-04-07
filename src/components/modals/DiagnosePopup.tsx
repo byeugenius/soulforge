@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { icon } from "../../core/icons.js";
 import type { BackendProbeResult, HealthCheckResult } from "../../core/intelligence/router.js";
 import { type ThemeTokens, useTheme } from "../../core/theme/index.js";
-import { Overlay, POPUP_BG, PopupRow, useSpinnerFrame } from "../layout/shared.js";
+import { Popup, POPUP_BG, PopupRow, useSpinnerFrame } from "../layout/shared.js";
 
 const CHROME_ROWS = 6;
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -186,118 +186,95 @@ export function DiagnosePopup({ visible, onClose, runHealthCheck }: Props) {
   if (!visible) return null;
 
   return (
-    <Overlay>
-      <box
-        flexDirection="column"
-        borderStyle="rounded"
-        border={true}
-        borderColor={t.brandAlt}
-        width={popupWidth}
-      >
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.brand}>
-            {icon("brain")}{" "}
-          </text>
-          <text bg={POPUP_BG} fg={t.textPrimary} attributes={TextAttributes.BOLD}>
-            Health Check
-          </text>
+    <Popup
+      width={popupWidth}
+      title="Health Check"
+      icon={icon("brain")}
+      headerRight={
+        <>
           {result ? (
             <text bg={POPUP_BG} fg={t.textMuted}>
               {"  "}
               {result.language} · {result.probeFile.split("/").pop()}
             </text>
           ) : null}
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            {"  "}↑↓ scroll
-          </text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textFaint}>
-            {"─".repeat(innerW - 2)}
-          </text>
-        </PopupRow>
-
-        <box
-          flexDirection="column"
-          height={Math.min(Math.max(1, lines.length), maxVisible)}
-          overflow="hidden"
-        >
-          {lines.length > 0 ? (
-            lines.slice(scrollOffset, scrollOffset + maxVisible).map((line, vi) => {
-              const key = String(vi + scrollOffset);
-              switch (line.type) {
-                case "header":
-                  return (
-                    <PopupRow key={key} w={innerW}>
-                      <text
-                        bg={POPUP_BG}
-                        fg={line.color ?? t.brandAlt}
-                        attributes={TextAttributes.BOLD}
-                      >
-                        {line.label ?? ""}
-                      </text>
-                    </PopupRow>
-                  );
-                case "probe":
-                  return (
-                    <PopupRow key={key} w={innerW}>
-                      <text bg={POPUP_BG} fg={line.color ?? t.textSecondary}>
-                        {"  "}
-                        {(line.label ?? "").padEnd(labelW).slice(0, labelW)}
-                      </text>
-                      <text bg={POPUP_BG} fg={line.descColor ?? t.textMuted}>
-                        {line.desc ?? ""}
-                      </text>
-                    </PopupRow>
-                  );
-                case "text":
-                  return (
-                    <PopupRow key={key} w={innerW}>
-                      <text bg={POPUP_BG} fg={line.color ?? t.textMuted}>
-                        {line.label ?? ""}
-                      </text>
-                    </PopupRow>
-                  );
-                case "spacer":
-                  return (
-                    <PopupRow key={key} w={innerW}>
-                      <text bg={POPUP_BG}>{""}</text>
-                    </PopupRow>
-                  );
-                default:
-                  return null;
-              }
-            })
-          ) : (
-            <PopupRow w={innerW}>
-              <text bg={POPUP_BG} fg={error ? t.brandSecondary : t.amber}>
-                {error ?? `${spinnerCh} initializing…`}
-              </text>
-            </PopupRow>
-          )}
-        </box>
-
-        {lines.length > maxVisible && (
+        </>
+      }
+      footer={[
+        { key: "↑↓", label: "scroll" },
+        { key: "r", label: "re-run" },
+        { key: "esc", label: "close" },
+      ]}
+    >
+      <box
+        flexDirection="column"
+        height={Math.min(Math.max(1, lines.length), maxVisible)}
+        overflow="hidden"
+      >
+        {lines.length > 0 ? (
+          lines.slice(scrollOffset, scrollOffset + maxVisible).map((line, vi) => {
+            const key = String(vi + scrollOffset);
+            switch (line.type) {
+              case "header":
+                return (
+                  <PopupRow key={key} w={innerW}>
+                    <text
+                      bg={POPUP_BG}
+                      fg={line.color ?? t.brandAlt}
+                      attributes={TextAttributes.BOLD}
+                    >
+                      {line.label ?? ""}
+                    </text>
+                  </PopupRow>
+                );
+              case "probe":
+                return (
+                  <PopupRow key={key} w={innerW}>
+                    <text bg={POPUP_BG} fg={line.color ?? t.textSecondary}>
+                      {"  "}
+                      {(line.label ?? "").padEnd(labelW).slice(0, labelW)}
+                    </text>
+                    <text bg={POPUP_BG} fg={line.descColor ?? t.textMuted}>
+                      {line.desc ?? ""}
+                    </text>
+                  </PopupRow>
+                );
+              case "text":
+                return (
+                  <PopupRow key={key} w={innerW}>
+                    <text bg={POPUP_BG} fg={line.color ?? t.textMuted}>
+                      {line.label ?? ""}
+                    </text>
+                  </PopupRow>
+                );
+              case "spacer":
+                return (
+                  <PopupRow key={key} w={innerW}>
+                    <text bg={POPUP_BG}>{""}</text>
+                  </PopupRow>
+                );
+              default:
+                return null;
+            }
+          })
+        ) : (
           <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {scrollOffset > 0 ? "↑ " : "  "}
-              {scrollOffset + 1}-{Math.min(scrollOffset + maxVisible, lines.length)}/{lines.length}
-              {scrollOffset + maxVisible < lines.length ? " ↓" : ""}
+            <text bg={POPUP_BG} fg={error ? t.brandSecondary : t.amber}>
+              {error ?? `${spinnerCh} initializing…`}
             </text>
           </PopupRow>
         )}
+      </box>
 
+      {lines.length > maxVisible && (
         <PopupRow w={innerW}>
-          <text bg={POPUP_BG}>{""}</text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text bg={POPUP_BG} fg={t.textMuted}>
-            ↑↓ scroll · r re-run · esc close
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {scrollOffset > 0 ? "↑ " : "  "}
+            {scrollOffset + 1}-{Math.min(scrollOffset + maxVisible, lines.length)}/{lines.length}
+            {scrollOffset + maxVisible < lines.length ? " ↓" : ""}
           </text>
         </PopupRow>
-      </box>
-    </Overlay>
+      )}
+    </Popup>
   );
 }

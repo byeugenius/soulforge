@@ -1044,6 +1044,585 @@ const ONE_LIGHT: ThemeTokens = {
   accentSystem: "#696c77",
 };
 
+/**
+ * Additional built-in themes — color values derived from the following projects:
+ *
+ * Cyberdream       — Scott McKendry            MIT     github.com/scottmckendry/cyberdream.nvim
+ * Oxocarbon        — Nyoom Engineering          MIT     github.com/nyoom-engineering/oxocarbon.nvim
+ * Sonokai          — Sainnhe Park               MIT     github.com/sainnhe/sonokai
+ * Moonfly          — bluz71                     MIT     github.com/bluz71/vim-moonfly-colors
+ * Melange          — savq                       MIT     github.com/savq/melange-nvim
+ * Solarized Osaka  — Takuya Matsuyama           Apache  github.com/craftzdog/solarized-osaka.nvim
+ * Bamboo           — ribru17                    MIT     github.com/ribru17/bamboo.nvim
+ * Nordic           — AlexvZyl                   MIT     github.com/AlexvZyl/nordic.nvim
+ */
+
+const CYBERDREAM: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#5ef1ff",
+  brandSecondary: "#ff6e5e",
+  brandDim: "#1e2124",
+  brandAlt: "#bd5eff",
+
+  error: "#ff6e5e",
+  success: "#5eff6c",
+  warning: "#f1ff5e",
+  info: "#5ef1ff",
+  amber: "#ffbd5e",
+
+  textPrimary: "#ffffff",
+  textSecondary: "#b0b0b0",
+  textMuted: "#7b8496",
+  textDim: "#545a68",
+  textFaint: "#3c4048",
+  textSubtle: "#1e2124",
+
+  bgApp: "#16181a",
+  bgPopup: "#16181a",
+  bgPopupHighlight: "#1e2124",
+  bgOverlay: "#0e1012",
+  bgPrimary: "#16181a",
+  bgSecondary: "#0e1012",
+  bgElevated: "#1e2124",
+  bgInput: "#16181a",
+  bgBanner: "#1e2124",
+  bgBannerError: "#3a1818",
+  bgUser: "#0e1012",
+
+  diffAddedBg: "#0e2a14",
+  diffRemovedBg: "#2a0e12",
+  diffAddedSign: "#5eff6c",
+  diffRemovedSign: "#ff6e5e",
+
+  border: "#3c4048",
+  borderFocused: "#ff6e5e",
+  borderActive: "#5ef1ff",
+  borderSlash: "#bd5eff",
+
+  accentUser: "#5ef1ff",
+  accentAssistant: "#bd5eff",
+  accentSystem: "#7b8496",
+};
+
+const OXOCARBON: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#78a9ff",
+  brandSecondary: "#ee5396",
+  brandDim: "#2a2a2e",
+  brandAlt: "#be95ff",
+
+  error: "#ee5396",
+  success: "#42be65",
+  warning: "#ffe97b",
+  info: "#33b1ff",
+  amber: "#ff832b",
+
+  textPrimary: "#f2f4f8",
+  textSecondary: "#dde1e6",
+  textMuted: "#697077",
+  textDim: "#525252",
+  textFaint: "#393939",
+  textSubtle: "#262626",
+
+  bgApp: "#161616",
+  bgPopup: "#161616",
+  bgPopupHighlight: "#262626",
+  bgOverlay: "#0e0e0e",
+  bgPrimary: "#161616",
+  bgSecondary: "#0e0e0e",
+  bgElevated: "#262626",
+  bgInput: "#161616",
+  bgBanner: "#262626",
+  bgBannerError: "#3a1428",
+  bgUser: "#0e0e0e",
+
+  diffAddedBg: "#0e2818",
+  diffRemovedBg: "#2e0e1a",
+  diffAddedSign: "#42be65",
+  diffRemovedSign: "#ee5396",
+
+  border: "#393939",
+  borderFocused: "#ee5396",
+  borderActive: "#78a9ff",
+  borderSlash: "#33b1ff",
+
+  accentUser: "#33b1ff",
+  accentAssistant: "#78a9ff",
+  accentSystem: "#525252",
+};
+
+const SONOKAI: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#76cce0",
+  brandSecondary: "#fc5d7c",
+  brandDim: "#33353f",
+  brandAlt: "#b39df3",
+
+  error: "#fc5d7c",
+  success: "#9ed072",
+  warning: "#e7c664",
+  info: "#76cce0",
+  amber: "#f39660",
+
+  textPrimary: "#e2e2e3",
+  textSecondary: "#b9b9ba",
+  textMuted: "#7f8490",
+  textDim: "#595f6f",
+  textFaint: "#414550",
+  textSubtle: "#2c2e34",
+
+  bgApp: "#2c2e34",
+  bgPopup: "#2c2e34",
+  bgPopupHighlight: "#33353f",
+  bgOverlay: "#22242a",
+  bgPrimary: "#2c2e34",
+  bgSecondary: "#22242a",
+  bgElevated: "#33353f",
+  bgInput: "#2c2e34",
+  bgBanner: "#33353f",
+  bgBannerError: "#4a2030",
+  bgUser: "#22242a",
+
+  diffAddedBg: "#1a2e1a",
+  diffRemovedBg: "#2e1a20",
+  diffAddedSign: "#9ed072",
+  diffRemovedSign: "#fc5d7c",
+
+  border: "#414550",
+  borderFocused: "#fc5d7c",
+  borderActive: "#76cce0",
+  borderSlash: "#b39df3",
+
+  accentUser: "#76cce0",
+  accentAssistant: "#b39df3",
+  accentSystem: "#7f8490",
+};
+
+const MOONFLY: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#80a0ff",
+  brandSecondary: "#ff5454",
+  brandDim: "#1c1c1c",
+  brandAlt: "#cf87e8",
+
+  error: "#ff5454",
+  success: "#8cc85f",
+  warning: "#e3c78a",
+  info: "#79dac8",
+  amber: "#de935f",
+
+  textPrimary: "#bdbdbd",
+  textSecondary: "#9e9e9e",
+  textMuted: "#6e6e6e",
+  textDim: "#4e4e4e",
+  textFaint: "#323437",
+  textSubtle: "#1c1c1c",
+
+  bgApp: "#080808",
+  bgPopup: "#080808",
+  bgPopupHighlight: "#1c1c1c",
+  bgOverlay: "#040404",
+  bgPrimary: "#080808",
+  bgSecondary: "#040404",
+  bgElevated: "#1c1c1c",
+  bgInput: "#080808",
+  bgBanner: "#1c1c1c",
+  bgBannerError: "#3a1010",
+  bgUser: "#040404",
+
+  diffAddedBg: "#0a1e0a",
+  diffRemovedBg: "#1e0a0a",
+  diffAddedSign: "#8cc85f",
+  diffRemovedSign: "#ff5454",
+
+  border: "#323437",
+  borderFocused: "#ff5454",
+  borderActive: "#80a0ff",
+  borderSlash: "#79dac8",
+
+  accentUser: "#79dac8",
+  accentAssistant: "#80a0ff",
+  accentSystem: "#6e6e6e",
+};
+
+const MELANGE: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#86a3a3",
+  brandSecondary: "#b65c60",
+  brandDim: "#34302c",
+  brandAlt: "#cf9bc2",
+
+  error: "#b65c60",
+  success: "#78997a",
+  warning: "#ebc06d",
+  info: "#86a3a3",
+  amber: "#e49b5d",
+
+  textPrimary: "#ece1d7",
+  textSecondary: "#c1a78e",
+  textMuted: "#867462",
+  textDim: "#6b5c4d",
+  textFaint: "#4a4340",
+  textSubtle: "#34302c",
+
+  bgApp: "#292522",
+  bgPopup: "#292522",
+  bgPopupHighlight: "#34302c",
+  bgOverlay: "#211e1b",
+  bgPrimary: "#292522",
+  bgSecondary: "#211e1b",
+  bgElevated: "#34302c",
+  bgInput: "#292522",
+  bgBanner: "#34302c",
+  bgBannerError: "#3a2020",
+  bgUser: "#211e1b",
+
+  diffAddedBg: "#1a2a1e",
+  diffRemovedBg: "#2a1a1a",
+  diffAddedSign: "#78997a",
+  diffRemovedSign: "#b65c60",
+
+  border: "#4a4340",
+  borderFocused: "#b65c60",
+  borderActive: "#86a3a3",
+  borderSlash: "#cf9bc2",
+
+  accentUser: "#86a3a3",
+  accentAssistant: "#cf9bc2",
+  accentSystem: "#867462",
+};
+
+const SOLARIZED_OSAKA: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#268bd2",
+  brandSecondary: "#db4b4b",
+  brandDim: "#001e26",
+  brandAlt: "#7aa2f7",
+
+  error: "#db4b4b",
+  success: "#859900",
+  warning: "#b58900",
+  info: "#2ac3de",
+  amber: "#cb4b16",
+
+  textPrimary: "#839496",
+  textSecondary: "#657b83",
+  textMuted: "#586e75",
+  textDim: "#405b67",
+  textFaint: "#1a3a45",
+  textSubtle: "#001e26",
+
+  bgApp: "#002b36",
+  bgPopup: "#001e26",
+  bgPopupHighlight: "#003847",
+  bgOverlay: "#00141c",
+  bgPrimary: "#002b36",
+  bgSecondary: "#00141c",
+  bgElevated: "#003847",
+  bgInput: "#002b36",
+  bgBanner: "#003847",
+  bgBannerError: "#3a1010",
+  bgUser: "#00141c",
+
+  diffAddedBg: "#002e1a",
+  diffRemovedBg: "#2e0014",
+  diffAddedSign: "#859900",
+  diffRemovedSign: "#db4b4b",
+
+  border: "#1a3a45",
+  borderFocused: "#db4b4b",
+  borderActive: "#268bd2",
+  borderSlash: "#2ac3de",
+
+  accentUser: "#2ac3de",
+  accentAssistant: "#268bd2",
+  accentSystem: "#586e75",
+};
+
+const BAMBOO: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#8fb573",
+  brandSecondary: "#e75a7c",
+  brandDim: "#2f3331",
+  brandAlt: "#aab386",
+
+  error: "#e75a7c",
+  success: "#8fb573",
+  warning: "#e5a84b",
+  info: "#78b892",
+  amber: "#d89b65",
+
+  textPrimary: "#e0dcc7",
+  textSecondary: "#b3af98",
+  textMuted: "#7d7e6e",
+  textDim: "#5c5e52",
+  textFaint: "#3e4238",
+  textSubtle: "#252623",
+
+  bgApp: "#252623",
+  bgPopup: "#252623",
+  bgPopupHighlight: "#2f3331",
+  bgOverlay: "#1c1d1a",
+  bgPrimary: "#252623",
+  bgSecondary: "#1c1d1a",
+  bgElevated: "#2f3331",
+  bgInput: "#252623",
+  bgBanner: "#2f3331",
+  bgBannerError: "#3a2028",
+  bgUser: "#1c1d1a",
+
+  diffAddedBg: "#1a2e1a",
+  diffRemovedBg: "#2e1a20",
+  diffAddedSign: "#8fb573",
+  diffRemovedSign: "#e75a7c",
+
+  border: "#3e4238",
+  borderFocused: "#e75a7c",
+  borderActive: "#8fb573",
+  borderSlash: "#78b892",
+
+  accentUser: "#78b892",
+  accentAssistant: "#8fb573",
+  accentSystem: "#7d7e6e",
+};
+
+const NORDIC: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#81a1c1",
+  brandSecondary: "#bf616a",
+  brandDim: "#2e3440",
+  brandAlt: "#b48ead",
+
+  error: "#bf616a",
+  success: "#a3be8c",
+  warning: "#ebcb8b",
+  info: "#88c0d0",
+  amber: "#d08770",
+
+  textPrimary: "#d8dee9",
+  textSecondary: "#c0c8d8",
+  textMuted: "#60728a",
+  textDim: "#4c566a",
+  textFaint: "#3b4252",
+  textSubtle: "#242933",
+
+  bgApp: "#1e222a",
+  bgPopup: "#1e222a",
+  bgPopupHighlight: "#2e3440",
+  bgOverlay: "#191c24",
+  bgPrimary: "#1e222a",
+  bgSecondary: "#191c24",
+  bgElevated: "#2e3440",
+  bgInput: "#1e222a",
+  bgBanner: "#2e3440",
+  bgBannerError: "#3a2028",
+  bgUser: "#191c24",
+
+  diffAddedBg: "#1a2e1e",
+  diffRemovedBg: "#2e1a1e",
+  diffAddedSign: "#a3be8c",
+  diffRemovedSign: "#bf616a",
+
+  border: "#3b4252",
+  borderFocused: "#bf616a",
+  borderActive: "#81a1c1",
+  borderSlash: "#88c0d0",
+
+  accentUser: "#88c0d0",
+  accentAssistant: "#81a1c1",
+  accentSystem: "#60728a",
+};
+
+// ── Original SoulForge themes ──
+
+const SYNTHWAVE: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#f97e72",
+  brandSecondary: "#ff7edb",
+  brandDim: "#2a1a3e",
+  brandAlt: "#fede5d",
+
+  error: "#fe4450",
+  success: "#72f1b8",
+  warning: "#fede5d",
+  info: "#36f9f6",
+  amber: "#f97e72",
+
+  textPrimary: "#f0e8d6",
+  textSecondary: "#b6a0c8",
+  textMuted: "#6e5a8a",
+  textDim: "#4a3a62",
+  textFaint: "#342850",
+  textSubtle: "#1a1028",
+
+  bgApp: "#0e0a1a",
+  bgPopup: "#140e24",
+  bgPopupHighlight: "#241a38",
+  bgOverlay: "#080612",
+  bgPrimary: "#0e0a1a",
+  bgSecondary: "#080612",
+  bgElevated: "#241a38",
+  bgInput: "#140e24",
+  bgBanner: "#241a38",
+  bgBannerError: "#3a0a1a",
+  bgUser: "#080612",
+
+  diffAddedBg: "#0a2a1a",
+  diffRemovedBg: "#2a0a14",
+  diffAddedSign: "#72f1b8",
+  diffRemovedSign: "#fe4450",
+
+  border: "#342850",
+  borderFocused: "#ff7edb",
+  borderActive: "#f97e72",
+  borderSlash: "#36f9f6",
+
+  accentUser: "#36f9f6",
+  accentAssistant: "#ff7edb",
+  accentSystem: "#6e5a8a",
+};
+
+const ICEBERG: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#84a0c6",
+  brandSecondary: "#e27878",
+  brandDim: "#1e2132",
+  brandAlt: "#a093c7",
+
+  error: "#e27878",
+  success: "#b4be82",
+  warning: "#e2a478",
+  info: "#89b8c2",
+  amber: "#e2a478",
+
+  textPrimary: "#c6c8d1",
+  textSecondary: "#9a9ca5",
+  textMuted: "#6b7089",
+  textDim: "#535768",
+  textFaint: "#3e4155",
+  textSubtle: "#1e2132",
+
+  bgApp: "#161821",
+  bgPopup: "#161821",
+  bgPopupHighlight: "#1e2132",
+  bgOverlay: "#0f1117",
+  bgPrimary: "#161821",
+  bgSecondary: "#0f1117",
+  bgElevated: "#1e2132",
+  bgInput: "#161821",
+  bgBanner: "#1e2132",
+  bgBannerError: "#3a1828",
+  bgUser: "#0f1117",
+
+  diffAddedBg: "#1a2a1e",
+  diffRemovedBg: "#2a1a1e",
+  diffAddedSign: "#b4be82",
+  diffRemovedSign: "#e27878",
+
+  border: "#3e4155",
+  borderFocused: "#e27878",
+  borderActive: "#84a0c6",
+  borderSlash: "#89b8c2",
+
+  accentUser: "#89b8c2",
+  accentAssistant: "#84a0c6",
+  accentSystem: "#6b7089",
+};
+
+const EMBER: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#ff6d3f",
+  brandSecondary: "#ff3a5c",
+  brandDim: "#2a1810",
+  brandAlt: "#ffaa44",
+
+  error: "#ff3a5c",
+  success: "#7dba5a",
+  warning: "#ffaa44",
+  info: "#5aafba",
+  amber: "#ff8c42",
+
+  textPrimary: "#e8d5c4",
+  textSecondary: "#b09882",
+  textMuted: "#7a6252",
+  textDim: "#5a4838",
+  textFaint: "#3a3028",
+  textSubtle: "#1e1610",
+
+  bgApp: "#120e0a",
+  bgPopup: "#1a1410",
+  bgPopupHighlight: "#2a2018",
+  bgOverlay: "#0a0806",
+  bgPrimary: "#120e0a",
+  bgSecondary: "#0a0806",
+  bgElevated: "#2a2018",
+  bgInput: "#1a1410",
+  bgBanner: "#2a2018",
+  bgBannerError: "#3a1010",
+  bgUser: "#0a0806",
+
+  diffAddedBg: "#142a14",
+  diffRemovedBg: "#2a1414",
+  diffAddedSign: "#7dba5a",
+  diffRemovedSign: "#ff3a5c",
+
+  border: "#3a3028",
+  borderFocused: "#ff3a5c",
+  borderActive: "#ff6d3f",
+  borderSlash: "#ffaa44",
+
+  accentUser: "#5aafba",
+  accentAssistant: "#ff6d3f",
+  accentSystem: "#7a6252",
+};
+
+const VESPER: ThemeTokens = {
+  ...DARK_THEME,
+  brand: "#ffc799",
+  brandSecondary: "#de6e7c",
+  brandDim: "#232220",
+  brandAlt: "#d4976c",
+
+  error: "#de6e7c",
+  success: "#819b69",
+  warning: "#b77e64",
+  info: "#6099c0",
+  amber: "#d4976c",
+
+  textPrimary: "#d2cfc9",
+  textSecondary: "#a09d98",
+  textMuted: "#706d68",
+  textDim: "#555350",
+  textFaint: "#3a3938",
+  textSubtle: "#232220",
+
+  bgApp: "#101010",
+  bgPopup: "#101010",
+  bgPopupHighlight: "#232220",
+  bgOverlay: "#0a0a0a",
+  bgPrimary: "#101010",
+  bgSecondary: "#0a0a0a",
+  bgElevated: "#232220",
+  bgInput: "#101010",
+  bgBanner: "#232220",
+  bgBannerError: "#3a1820",
+  bgUser: "#0a0a0a",
+
+  diffAddedBg: "#142214",
+  diffRemovedBg: "#221418",
+  diffAddedSign: "#819b69",
+  diffRemovedSign: "#de6e7c",
+
+  border: "#3a3938",
+  borderFocused: "#de6e7c",
+  borderActive: "#ffc799",
+  borderSlash: "#6099c0",
+
+  accentUser: "#6099c0",
+  accentAssistant: "#ffc799",
+  accentSystem: "#706d68",
+};
+
 const PROXYSOUL_MAIN: ThemeTokens = {
   ...DARK_THEME,
   brand: "#7844f0",
@@ -1235,6 +1814,66 @@ export const THEME_META: Record<string, ThemeMeta> = {
     description: "Ocean blue & teal",
     variant: "dark",
   },
+  cyberdream: {
+    label: "Cyberdream",
+    description: "High-contrast futuristic & vibrant",
+    variant: "dark",
+  },
+  oxocarbon: {
+    label: "Oxocarbon",
+    description: "IBM Carbon-inspired minimal dark",
+    variant: "dark",
+  },
+  sonokai: {
+    label: "Sonokai",
+    description: "Vivid colors based on Monokai Pro",
+    variant: "dark",
+  },
+  moonfly: {
+    label: "Moonfly",
+    description: "Dark charcoal with neon accents",
+    variant: "dark",
+  },
+  melange: {
+    label: "Melange",
+    description: "Warm earthy tones, cozy & readable",
+    variant: "dark",
+  },
+  "solarized-osaka": {
+    label: "Solarized Osaka",
+    description: "Solarized reimagined by craftzdog",
+    variant: "dark",
+  },
+  bamboo: {
+    label: "Bamboo",
+    description: "Warm green nature-inspired theme",
+    variant: "dark",
+  },
+  nordic: {
+    label: "Nordic",
+    description: "Nord but warmer and darker",
+    variant: "dark",
+  },
+  synthwave: {
+    label: "Synthwave",
+    description: "Retro neon 80s vibes",
+    variant: "dark",
+  },
+  iceberg: {
+    label: "Iceberg",
+    description: "Cool blue-gray minimal dark",
+    variant: "dark",
+  },
+  ember: {
+    label: "Ember",
+    description: "Volcanic dark with fire accents",
+    variant: "dark",
+  },
+  vesper: {
+    label: "Vesper",
+    description: "Midnight amber & golden warmth",
+    variant: "dark",
+  },
 };
 
 export const BUILTIN_THEMES: Record<string, ThemeTokens> = {
@@ -1262,6 +1901,18 @@ export const BUILTIN_THEMES: Record<string, ThemeTokens> = {
   "proxysoul-main": PROXYSOUL_MAIN,
   "proxysoul-coffee": PROXYSOUL_COFFEE,
   "proxysoul-water": PROXYSOUL_WATER,
+  cyberdream: CYBERDREAM,
+  oxocarbon: OXOCARBON,
+  sonokai: SONOKAI,
+  moonfly: MOONFLY,
+  melange: MELANGE,
+  "solarized-osaka": SOLARIZED_OSAKA,
+  bamboo: BAMBOO,
+  nordic: NORDIC,
+  synthwave: SYNTHWAVE,
+  iceberg: ICEBERG,
+  ember: EMBER,
+  vesper: VESPER,
 };
 
 /** Convert kebab-case token key to camelCase (e.g. "bg-primary" → "bgPrimary") */

@@ -21,8 +21,8 @@ const QUIET_TOOLS = new Set(["update_plan_step", "ask_user", "task_list"]);
 
 const MAX_VISIBLE = 5;
 const ROTATE_INTERVAL = 8000;
-const GLITCH_FRAMES = 4;
-const GLITCH_TICK = 50;
+const GLITCH_FRAMES = 3;
+const GLITCH_TICK = 70;
 
 // Phase-specific spinners for lock-in status header
 const SPIN_EXPLORE = ["◴", "◷", "◶", "◵"];
@@ -192,7 +192,7 @@ export const LockInWrapper = memo(function LockInWrapper({
           </span>
           {effectiveDone ? null : (
             <span fg={t.textMuted}>
-              {(DOTS_CYCLE[Math.floor(frame / 3) % DOTS_CYCLE.length] ?? ".").padEnd(3)}
+              {(DOTS_CYCLE[Math.floor(frame / 4) % DOTS_CYCLE.length] ?? ".").padEnd(3)}
             </span>
           )}
           {!effectiveDone && elapsed > 0 ? (

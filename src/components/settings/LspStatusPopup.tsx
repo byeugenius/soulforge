@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getDetailedLspServers, getNvimLspClients } from "../../core/intelligence/instance.js";
 import { useTheme } from "../../core/theme/index.js";
 import { useErrorStore } from "../../stores/errors.js";
-import { Overlay, POPUP_BG, POPUP_HL, PopupRow } from "../layout/shared.js";
+import { Overlay, POPUP_BG, POPUP_HL, PopupFooterHints, PopupRow } from "../layout/shared.js";
 
 const CHROME_ROWS = 7;
 const POLL_MS = 2000;
@@ -264,15 +264,13 @@ export function LspStatusPopup({ visible, onClose }: Props) {
             </PopupRow>
           )}
 
-          <PopupRow w={innerW}>
-            <text>{""}</text>
-          </PopupRow>
-
-          <PopupRow w={innerW}>
-            <text fg={t.textMuted} bg={POPUP_BG}>
-              {"\u2191\u2193"} scroll | esc back
-            </text>
-          </PopupRow>
+          <PopupFooterHints
+            w={innerW}
+            hints={[
+              { key: "↑↓", label: "scroll" },
+              { key: "esc", label: "back" },
+            ]}
+          />
         </box>
       </Overlay>
     );
@@ -396,15 +394,14 @@ export function LspStatusPopup({ visible, onClose }: Props) {
           </>
         )}
 
-        <PopupRow w={innerW}>
-          <text>{""}</text>
-        </PopupRow>
-
-        <PopupRow w={innerW}>
-          <text fg={t.textMuted} bg={POPUP_BG}>
-            {"\u2191\u2193"} nav | {"\u23CE"} details | esc close
-          </text>
-        </PopupRow>
+        <PopupFooterHints
+          w={innerW}
+          hints={[
+            { key: "↑↓", label: "nav" },
+            { key: "⏎", label: "details" },
+            { key: "esc", label: "close" },
+          ]}
+        />
       </box>
     </Overlay>
   );
