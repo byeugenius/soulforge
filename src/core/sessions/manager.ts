@@ -217,6 +217,16 @@ export class SessionManager {
     }
   }
 
+  /** Async version — offloads FS scanning + JSON parsing to IO worker. */
+  async listSessionsAsync(): Promise<SessionListEntry[]> {
+    try {
+      const io = getIOClient();
+      return await io.listSessions(this.dir);
+    } catch {
+      return this.listSessions();
+    }
+  }
+
   /**
    * Synchronous save — used only for emergency crash-recovery writes
    * (signal handlers, uncaughtException). Never call from normal async paths.

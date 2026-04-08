@@ -4,8 +4,18 @@ import type { ModelMessage } from "ai";
 import { useWorkerStore } from "../../stores/workers.js";
 import type { ChatMessage } from "../../types/index.js";
 import type { WorkingState } from "../compaction/types.js";
+import type { SessionListEntry } from "../sessions/manager.js";
 import type { SessionMeta } from "../sessions/types.js";
 import { WorkerClient } from "./rpc.js";
+
+export interface FetchModelsWorkerResult {
+  models: Array<{ id: string; name: string; contextWindow?: number }>;
+  grouped?: {
+    subProviders: Array<{ id: string; name: string }>;
+    modelsByProvider: Record<string, Array<{ id: string; name: string; contextWindow?: number }>>;
+  };
+  error?: string;
+}
 
 const IS_COMPILED = import.meta.url.includes("$bunfs");
 const IS_DIST = !IS_COMPILED && import.meta.dir.includes("/dist");
@@ -132,5 +142,22 @@ export class IOClient extends WorkerClient {
 
   async loadSession(sessionDir: string): Promise<LoadSessionResult | null> {
     return this.call("loadSession", sessionDir);
+  }
+
+  // ── Session Listing (offloaded from main thread) ─────────────────
+
+  async listSessions(sessionsDir: string): Promise<SessionListEntry[]> {
+    return this.call("listSessions", sessionsDir);
+  }
+
+  // ── Model Fetching (offloaded JSON parse + grouping) ─────────────
+
+  async fetchModelsFromUrl(
+    url: string,
+    headers: Record<string, string>,
+    providerId: string,
+    grouped: boolean,
+  ): Promise<FetchModelsWorkerResult> {
+    return this.call("fetchModelsFromUrl", url, headers, providerId, grouped);
   }
 }

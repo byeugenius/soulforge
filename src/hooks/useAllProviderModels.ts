@@ -42,7 +42,22 @@ function flattenGrouped(r: {
 }
 
 export function useAllProviderModels(active: boolean): UseAllProviderModelsReturn {
-  const [providerData, setProviderData] = useState<Record<string, ProviderModelsState>>({});
+  const [providerData, setProviderData] = useState<Record<string, ProviderModelsState>>(() => {
+    // Initialize from cache immediately — prewarmAllModels() populates these at boot
+    const init: Record<string, ProviderModelsState> = {};
+    for (const cfg of PROVIDER_CONFIGS) {
+      if (cfg.grouped) {
+        const cached = getCachedGroupedModels(cfg.id);
+        init[cfg.id] = cached
+          ? { items: flattenGrouped(cached), loading: false }
+          : { items: [], loading: true };
+      } else {
+        const cached = getCachedModels(cfg.id);
+        init[cfg.id] = cached ? { items: cached, loading: false } : { items: [], loading: true };
+      }
+    }
+    return init;
+  });
   const [availability, setAvailability] = useState<Map<string, boolean>>(() => {
     const cached = getCachedProviderStatuses();
     const map = new Map<string, boolean>();
@@ -60,7 +75,9 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
   useEffect(() => {
     if (!active) return;
 
+    // Re-read caches — prewarmAllModels() may have populated them since initial state
     const init: Record<string, ProviderModelsState> = {};
+    let anyStale = false;
     for (const cfg of PROVIDER_CONFIGS) {
       if (cfg.grouped) {
         const cached = getCachedGroupedModels(cfg.id);
@@ -71,8 +88,12 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
         const cached = getCachedModels(cfg.id);
         init[cfg.id] = cached ? { items: cached, loading: false } : { items: [], loading: true };
       }
+      if (init[cfg.id]?.loading) anyStale = true;
     }
     setProviderData(init);
+
+    // If everything is cached, no need to fetch
+    if (!anyStale) return;
 
     let dead = false;
 
@@ -85,6 +106,7 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
       })
       .catch(() => {});
 
+    // Only fetch providers that aren't cached yet
     for (const cfg of PROVIDER_CONFIGS) {
       if (!init[cfg.id]?.loading) continue;
       const set = (items: ProviderModelInfo[], error?: string) => {

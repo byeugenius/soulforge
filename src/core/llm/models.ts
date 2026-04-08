@@ -1,6 +1,7 @@
 import { toErrorMessage } from "../../utils/errors.js";
 import { ensureProxy } from "../proxy/lifecycle.js";
 import { getProviderApiKey } from "../secrets.js";
+import { getIOClient } from "../workers/io-client.js";
 import { getAllProviders, getProvider, onProvidersChanged } from "./providers/index.js";
 import type { ProviderModelInfo } from "./providers/types.js";
 
@@ -371,6 +372,21 @@ export async function fetchProviderModels(providerId: string): Promise<FetchMode
   }
 }
 
+/**
+ * Pre-warm model caches for ALL providers in parallel.
+ * Fire-and-forget — each provider fetch is independent and swallows errors.
+ * Call at boot so the LlmSelector popup opens instantly with cached data.
+ */
+export function prewarmAllModels(): void {
+  for (const cfg of PROVIDER_CONFIGS) {
+    if (cfg.grouped) {
+      fetchGroupedModels(cfg.id).catch(() => {});
+    } else {
+      fetchProviderModels(cfg.id).catch(() => {});
+    }
+  }
+}
+
 interface OpenAIModelEntry {
   id: string;
   owned_by?: string;
@@ -496,52 +512,32 @@ export async function fetchVercelGatewayModels(): Promise<GroupedModelsResult> {
 async function fetchVercelGatewayGrouped(): Promise<GroupedModelsResult> {
   const apiKey = getProviderApiKey("AI_GATEWAY_API_KEY");
   if (!apiKey) {
-    return {
-      subProviders: [],
-      modelsByProvider: {},
-      error: "AI_GATEWAY_API_KEY not set",
-    };
+    return { subProviders: [], modelsByProvider: {}, error: "AI_GATEWAY_API_KEY not set" };
   }
 
   try {
-    const res = await fetch("https://ai-gateway.vercel.sh/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    if (!res.ok) {
-      return {
-        subProviders: [],
-        modelsByProvider: {},
-        error: `Gateway error: ${String(res.status)}`,
-      };
+    const io = getIOClient();
+    const r = await io.fetchModelsFromUrl(
+      "https://ai-gateway.vercel.sh/v1/models",
+      { Authorization: `Bearer ${apiKey}` },
+      "vercel_gateway",
+      true,
+    );
+    if (r.error && !r.grouped) {
+      return { subProviders: [], modelsByProvider: {}, error: `Gateway error: ${r.error}` };
     }
-
-    const data = (await res.json()) as { data: OpenAIModelEntry[] };
-    const grouped: Record<string, ProviderModelInfo[]> = {};
-
-    for (const m of data.data) {
-      if (m.type !== "language") continue;
-      const owner = m.owned_by ?? "other";
-      if (!grouped[owner]) grouped[owner] = [];
-      grouped[owner].push({ id: m.id, name: m.name ?? m.id });
-    }
-
-    const subProviders: SubProvider[] = Object.keys(grouped)
-      .sort()
-      .map((id) => ({ id, name: titleCase(id) }));
-
-    const result: GroupedModelsResult = {
-      subProviders,
-      modelsByProvider: grouped,
-    };
+    const result: GroupedModelsResult = r.grouped
+      ? {
+          subProviders: r.grouped.subProviders,
+          modelsByProvider: r.grouped.modelsByProvider,
+          error: r.error,
+        }
+      : { subProviders: [], modelsByProvider: {}, error: r.error };
     groupedCache.set("vercel_gateway", { result, ts: Date.now() });
     return result;
   } catch (err) {
     const msg = toErrorMessage(err);
-    return {
-      subProviders: [],
-      modelsByProvider: {},
-      error: `Gateway error: ${msg}`,
-    };
+    return { subProviders: [], modelsByProvider: {}, error: `Gateway error: ${msg}` };
   }
 }
 
@@ -551,43 +547,23 @@ async function fetchLLMGatewayGrouped(): Promise<GroupedModelsResult> {
   try {
     const headers: Record<string, string> = {};
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    const res = await fetch("https://api.llmgateway.io/v1/models", { headers });
-    if (!res.ok) {
-      return {
-        subProviders: [],
-        modelsByProvider: {},
-        error: `LLM Gateway error: ${String(res.status)}`,
-      };
+    const io = getIOClient();
+    const r = await io.fetchModelsFromUrl(
+      "https://api.llmgateway.io/v1/models",
+      headers,
+      "llmgateway",
+      true,
+    );
+    if (r.error && !r.grouped) {
+      return { subProviders: [], modelsByProvider: {}, error: `LLM Gateway: ${r.error}` };
     }
-
-    const data = (await res.json()) as {
-      data: {
-        id: string;
-        name: string;
-        family?: string;
-        context_length?: number;
-      }[];
-    };
-    const grouped: Record<string, ProviderModelInfo[]> = {};
-
-    for (const m of data.data) {
-      const group = m.family?.toLowerCase() || inferModelGroup(m.id);
-      if (!grouped[group]) grouped[group] = [];
-      grouped[group].push({
-        id: m.id,
-        name: m.name || m.id,
-        contextWindow: m.context_length,
-      });
-    }
-
-    const subProviders: SubProvider[] = Object.keys(grouped)
-      .sort()
-      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-
-    const result: GroupedModelsResult = {
-      subProviders,
-      modelsByProvider: grouped,
-    };
+    const result: GroupedModelsResult = r.grouped
+      ? {
+          subProviders: r.grouped.subProviders,
+          modelsByProvider: r.grouped.modelsByProvider,
+          error: r.error,
+        }
+      : { subProviders: [], modelsByProvider: {}, error: r.error };
     groupedCache.set("llmgateway", { result, ts: Date.now() });
     return result;
   } catch (err) {
@@ -598,55 +574,46 @@ async function fetchLLMGatewayGrouped(): Promise<GroupedModelsResult> {
 
 async function fetchOpenRouterGrouped(): Promise<GroupedModelsResult> {
   const apiKey = getProviderApiKey("OPENROUTER_API_KEY");
-
-  // Try with API key first, fall back to unauthenticated if it fails.
-  // Both hit the same endpoint — key gives user-specific models, no key gives public catalog.
-  async function doFetch(key: string | undefined): Promise<Response> {
-    const headers: Record<string, string> = {};
-    if (key) headers.Authorization = `Bearer ${key}`;
-    return fetch("https://openrouter.ai/api/v1/models", { headers });
-  }
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   try {
-    let res = await doFetch(apiKey);
-    if (!res.ok && apiKey) {
-      // Key might be invalid — retry without it
-      res = await doFetch(undefined);
+    const io = getIOClient();
+    let r = await io.fetchModelsFromUrl(
+      "https://openrouter.ai/api/v1/models",
+      headers,
+      "openrouter",
+      true,
+    );
+    // Key might be invalid — retry without it
+    if (r.error && apiKey && r.error.includes("HTTP 4")) {
+      r = await io.fetchModelsFromUrl(
+        "https://openrouter.ai/api/v1/models",
+        {},
+        "openrouter",
+        true,
+      );
     }
-    if (!res.ok) {
-      return {
-        subProviders: [],
-        modelsByProvider: {},
-        error: `OpenRouter error: ${String(res.status)}`,
-      };
+    if (r.error && !r.grouped) {
+      return { subProviders: [], modelsByProvider: {}, error: `OpenRouter: ${r.error}` };
     }
 
-    const data = (await res.json()) as { data: OpenRouterModel[] };
-    // Populate flat cache for context-window lookups (tier 2)
-    openRouterCache = data.data;
-
-    const grouped: Record<string, ProviderModelInfo[]> = {};
-
-    for (const m of data.data) {
-      // model IDs are "provider/model-name"
-      const slashIdx = m.id.indexOf("/");
-      const group = slashIdx >= 0 ? m.id.slice(0, slashIdx).toLowerCase() : "other";
-      if (!grouped[group]) grouped[group] = [];
-      grouped[group].push({
+    // Populate flat cache for context-window lookups
+    if (r.models.length > 0) {
+      openRouterCache = r.models.map((m) => ({
         id: m.id,
-        name: m.name.replace(/^[^:]+:\s*/, ""),
-        contextWindow: m.context_length,
-      });
+        name: m.name,
+        context_length: m.contextWindow ?? 0,
+      }));
     }
 
-    const subProviders: SubProvider[] = Object.keys(grouped)
-      .sort()
-      .map((id) => ({ id, name: GROUP_DISPLAY_NAMES[id] ?? titleCase(id) }));
-
-    const result: GroupedModelsResult = {
-      subProviders,
-      modelsByProvider: grouped,
-    };
+    const result: GroupedModelsResult = r.grouped
+      ? {
+          subProviders: r.grouped.subProviders,
+          modelsByProvider: r.grouped.modelsByProvider,
+          error: r.error,
+        }
+      : { subProviders: [], modelsByProvider: {}, error: r.error };
     groupedCache.set("openrouter", { result, ts: Date.now() });
     return result;
   } catch (err) {

@@ -1,18 +1,14 @@
-import { TextAttributes } from "@opentui/core";
+import { RGBA, TextAttributes, type TextChunk, type TextTableContent } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { type SessionListEntry, SessionManager } from "../../core/sessions/manager.js";
 import { useTheme } from "../../core/theme/index.js";
 import { usePopupScroll } from "../../hooks/usePopupScroll.js";
 import { timeAgo } from "../../utils/time.js";
-import { POPUP_BG, POPUP_HL, Popup, PopupRow } from "../layout/shared.js";
+import { POPUP_BG, Popup, PopupRow, Spinner } from "../layout/shared.js";
 
 const POPUP_CHROME = 8;
-const COL_MSGS = 7;
-const COL_SIZE = 7;
-const COL_TIME = 11;
-const COL_FIXED = COL_MSGS + COL_SIZE + COL_TIME + 6;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)}B`;
@@ -24,51 +20,11 @@ function formatSize(bytes: number): string {
   return `${gb.toFixed(1)}G`;
 }
 
-function rpad(s: string, w: number): string {
-  return s.length >= w ? s.slice(0, w) : s + " ".repeat(w - s.length);
-}
-
-function lpad(s: string, w: number): string {
-  return s.length >= w ? s.slice(0, w) : " ".repeat(w - s.length) + s;
-}
-
-interface SessionRowProps {
-  session: SessionListEntry;
-  isActive: boolean;
-  titleColW: number;
-  innerW: number;
-}
-
-function SessionRow({ session, isActive, titleColW, innerW }: SessionRowProps) {
-  const t = useTheme();
-  const bg = isActive ? POPUP_HL : POPUP_BG;
-  const title =
-    session.title.length > titleColW - 2
-      ? `${session.title.slice(0, titleColW - 4)}\u2026`
-      : session.title;
-
-  return (
-    <PopupRow key={session.id} bg={bg} w={innerW}>
-      <text bg={bg}>
-        <span fg={isActive ? t.brand : t.textFaint}>{isActive ? "\u203A " : "  "}</span>
-        <span
-          fg={isActive ? t.textPrimary : t.textSecondary}
-          attributes={isActive ? TextAttributes.BOLD : 0}
-        >
-          {rpad(title, titleColW)}
-        </span>
-        <span fg={isActive ? t.brandAlt : t.textMuted}>
-          {lpad(String(session.messageCount), COL_MSGS)}
-        </span>
-        <span fg={isActive ? t.textMuted : t.textMuted}>
-          {lpad(formatSize(session.sizeBytes), COL_SIZE)}
-        </span>
-        <span fg={isActive ? t.textMuted : t.textDim}>
-          {lpad(timeAgo(session.updatedAt), COL_TIME)}
-        </span>
-      </text>
-    </PopupRow>
-  );
+function chunk(text: string, color?: string, attrs?: number): TextChunk {
+  const c: TextChunk = { __isChunk: true, text };
+  if (color) c.fg = RGBA.fromHex(color);
+  if (attrs) c.attributes = attrs;
+  return c;
 }
 
 interface Props {
@@ -82,6 +38,7 @@ interface Props {
 export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessage }: Props) {
   const t = useTheme();
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
+  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const { width: termCols, height: termRows } = useTerminalDimensions();
@@ -90,13 +47,18 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
   const popupWidth = Math.min(90, Math.floor(termCols * 0.85));
   const maxVisible = Math.max(3, Math.floor(containerRows * 0.8) - POPUP_CHROME);
   const innerW = popupWidth - 2;
-  const titleColW = Math.max(15, innerW - COL_FIXED - 4);
   const { cursor, setCursor, scrollOffset, adjustScroll, resetScroll } = usePopupScroll(maxVisible);
 
   const manager = new SessionManager(cwd);
 
   const refresh = useCallback(() => {
-    setSessions(new SessionManager(cwd).listSessions());
+    const mgr = new SessionManager(cwd);
+    setLoading(true);
+    mgr
+      .listSessionsAsync()
+      .then(setSessions)
+      .catch(() => setSessions(mgr.listSessions()))
+      .finally(() => setLoading(false));
   }, [cwd]);
 
   useEffect(() => {
@@ -196,11 +158,55 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
 
   useKeyboard(handleKeyboard);
 
+  // Build table content from visible sessions
+  const visibleSessions = filtered.slice(scrollOffset, scrollOffset + maxVisible);
+  // Reserve space for fixed columns with manual spacing: " Msgs"(5) + " Size"(5) + " Updated"(8) + prefix(2)
+  const titleMaxW = Math.max(15, innerW - 22);
+  const tableContent = useMemo((): TextTableContent => {
+    // Header row — pad left on non-title columns for spacing
+    const header = [
+      [chunk("  Title", t.brandDim, TextAttributes.BOLD)],
+      [chunk(" Msgs", t.brandDim, TextAttributes.BOLD)],
+      [chunk(" Size", t.brandDim, TextAttributes.BOLD)],
+      [chunk(" Updated", t.brandDim, TextAttributes.BOLD)],
+    ];
+
+    const rows: TextTableContent = [header];
+
+    for (let vi = 0; vi < visibleSessions.length; vi++) {
+      const session = visibleSessions[vi];
+      if (!session) continue;
+      const i = vi + scrollOffset;
+      const isActive = i === cursor;
+
+      const prefix = isActive ? "\u203A " : "  ";
+      const maxTitle = titleMaxW - 2; // account for prefix
+      // Strip newlines — session titles can contain them from multi-line first messages
+      const cleanTitle = session.title.replace(/[\n\r]+/g, " ");
+      const titleText =
+        cleanTitle.length > maxTitle ? `${cleanTitle.slice(0, maxTitle - 1)}\u2026` : cleanTitle;
+
+      rows.push([
+        [
+          chunk(prefix, isActive ? t.brand : t.textFaint),
+          chunk(
+            titleText,
+            isActive ? t.textPrimary : t.textSecondary,
+            isActive ? TextAttributes.BOLD : 0,
+          ),
+        ],
+        [chunk(` ${String(session.messageCount)}`, isActive ? t.brandAlt : t.textMuted)],
+        [chunk(` ${formatSize(session.sizeBytes)}`, isActive ? t.textMuted : t.textMuted)],
+        [chunk(` ${timeAgo(session.updatedAt)}`, isActive ? t.textMuted : t.textDim)],
+      ]);
+    }
+
+    return rows;
+  }, [visibleSessions, scrollOffset, cursor, t, titleMaxW]);
+
   if (!visible) return null;
 
   const totalSize = sessions.reduce((s, x) => s + x.sizeBytes, 0);
-  const SEARCH_HL = t.bgPopupHighlight;
-
   return (
     <Popup
       width={popupWidth}
@@ -221,22 +227,22 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
       ]}
     >
       {/* Search */}
-      <PopupRow w={innerW} bg={SEARCH_HL}>
-        <text fg={t.brand} bg={SEARCH_HL}>
+      <PopupRow w={innerW}>
+        <text fg={t.brand} bg={POPUP_BG}>
           {"\uD83D\uDD0D"}{" "}
         </text>
-        <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={SEARCH_HL}>
+        <text fg={t.textPrimary} attributes={TextAttributes.BOLD} bg={POPUP_BG}>
           {query}
         </text>
-        <text fg={t.brandAlt} bg={SEARCH_HL}>
+        <text fg={t.brandAlt} bg={POPUP_BG}>
           {"\u258E"}
         </text>
         {!query ? (
-          <text fg={t.textDim} bg={SEARCH_HL}>
+          <text fg={t.textDim} bg={POPUP_BG}>
             {" type to search\u2026"}
           </text>
         ) : (
-          <text fg={t.textMuted} bg={SEARCH_HL}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
             {` ${String(filtered.length)} result${filtered.length === 1 ? "" : "s"}`}
           </text>
         )}
@@ -249,55 +255,46 @@ export function SessionPicker({ visible, cwd, onClose, onRestore, onSystemMessag
         </text>
       </PopupRow>
 
-      {/* Column headers */}
-      <PopupRow w={innerW}>
-        <text fg={t.textMuted} bg={POPUP_BG} attributes={TextAttributes.BOLD}>
-          {"  "}
-          {rpad("Title", titleColW)}
-          {lpad("Msgs", COL_MSGS)}
-          {lpad("Size", COL_SIZE)}
-          {lpad("Updated", COL_TIME)}
-        </text>
-      </PopupRow>
-
-      {/* Separator */}
-      <PopupRow w={innerW}>
-        <text fg={t.textSubtle} bg={POPUP_BG}>
-          {"\u2500".repeat(innerW - 4)}
-        </text>
-      </PopupRow>
-
-      {/* List */}
-      <box
-        flexDirection="column"
-        height={Math.min(filtered.length || 1, maxVisible)}
-        overflow="hidden"
-      >
-        {filtered.length === 0 ? (
-          <PopupRow w={innerW}>
+      {/* Session table */}
+      {loading && sessions.length === 0 ? (
+        <box
+          flexDirection="column"
+          height={Math.min(3, maxVisible)}
+          justifyContent="center"
+          alignItems="center"
+        >
+          <box flexDirection="row" gap={1} justifyContent="center">
+            <Spinner color={t.brand} />
             <text fg={t.textMuted} bg={POPUP_BG}>
-              {"  "}
-              {icon("clock_alt")}{" "}
-              {query ? "no matching sessions" : "no sessions yet \u2014 start chatting!"}
+              Consulting the scrolls…
             </text>
-          </PopupRow>
-        ) : (
-          filtered.slice(scrollOffset, scrollOffset + maxVisible).map((session, vi) => {
-            const i = vi + scrollOffset;
-            return (
-              <SessionRow
-                key={session.id}
-                session={session}
-                isActive={i === cursor}
-                titleColW={titleColW}
-                innerW={innerW}
-              />
-            );
-          })
-        )}
-      </box>
+          </box>
+        </box>
+      ) : filtered.length === 0 ? (
+        <PopupRow w={innerW}>
+          <text fg={t.textMuted} bg={POPUP_BG}>
+            {"  "}
+            {icon("clock_alt")}{" "}
+            {query ? "no matching sessions" : "no sessions yet \u2014 start chatting!"}
+          </text>
+        </PopupRow>
+      ) : (
+        <text-table
+          content={tableContent}
+          width={innerW}
+          border={false}
+          outerBorder={false}
+          showBorders={false}
+          columnWidthMode="full"
+          wrapMode="none"
+          fg={t.textSecondary}
+          bg={POPUP_BG}
+          backgroundColor={POPUP_BG}
+          cellPadding={0}
+        />
+      )}
 
-      {/* Scroll */}
+      {/* Scroll indicator */}
       {filtered.length > maxVisible && (
         <PopupRow w={innerW}>
           <text fg={t.textMuted} bg={POPUP_BG}>
