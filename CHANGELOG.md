@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.9.2] — 2026-04-08
+
+### Bug Fixes
+
+- early termination
 ## [2.9.1] — 2026-04-08
 
 ### Bug Fixes
