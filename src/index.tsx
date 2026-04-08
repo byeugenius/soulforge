@@ -350,13 +350,18 @@ export async function start(opts: StartOptions): Promise<void> {
   r.setMaxListeners(30);
   r.keyInput.setMaxListeners(30);
 
-  // Register ghostty-terminal for floating terminal rendering
-  // Native .node addon can't be embedded in compiled binaries — graceful fallback
-  try {
+  // Register custom renderables for JSX usage
+  {
     const { extend } = await import("@opentui/react");
-    const { GhosttyTerminalRenderable } = await import("ghostty-opentui/terminal-buffer");
-    extend({ "ghostty-terminal": GhosttyTerminalRenderable });
-  } catch {}
+    const { TextTableRenderable } = await import("@opentui/core");
+    extend({ "text-table": TextTableRenderable });
+
+    // Native .node addon can't be embedded in compiled binaries — graceful fallback
+    try {
+      const { GhosttyTerminalRenderable } = await import("ghostty-opentui/terminal-buffer");
+      extend({ "ghostty-terminal": GhosttyTerminalRenderable });
+    } catch {}
+  }
 
   opts.createRoot(r).render(<AppRoot opts={opts} />);
 }
