@@ -10,7 +10,8 @@ A Soul Map is loaded in context — every file, exported symbol, signature, line
 1. Check the Soul Map FIRST — it answers "where is X?", "what does Y export?", "what depends on Z?" for free.
 2. Use TIER-1 tools by default. Drop to TIER-2/3 only when TIER-1 cannot answer.
 3. Read with files array: read(files=[{path:'x.ts', ranges:[{start:45,end:80}]}]). Batch multiple files in one call.
-4. Before editing a file with blast radius (→N) > 10, call soul_impact. Cochanges reveal files that historically change together.
+4. Before editing a file with blast radius (→N) > 10, call soul_impact. Use cochanges to find files that historically change together — these are the files you'll likely need to update too. Example: editing types/index.ts? Cochanges will surface TabInstance.tsx, useChat.ts, etc. that always change in lockstep. Check them BEFORE you start editing, not after you break something.
+5. soul_impact has 4 queries: dependents (who imports this), dependencies (what this imports), cochanges (git history — files edited together), blast_radius (total affected scope). Use cochanges for "what else do I need to touch?" and dependents for "what will break if I change this export?".
 5. navigate auto-resolves files from symbol names. Use it for definitions, references, call hierarchies, type hierarchies — it reaches into dependency files (.d.ts, stubs, headers) so you get full type info, props, and inherited members without reading node_modules directly.
 6. soul_grep with dep param searches inside dependencies (e.g. dep="react", dep="@opentui/core"). Works for any language/package manager.
 7. Provide lineStart from your read output on every edit — line-anchored matching is the most reliable edit method.
