@@ -8,6 +8,10 @@ const DECEL = 0.4; // velocity ramp-down when buffer drains
 const CATCHUP_RAMP = 0.4; // extra accel when buffer is large (smooth catch-up)
 const CATCHUP_THRESHOLD = 60; // buffer size to trigger catch-up
 
+const STREAM_OPACITY = 0.65;
+const FADE_IN_DURATION_MS = 300; // opacity fade-in when streaming starts
+const FADE_OUT_DURATION_MS = 250; // opacity fade to 1.0 when streaming ends
+
 /**
  * Drip-feeds text for a smooth typewriter effect during streaming.
  *
@@ -23,8 +27,9 @@ const CATCHUP_THRESHOLD = 60; // buffer size to trigger catch-up
 export function useTextDrip(
   fullText: string,
   streaming: boolean,
-): { text: string; freshCount: number } {
+): { text: string; freshCount: number; opacity: number } {
   const [drip, setDrip] = useState({ revealed: 0, fresh: 0 });
+  const [opacity, setOpacity] = useState(streaming ? STREAM_OPACITY : 1);
   const bufferRef = useRef(0);
   const prevLenRef = useRef(0);
   const velocityRef = useRef(MIN_SPEED);
@@ -39,6 +44,25 @@ export function useTextDrip(
     }
     prevLenRef.current = fullText.length;
   }, [fullText]);
+
+  // Smooth opacity transition: fade in when streaming starts, fade to 1.0 when it ends
+  useEffect(() => {
+    const start = Date.now();
+    const from = streaming ? 1 : STREAM_OPACITY;
+    const to = streaming ? STREAM_OPACITY : 1;
+    const duration = streaming ? FADE_IN_DURATION_MS : FADE_OUT_DURATION_MS;
+
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const raw = Math.min(1, elapsed / duration);
+      const eased = raw * (2 - raw); // outQuad
+      const value = from + (to - from) * eased;
+      setOpacity(value);
+      if (raw >= 1) clearInterval(timer);
+    }, TICK_MS);
+
+    return () => clearInterval(timer);
+  }, [streaming]);
 
   // Flush on stream end
   useEffect(() => {
@@ -84,9 +108,9 @@ export function useTextDrip(
     return () => clearInterval(timer);
   }, [streaming]);
 
-  if (!streaming) return { text: fullText, freshCount: 0 };
+  if (!streaming) return { text: fullText, freshCount: 0, opacity };
 
-  return { text: fullText.slice(0, drip.revealed), freshCount: drip.fresh };
+  return { text: fullText.slice(0, drip.revealed), freshCount: drip.fresh, opacity };
 }
 
 /**

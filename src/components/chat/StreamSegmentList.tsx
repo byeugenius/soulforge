@@ -15,17 +15,17 @@ function trimToCompleteLines(text: string): string {
   return text;
 }
 
-const STREAM_OPACITY = 0.65;
-
 /** Wrapper that applies the drip buffer to the active streaming text. */
 function DripText({ content, streaming }: { content: string; streaming: boolean }) {
-  const { text: display } = useTextDrip(content, streaming);
+  const { text: display, opacity } = useTextDrip(content, streaming);
 
   if (display.length === 0) return null;
 
+  const cursor = streaming ? "▊" : "";
+
   return (
-    <box flexDirection="column" opacity={STREAM_OPACITY}>
-      <Markdown text={`${display}▊`} streaming />
+    <box flexDirection="column" opacity={opacity}>
+      <Markdown text={`${display}${cursor}`} streaming />
     </box>
   );
 }
