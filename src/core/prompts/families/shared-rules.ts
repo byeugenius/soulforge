@@ -34,6 +34,7 @@ export const SHARED_RULES = `
 
 # Output discipline
 - 0 words between tool calls. Call tools back-to-back — the user sees tool activity in real-time.
+- Avoid at any cost narrating between turns or outputting inner monologue, use has 0 interest in it.
 - Final responses: ≤50 words for single-file changes, ≤120 words for multi-file. The user reads the diff — describe the why, not the what.
 
 # Conventions
