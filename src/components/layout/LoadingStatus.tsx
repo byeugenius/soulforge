@@ -59,7 +59,6 @@ function buildBusyLine(
   isCompacting: boolean,
   forgeStatus: string,
   elapsedSec: number,
-  queueCount: number | undefined,
 ): StyledText {
   const tk = getThemeTokens();
   const baseColor = isCompacting ? tk.info : tk.brand;
@@ -87,9 +86,6 @@ function buildBusyLine(
   if (elapsedSec > 0) {
     parts.push(fgStyle(tk.textFaint)(` ${formatElapsed(elapsedSec)}`));
   }
-  if (queueCount != null && queueCount > 0) {
-    parts.push(fgStyle(tk.textFaint)(` (${String(queueCount)} queued)`));
-  }
   parts.push(fgStyle(tk.textFaint)("  "));
   parts.push(fgStyle(tk.error)("^+X"));
   parts.push(fgStyle(tk.textDim)(" to Stop"));
@@ -99,24 +95,18 @@ function buildBusyLine(
 interface LoadingStatusProps {
   isLoading: boolean;
   isCompacting: boolean;
-  queueCount?: number;
   loadingStartedAt?: number;
 }
 
-export function LoadingStatus({
-  isLoading,
-  isCompacting,
-  queueCount,
-  loadingStartedAt,
-}: LoadingStatusProps) {
+export function LoadingStatus({ isLoading, isCompacting, loadingStartedAt }: LoadingStatusProps) {
   const textRef = useRef<TextRenderable>(null);
   const forgeStatusRef = useRef("");
   const wasLoadingRef = useRef(false);
   const loadingStartRef = useRef(0);
   const elapsedSecRef = useRef(0);
   const spinnerTickRef = useRef(0);
-  const propsRef = useRef({ isLoading, isCompacting, queueCount });
-  propsRef.current = { isLoading, isCompacting, queueCount };
+  const propsRef = useRef({ isLoading, isCompacting });
+  propsRef.current = { isLoading, isCompacting };
 
   const showBusy = isLoading || isCompacting;
 
@@ -134,7 +124,7 @@ export function LoadingStatus({
     if (!showBusy) return;
     const timer = setInterval(() => {
       spinnerTickRef.current++;
-      const { isLoading: ld, isCompacting: cp, queueCount: qc } = propsRef.current;
+      const { isLoading: ld, isCompacting: cp } = propsRef.current;
       const elapsed = cp
         ? useStatusBarStore.getState().compactElapsed
         : ld
@@ -148,7 +138,6 @@ export function LoadingStatus({
             cp,
             forgeStatusRef.current,
             elapsed,
-            qc,
           );
         }
       } catch {}
@@ -167,7 +156,6 @@ export function LoadingStatus({
           isCompacting,
           forgeStatusRef.current,
           elapsedSecRef.current,
-          queueCount,
         )}
       />
     </box>

@@ -20,7 +20,6 @@ interface Props {
   isFocused?: boolean;
   onQueue?: (msg: string, images?: ImageAttachment[]) => void;
   onExit?: () => void;
-  queueCount?: number;
   cwd?: string;
   onDropdownChange?: (visible: boolean) => void;
   /** Container width as a percentage of terminal width — used when the input is narrower than the terminal (e.g. landing page). */

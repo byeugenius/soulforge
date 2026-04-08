@@ -624,7 +624,6 @@ export const TabInstance = memo(function TabInstance({
                   <LoadingStatus
                     isLoading={chat.isLoading}
                     isCompacting={chat.isCompacting}
-                    queueCount={chat.messageQueue.length}
                     loadingStartedAt={loadingStartedAtRef.current}
                   />
                 )}
@@ -736,7 +735,6 @@ export const TabInstance = memo(function TabInstance({
                       : [...prev, { content: msg, queuedAt: Date.now(), images }],
                   )
                 }
-                queueCount={chat.messageQueue.length}
                 onCycleTab={onCycleTab}
               />
             </box>
