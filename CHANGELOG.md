@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.9.1] — 2026-04-08
+
+### Bug Fixes
+
+- blank screen on npm/bun install and LSP process leaks
 ## [2.9.0] — 2026-04-08
 
 ### Bug Fixes
