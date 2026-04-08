@@ -23,6 +23,8 @@ interface Props {
   queueCount?: number;
   cwd?: string;
   onDropdownChange?: (visible: boolean) => void;
+  /** Container width as a percentage of terminal width — used when the input is narrower than the terminal (e.g. landing page). */
+  widthPct?: number;
 }
 
 let _commands: Array<{ cmd: string; icon: string; desc: string }> | null = null;
@@ -101,6 +103,7 @@ export const InputBox = memo(function InputBox({
   onExit,
   cwd,
   onDropdownChange,
+  widthPct,
 }: Props) {
   const [value, setValue] = useState("");
   const valueRef = useRef(value);
@@ -133,10 +136,11 @@ export const InputBox = memo(function InputBox({
 
   const showBusy = isLoading || isCompacting;
 
-  // textarea width = terminal - border(2) - paddingX(2) - prompt(2) = termWidth - 6
+  // textarea width = container - border(2) - paddingX(2) - prompt(2) = containerWidth - 6
   // When busy hint is shown, subtract its width too
+  const containerWidth = widthPct != null ? Math.floor((termWidth * widthPct) / 100) : termWidth;
   const hintWidth = showBusy ? 8 : 0; // " ^X stop" = 8 chars
-  const textareaWidth = Math.max(10, termWidth - 6 - hintWidth);
+  const textareaWidth = Math.max(10, containerWidth - 6 - hintWidth);
 
   // Calculate visual lines manually (virtualLineCount is viewport-constrained — chicken-and-egg)
   const calcVisualLines = useCallback(

@@ -726,6 +726,7 @@ export const TabInstance = memo(function TabInstance({
                 isFocused={isFocused}
                 cwd={cwd}
                 onExit={onExit}
+                widthPct={transition.phase === "chat" ? undefined : transition.inputWidthPct}
                 onQueue={(msg, images) =>
                   chat.setMessageQueue((prev) =>
                     prev.length >= 5
