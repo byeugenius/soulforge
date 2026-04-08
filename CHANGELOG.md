@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.9.4] — 2026-04-08
+
+### Bug Fixes
+
+- revert npm build to 2.8.0 approach — no patching, no native lib copying
 ## [2.9.3] — 2026-04-08
 
 ### Bug Fixes
