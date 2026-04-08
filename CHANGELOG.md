@@ -2,6 +2,12 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.9.5] — 2026-04-08
+
+### Miscellaneous
+
+- cast type ghostty
+- deps upgrade
 ## [2.9.4] — 2026-04-08
 
 ### Bug Fixes
