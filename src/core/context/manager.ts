@@ -333,6 +333,9 @@ export class ContextManager {
 
   /** Notify repo map that a file changed (call after edits) */
   onFileChanged(absPath: string): void {
+    // Skip files outside the project directory (e.g. /tmp scripts)
+    if (!absPath.startsWith(`${this.cwd}/`)) return;
+
     if (!this.isChild) {
       this.repoMap.onFileChanged(absPath);
       if (this.repoMapReady) {
@@ -1124,6 +1127,12 @@ export class ContextManager {
    */
   buildSoulMapDiff(): string | null {
     if (!this.isRepoMapReady()) return null;
+
+    // Purge any stale entries outside cwd (e.g. /tmp scripts tracked before guard)
+    for (const path of this.soulMapDiffChangedFiles.keys()) {
+      if (path.startsWith("/")) this.soulMapDiffChangedFiles.delete(path);
+    }
+
     if (this.soulMapDiffChangedFiles.size === 0) return null;
 
     // Rebuild the diff string if the file set changed since last build

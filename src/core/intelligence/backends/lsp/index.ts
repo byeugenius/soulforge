@@ -1229,8 +1229,19 @@ export class LspBackend implements IntelligenceBackend {
     const langKey = `${language}:${projectRoot}`;
 
     const existing = this.languageClients.get(langKey);
-    if (existing && existing.length > 0 && existing.every((c) => c.isReady)) {
-      return existing;
+    if (existing && existing.length > 0) {
+      // Filter to only ready clients, stop dead ones to prevent zombie processes
+      const ready = existing.filter((c) => c.isReady);
+      if (ready.length > 0) {
+        if (ready.length !== existing.length) {
+          // Clean up dead clients and update the cache
+          for (const c of existing) {
+            if (!c.isReady) c.stop().catch(() => {});
+          }
+          this.languageClients.set(langKey, ready);
+        }
+        return ready;
+      }
     }
 
     const pending = this.pendingInits.get(langKey);
@@ -1266,6 +1277,12 @@ export class LspBackend implements IntelligenceBackend {
         clients.push(existingClient);
         this.failedServers.delete(serverKey);
         continue;
+      }
+
+      // Stop the dead client to prevent zombie processes
+      if (existingClient) {
+        existingClient.stop().catch(() => {});
+        this.standaloneClients.delete(serverKey);
       }
 
       const client = new StandaloneLspClient(config, projectRoot);
