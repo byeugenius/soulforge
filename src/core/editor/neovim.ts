@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { attach } from "neovim";
+import { trackBunProcess, trackProcess } from "../process-tracker.js";
 import type { NvimConfigMode } from "../../types/index.js";
 
 export interface NvimInstance {
@@ -157,6 +158,7 @@ export async function launchNeovim(
   // Track for emergency cleanup
   _activePtyProcs.add(proc);
   _activeSocketPaths.add(socketPath);
+  trackBunProcess(proc);
   proc.exited.then(() => {
     _activePtyProcs.delete(proc);
     _activeSocketPaths.delete(socketPath);
@@ -286,11 +288,10 @@ export function bootstrapNeovimPlugins(nvimPath: string): void {
     {
       cwd: process.cwd(),
       stdio: "ignore",
-      detached: true,
       env: { ...process.env, NVIM_APPNAME: "soulforge" },
     },
   );
-  proc.unref();
+  trackProcess(proc);
   _bootstrapProc = proc;
   proc.on("exit", () => {
     _bootstrapProc = null;

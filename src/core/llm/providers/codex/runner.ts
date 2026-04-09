@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackProcess } from "../../../process-tracker.js";
 import readline from "node:readline";
 import type {
   JSONSchema7,
@@ -326,6 +327,7 @@ async function runCodexProcess(
   abortSignal?: AbortSignal,
 ): Promise<CodexRunnerResult> {
   const child = spawn("codex", args, { signal: abortSignal });
+  trackProcess(child);
   let spawnError: unknown | null = null;
   child.once("error", (error) => {
     spawnError = error;

@@ -8,7 +8,7 @@ import { icon } from "./core/icons.js";
 import { disposeIntelligenceRouter } from "./core/intelligence/index.js";
 import { deactivateCurrentProvider, type ProviderStatus } from "./core/llm/provider.js";
 import { disposeMCPManager } from "./core/mcp/index.js";
-import { killAllTracked } from "./core/process-tracker.js";
+import { killAllTracked, killProcessGroup } from "./core/process-tracker.js";
 import { getRestartSpec } from "./core/restart.js";
 import { flushEmergencySession } from "./core/sessions/emergency-save.js";
 import type { PrerequisiteStatus } from "./core/setup/prerequisites.js";
@@ -60,6 +60,10 @@ function runCleanup(): void {
   } catch {}
   try {
     disposeMCPManager();
+  } catch {}
+  // Nuclear fallback: kill entire process group to catch any orphaned grandchildren
+  try {
+    killProcessGroup();
   } catch {}
 }
 
