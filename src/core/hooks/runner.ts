@@ -41,6 +41,29 @@ export function resetOnceTracking(): void {
   _onceFired.clear();
 }
 
+// ── Per-event disable (session-scoped, toggled via /hooks) ──────────
+const _disabledEvents = new Set<string>();
+
+/** Disable a hook event for this session. */
+export function disableHookEvent(event: string): void {
+  _disabledEvents.add(event);
+}
+
+/** Enable a hook event for this session. */
+export function enableHookEvent(event: string): void {
+  _disabledEvents.delete(event);
+}
+
+/** Check if a hook event is disabled for this session. */
+export function isHookEventDisabled(event: string): boolean {
+  return _disabledEvents.has(event);
+}
+
+/** Get all currently disabled hook events. */
+export function getDisabledHookEvents(): ReadonlySet<string> {
+  return _disabledEvents;
+}
+
 // ── if: conditional execution ────────────────────────────────────────
 
 /**
@@ -69,7 +92,7 @@ function matchesIfCondition(
   if (!firstStr) return false;
 
   // Convert simple glob to regex: * → .*, ? → .
-  const escaped = pattern!
+  const escaped = (pattern ?? "")
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".");
@@ -272,6 +295,7 @@ function runCommandHook(
 
 /** Get matching hook rules for an event + optional tool name. */
 function getMatchingRules(event: HookEventName, toolName?: string, cwd?: string): HookRule[] {
+  if (_disabledEvents.has(event)) return [];
   const hooks = getHooks(cwd);
   const rules = hooks[event];
   if (!rules || rules.length === 0) return [];

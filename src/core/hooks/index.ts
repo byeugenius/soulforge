@@ -4,7 +4,15 @@ export {
   invalidateHooksCache,
   loadHooks,
 } from "./loader.js";
-export { hasToolHooks, resetOnceTracking, runHooks } from "./runner.js";
+export {
+  disableHookEvent,
+  enableHookEvent,
+  getDisabledHookEvents,
+  hasToolHooks,
+  isHookEventDisabled,
+  resetOnceTracking,
+  runHooks,
+} from "./runner.js";
 export { matchesToolName, toClaudeToolName } from "./tool-names.js";
 export type {
   CommandHook,
