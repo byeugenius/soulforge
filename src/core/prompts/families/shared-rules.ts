@@ -13,7 +13,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 export const SHARED_RULES = `
 # Tool usage policy
 - Batch all independent tool calls in one parallel block — it's faster and cheaper.
-- Use multi_edit for multiple changes to the same file. Edits are applied immediately.
+- NEVER call edit_file multiple times on the same file — use multi_edit instead. Sequential edit_file calls cause line numbers to shift and subsequent edits to fail. multi_edit tracks line offsets internally and handles this correctly.
 - The user does not see full tool output — summarize results when relevant to your response.
 - The user is on a CLI — they cannot see images except through soul_vision. Call soul_vision whenever any tool returns an image path or URL.
 - Use absolute paths. Maintain your working directory — avoid cd in shell commands.
