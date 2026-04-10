@@ -2502,10 +2502,23 @@ export function useChat({
             case "tool-error": {
               markToolEnd();
               toolCallsDirty.current = true;
+              let errorMsg: string;
+              if (typeof part.error === "string") {
+                errorMsg = part.error;
+              } else if (typeof part.error === "object" && part.error !== null) {
+                const e = part.error;
+                if ("errorCode" in e && typeof e.errorCode === "string") errorMsg = e.errorCode;
+                else if ("error_code" in e && typeof e.error_code === "string")
+                  errorMsg = e.error_code;
+                else if ("message" in e && typeof e.message === "string") errorMsg = e.message;
+                else errorMsg = JSON.stringify(e);
+              } else {
+                errorMsg = String(part.error);
+              }
               const tc = tcBuf.find((c) => c.id === part.toolCallId);
               if (tc) {
                 tc.state = "error";
-                tc.error = String(part.error);
+                tc.error = errorMsg;
                 tc.progressText = undefined;
               }
               const errorArgs = safeParseArgs(toolCallArgs.get(part.toolCallId));
@@ -2513,13 +2526,11 @@ export function useChat({
                 id: part.toolCallId,
                 name: part.toolName,
                 args: errorArgs,
-                result: { success: false, output: "", error: String(part.error) },
+                result: { success: false, output: "", error: errorMsg },
               });
               if (workingStateRef.current) {
                 extractFromToolCall(workingStateRef.current, part.toolName, errorArgs);
-                workingStateRef.current.addFailure(
-                  `${part.toolName}: ${String(part.error).slice(0, 200)}`,
-                );
+                workingStateRef.current.addFailure(`${part.toolName}: ${errorMsg.slice(0, 200)}`);
                 syncV2Slots();
               }
               flushStreamState();
