@@ -60,7 +60,7 @@ import { getIOClient } from "../core/workers/io-client.js";
 import { logCompaction } from "../stores/compaction-logs.js";
 import { logBackgroundError } from "../stores/errors.js";
 import { useRepoMapStore } from "../stores/repomap.js";
-import { accumulateModelUsage, useStatusBarStore } from "../stores/statusbar.js";
+import { ZERO_USAGE, accumulateModelUsage, useStatusBarStore } from "../stores/statusbar.js";
 import { useToolsStore } from "../stores/tools.js";
 import type {
   AppConfig,
@@ -112,20 +112,6 @@ interface TokenUsage {
     { input: number; output: number; cacheRead: number; cacheWrite: number }
   >;
 }
-
-const ZERO_USAGE: TokenUsage = {
-  prompt: 0,
-  completion: 0,
-  total: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  subagentInput: 0,
-  subagentOutput: 0,
-  lastStepInput: 0,
-  lastStepOutput: 0,
-  lastStepCacheRead: 0,
-  modelBreakdown: {},
-};
 
 const CHARS_PER_TOKEN = 4;
 const PRUNE_PROTECT_TOKENS = 40_000;
