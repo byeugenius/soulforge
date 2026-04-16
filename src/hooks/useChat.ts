@@ -630,6 +630,21 @@ export function useChat({
 
   const coreMessagesRef = useRef(coreMessages);
   coreMessagesRef.current = coreMessages;
+
+  // Wrapped setter that eagerly updates the ref so callers reading
+  // coreMessagesRef.current in the same tick see the new value.
+  const setCoreMessagesEager: typeof setCoreMessages = useCallback((action) => {
+    if (typeof action === "function") {
+      setCoreMessages((prev) => {
+        const next = action(prev);
+        coreMessagesRef.current = next;
+        return next;
+      });
+    } else {
+      coreMessagesRef.current = action;
+      setCoreMessages(action);
+    }
+  }, []);
   const activeModelRef = useRef(activeModel);
   activeModelRef.current = activeModel;
   const effectiveConfigRef = useRef(effectiveConfig);
@@ -3338,7 +3353,7 @@ export function useChat({
     messages,
     setMessages,
     coreMessages,
-    setCoreMessages,
+    setCoreMessages: setCoreMessagesEager,
     isLoading,
     loadingStartedAt,
     isCompacting,
