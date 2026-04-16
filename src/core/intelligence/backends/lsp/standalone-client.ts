@@ -83,9 +83,15 @@ export class StandaloneLspClient {
 
   /** Spawn the server process and perform the initialize handshake */
   async start(): Promise<void> {
+    // Spawn with detached: true so the child becomes its own process group leader.
+    // This lets us kill the entire process tree via negative PID, which is critical
+    // for LSP wrappers (e.g. biome's Mason shim) that use spawnSync to launch
+    // a native binary grandchild — without this, SIGTERM only hits the wrapper
+    // and the grandchild becomes an orphan.
     this.process = spawn(this.config.command, this.config.args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: this.cwd,
+      detached: true,
     });
     trackProcess(this.process);
 
@@ -589,11 +595,32 @@ export class StandaloneLspClient {
     } catch {
       // Best effort
     }
-    // Force kill after 2s
+    // Kill the entire process tree (not just the direct child).
+    // Some LSP wrappers (e.g. biome's Mason shim) use spawnSync to launch
+    // a native binary as a grandchild. SIGTERM to the wrapper doesn't propagate
+    // to the grandchild, leaving orphaned processes. Killing by negative PID
+    // targets the entire process group.
     const proc = this.process;
-    if (proc) {
-      setTimeout(() => proc.kill("SIGKILL"), 2000);
-      proc.kill("SIGTERM");
+    const pid = proc?.pid;
+    if (pid) {
+      try {
+        // Kill the process group (negative PID) to catch grandchildren
+        process.kill(-pid, "SIGTERM");
+      } catch {
+        // ESRCH = already dead, EPERM = not allowed — fall back to direct kill
+        try {
+          proc.kill("SIGTERM");
+        } catch {}
+      }
+      setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
+        }
+      }, 2000);
     }
     this.process = null;
     this.initialized = false;

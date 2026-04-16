@@ -28,11 +28,20 @@ export function trackBunProcess(proc: BunSubprocess): void {
 
 /** Kill all tracked processes (node + Bun). SIGTERM first, then synchronous SIGKILL. */
 export function killAllTracked(): void {
-  // SIGTERM all node child processes
+  // SIGTERM all node child processes — kill process group when possible
+  // to catch grandchildren (e.g. biome's spawnSync wrapper → native binary)
   for (const proc of tracked) {
     try {
-      proc.kill("SIGTERM");
-    } catch {}
+      if (proc.pid) {
+        process.kill(-proc.pid, "SIGTERM");
+      } else {
+        proc.kill("SIGTERM");
+      }
+    } catch {
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
+    }
   }
   // SIGTERM all Bun subprocesses
   for (const proc of trackedBun) {
@@ -45,8 +54,16 @@ export function killAllTracked(): void {
   // so we do it immediately after a brief spin-wait.
   for (const proc of tracked) {
     try {
-      proc.kill("SIGKILL");
-    } catch {}
+      if (proc.pid) {
+        process.kill(-proc.pid, "SIGKILL");
+      } else {
+        proc.kill("SIGKILL");
+      }
+    } catch {
+      try {
+        proc.kill("SIGKILL");
+      } catch {}
+    }
   }
   tracked.clear();
 
