@@ -205,6 +205,34 @@ interface Props {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal protocol responses
 const KITTY_PROTOCOL_RESPONSE_RE = /\x1b\[\?\d+u/g;
 
+function CheckpointLegend({ tabId, fallbackSpacer }: { tabId: string; fallbackSpacer?: boolean }) {
+  const t = useTheme();
+  const count = useCheckpointStore((s) => s.tabs[tabId]?.checkpoints?.length ?? 0);
+  if (count <= 1) return fallbackSpacer ? <box height={1} flexShrink={0} /> : null;
+  return (
+    <box
+      flexShrink={0}
+      height={1}
+      paddingX={1}
+      flexDirection="row"
+      justifyContent="flex-end"
+      flexGrow={1}
+    >
+      <text fg={t.textDim}>
+        <span fg={t.brand}>◆</span> latest
+        <span fg={t.textFaint}> │ </span>
+        <span fg={t.warning}>●</span> viewing
+        <span fg={t.textFaint}> │ </span>
+        <span fg={t.textMuted}>●</span> edits
+        <span fg={t.textFaint}> │ </span>
+        <span fg={t.textFaint}>○</span> read
+        <span fg={t.textFaint}> │ </span>
+        <span fg={t.textMuted}>^B</span>/<span fg={t.textMuted}>^F</span> navigate
+      </text>
+    </box>
+  );
+}
+
 function nativeCopy(text: string): void {
   const cmd = process.platform === "darwin" ? "pbcopy" : "xclip";
   const args = process.platform === "darwin" ? [] : ["-selection", "clipboard"];
@@ -1140,7 +1168,7 @@ export function App({
       </box>
 
       {tabMgr.tabCount > 1 ? (
-        <box key="tab-bar" flexShrink={0} marginTop={1}>
+        <box key="tab-bar" flexShrink={0} marginTop={1} flexDirection="row" flexWrap="wrap">
           <TabBar
             tabs={tabMgr.tabs}
             activeTabId={tabMgr.activeTabId}
@@ -1158,10 +1186,13 @@ export function App({
               return getShortModelLabel(model);
             }}
           />
+          <CheckpointLegend tabId={tabMgr.activeTabId} />
         </box>
       ) : !editorVisible ? (
-        <box key="tab-spacer" height={1} flexShrink={0} />
-      ) : null}
+        <CheckpointLegend tabId={tabMgr.activeTabId} fallbackSpacer />
+      ) : (
+        <CheckpointLegend tabId={tabMgr.activeTabId} />
+      )}
 
       <box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
         <EditorPanel

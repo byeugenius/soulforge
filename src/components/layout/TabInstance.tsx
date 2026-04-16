@@ -630,22 +630,6 @@ export const TabInstance = memo(function TabInstance({
     >
       <SystemBanner messages={chat.messages} expanded={codeExpanded} />
 
-      {checkpoints.length > 1 && (
-        <box flexShrink={0} height={1} paddingX={1} flexDirection="row" justifyContent="flex-end">
-          <text fg={t.textDim}>
-            <span fg={t.brand}>◆</span> latest
-            <span fg={t.textFaint}> │ </span>
-            <span fg={t.warning}>●</span> viewing
-            <span fg={t.textFaint}> │ </span>
-            <span fg={t.textMuted}>●</span> edits
-            <span fg={t.textFaint}> │ </span>
-            <span fg={t.textFaint}>○</span> read
-            <span fg={t.textFaint}> │ </span>
-            <span fg={t.textMuted}>^B</span>/<span fg={t.textMuted}>^F</span> navigate
-          </text>
-        </box>
-      )}
-
       <box flexGrow={1} flexShrink={1} minHeight={0} flexDirection="row">
         {/* ── Landing page layer (fades out during transition) ── */}
         {showLanding && (
