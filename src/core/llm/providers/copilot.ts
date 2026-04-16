@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { getProviderApiKey } from "../../secrets.js";
@@ -57,34 +58,65 @@ function getGitHubToken(): string {
   );
 }
 
+function needsResponsesApi(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  if (id.includes("codex")) return true;
+  if (id.startsWith("gpt-5")) return true;
+  return false;
+}
+
+function isAnthropicModel(modelId: string): boolean {
+  return modelId.toLowerCase().startsWith("claude");
+}
+
+function createCopilotFetch(githubToken: string): typeof fetch {
+  // biome-ignore lint/suspicious/noExplicitAny: Bun fetch type mismatch with preconnect
+  return (async (url: any, init: any) => {
+    let bearer: string;
+    try {
+      bearer = await exchangeToken(githubToken);
+    } catch {
+      invalidateBearer();
+      bearer = await exchangeToken(githubToken);
+    }
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${bearer}`);
+    const res = await fetch(url, { ...init, headers });
+    if (res.status === 401) {
+      invalidateBearer();
+      const retryBearer = await exchangeToken(githubToken);
+      const retryHeaders = new Headers(init?.headers);
+      retryHeaders.set("Authorization", `Bearer ${retryBearer}`);
+      return fetch(url, { ...init, headers: retryHeaders });
+    }
+    return res;
+  }) as typeof fetch;
+}
+
 function createCopilotModel(modelId: string): LanguageModel {
   const githubToken = getGitHubToken();
+  const copilotFetch = createCopilotFetch(githubToken);
+
+  if (isAnthropicModel(modelId)) {
+    return createAnthropic({
+      baseURL: COPILOT_API,
+      apiKey: "copilot",
+      headers: { ...COPILOT_HEADERS },
+      fetch: copilotFetch,
+    })(modelId);
+  }
+
   const client = createOpenAI({
     baseURL: COPILOT_API,
     apiKey: "copilot",
     headers: { ...COPILOT_HEADERS },
-    // biome-ignore lint/suspicious/noExplicitAny: Bun fetch type mismatch with preconnect
-    fetch: (async (url: any, init: any) => {
-      let bearer: string;
-      try {
-        bearer = await exchangeToken(githubToken);
-      } catch {
-        invalidateBearer();
-        bearer = await exchangeToken(githubToken);
-      }
-      const headers = new Headers(init?.headers);
-      headers.set("Authorization", `Bearer ${bearer}`);
-      const res = await fetch(url, { ...init, headers });
-      if (res.status === 401) {
-        invalidateBearer();
-        const retryBearer = await exchangeToken(githubToken);
-        const retryHeaders = new Headers(init?.headers);
-        retryHeaders.set("Authorization", `Bearer ${retryBearer}`);
-        return fetch(url, { ...init, headers: retryHeaders });
-      }
-      return res;
-    }) as typeof fetch,
+    fetch: copilotFetch,
   });
+
+  if (needsResponsesApi(modelId)) {
+    return client.responses(modelId);
+  }
+
   return client.chat(modelId);
 }
 
