@@ -60,7 +60,7 @@ const CLAUDE_ITEMS: SettingItem[] = [
     label: "Effort",
     desc: "Reasoning depth — affects thinking, text, and tool calls",
     type: "cycle",
-    options: ["off", "low", "medium", "high", "max"],
+    options: ["off", "low", "medium", "high", "xhigh", "max"],
   },
   {
     key: "speed",

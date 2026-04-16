@@ -188,7 +188,7 @@ interface ThinkingConfig {
   budgetTokens?: number;
 }
 
-export type EffortLevel = "low" | "medium" | "high" | "max";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type ServiceTier = "auto" | "flex" | "priority" | "default";

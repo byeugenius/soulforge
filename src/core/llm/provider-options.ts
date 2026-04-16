@@ -1,5 +1,5 @@
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
-import type { AppConfig, ContextManagementConfig } from "../../types/index.js";
+import type { AppConfig, ContextManagementConfig, EffortLevel } from "../../types/index.js";
 import { getModelContextWindow } from "./models.js";
 import { getProvider } from "./providers/index.js";
 
@@ -289,17 +289,73 @@ export function getModelId(model: unknown): string {
   return "";
 }
 
+/** Parse opus major/minor version from a base model ID. Returns null if not an Opus model. */
+function parseOpusVersion(base: string): { major: number; minor: number } | null {
+  // Match both hyphen (4-7) and dot (4.7) conventions.
+  // Minor is 1-2 digits with negative lookahead to avoid matching date suffixes (e.g. opus-4-20250514).
+  const m = base.match(/opus-(?:(\d+)[.-](\d{1,2})(?!\d)|(\d+))/);
+  if (!m) return null;
+  return { major: Number(m[1] ?? m[3]), minor: m[2] ? Number(m[2]) : 0 };
+}
+
 /** Opus 4.7+ rejects temperature/top_p/top_k — return false for those models. */
 export function supportsTemperature(modelId: string): boolean {
   const base = extractBaseModel(modelId);
   if (!base.startsWith("claude")) return true;
-  // Opus 4.7+ deprecates sampling params — match both hyphen (4-7) and dot (4.7) conventions.
-  // Minor version is 1-2 digits only to avoid matching date suffixes (e.g. opus-4-20250514).
-  const m = base.match(/opus-(?:(\d+)[.-](\d{1,2})(?!\d)|(\d+))/);
-  if (!m) return true;
-  const major = Number(m[1] ?? m[3]);
-  const minor = m[2] ? Number(m[2]) : 0;
-  return major < 5 && (major < 4 || minor < 7);
+  const v = parseOpusVersion(base);
+  if (!v) return true;
+  return v.major < 5 && (v.major < 4 || v.minor < 7);
+}
+
+/** Effort levels supported by the given Claude model, in descending order of capability.
+ *  Returns null for non-Claude models (effort is Anthropic-specific).
+ *  Per https://platform.claude.com/docs/en/build-with-claude/effort:
+ *  - Opus 4.7: low, medium, high, xhigh, max
+ *  - Opus 4.6 / Sonnet 4.6: low, medium, high, max (NO xhigh)
+ *  - Opus 4.5: low, medium, high (NO xhigh, NO max)
+ *  - Other effort-capable Claude: low, medium, high */
+export function getSupportedClaudeEfforts(modelId: string): EffortLevel[] | null {
+  const base = extractBaseModel(modelId);
+  if (!base.startsWith("claude")) return null;
+
+  // Opus 4.7+: full range
+  const v = parseOpusVersion(base);
+  if (v && (v.major >= 5 || (v.major === 4 && v.minor >= 7))) {
+    return ["max", "xhigh", "high", "medium", "low"];
+  }
+
+  // Opus 4.6 and Sonnet 4.6: max but NOT xhigh
+  if (
+    base.includes("opus-4-6") ||
+    base.includes("opus-4.6") ||
+    base.includes("sonnet-4-6") ||
+    base.includes("sonnet-4.6")
+  ) {
+    return ["max", "high", "medium", "low"];
+  }
+
+  // Opus 4.5: up to high only
+  if (base.includes("opus-4-5") || base.includes("opus-4.5")) {
+    return ["high", "medium", "low"];
+  }
+
+  // Other Claude 4+ models with effort capability
+  return ["high", "medium", "low"];
+}
+
+/** Clamp an effort value to the nearest supported level (descending). Returns null if the model has no effort support. */
+export function clampEffort(modelId: string, effort: EffortLevel): EffortLevel | null {
+  const supported = getSupportedClaudeEfforts(modelId);
+  if (!supported) return null;
+  if (supported.includes(effort)) return effort;
+  // Walk down from the requested level until we find a supported one.
+  const order: EffortLevel[] = ["max", "xhigh", "high", "medium", "low"];
+  const requestedIdx = order.indexOf(effort);
+  for (let i = requestedIdx; i < order.length; i++) {
+    const level = order[i];
+    if (level && supported.includes(level)) return level;
+  }
+  return supported[supported.length - 1] ?? null;
 }
 
 /** Programmatic tool calling (allowedCallers) requires Claude 4+ non-haiku. */
@@ -484,7 +540,8 @@ async function buildAnthropicOptions(
   }
 
   if (caps.effort && config.performance?.effort && config.performance.effort !== "off") {
-    opts.effort = config.performance.effort;
+    const clamped = clampEffort(modelId, config.performance.effort);
+    if (clamped) opts.effort = clamped;
   }
 
   if (caps.speed && config.performance?.speed && config.performance.speed !== "off") {
