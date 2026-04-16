@@ -27,7 +27,7 @@ export interface UseTabsReturn {
   activeTab: Tab;
   tabCount: number;
   activeTabIndex: number;
-  createTab: () => void;
+  createTab: (label?: string) => void;
   closeTab: (id: string) => boolean;
   isTabLoading: (id: string) => boolean;
   switchTab: (id: string) => void;
@@ -65,7 +65,7 @@ const DEFAULT_ACTIVITY: TabActivity = {
 
 export function useTabs(): UseTabsReturn {
   const initialId = useRef(crypto.randomUUID()).current;
-  const [tabs, setTabs] = useState<Tab[]>([{ id: initialId, label: "Tab 1" }]);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: initialId, label: "TAB-1" }]);
   const [activeTabId, setActiveTabId] = useState<string>(initialId);
   const autoLabeled = useRef(new Set<string>());
   const chatRegistry = useRef(new Map<string, ChatInstance>());
@@ -103,13 +103,14 @@ export function useTabs(): UseTabsReturn {
     setActiveTabId(targetId);
   }, []);
 
-  const createTab = useCallback(() => {
+  const createTab = useCallback((label?: string) => {
     if (tabsRef.current.length >= MAX_TABS) return;
     const newId = crypto.randomUUID();
     setTabs((prev) => {
-      const newLabel = `Tab ${String(prev.length + 1)}`;
+      const newLabel = label || `TAB-${String(prev.length + 1)}`;
       return [...prev, { id: newId, label: newLabel }];
     });
+    if (label) autoLabeled.current.add(newId);
     setActiveTabId(newId);
   }, []);
 
@@ -194,7 +195,7 @@ export function useTabs(): UseTabsReturn {
     setTabs((prev) => {
       const idx = prev.findIndex((t) => t.id === id);
       if (idx === -1) return prev;
-      const label = `Tab ${String(idx + 1)}`;
+      const label = `TAB-${String(idx + 1)}`;
       return prev.map((t) => (t.id === id ? { ...t, label } : t));
     });
   }, []);
@@ -202,7 +203,7 @@ export function useTabs(): UseTabsReturn {
   const autoLabel = useCallback((id: string, firstMessage: string) => {
     if (autoLabeled.current.has(id)) return;
     autoLabeled.current.add(id);
-    const label = firstMessage.trim().slice(0, 20) || "Tab";
+    const label = firstMessage.trim().slice(0, 20) || "TAB";
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, label } : t)));
   }, []);
 

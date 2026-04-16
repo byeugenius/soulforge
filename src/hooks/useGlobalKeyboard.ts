@@ -44,7 +44,8 @@ export function useGlobalKeyboard({
         uiModals.llmSelector ||
         uiModals.floatingTerminal ||
         uiModals.firstRunWizard ||
-        uiModals.mcpSettings;
+        uiModals.mcpSettings ||
+        uiModals.tabNamePopup;
       if (evt.ctrl && evt.name === "c" && !hasOwnInput) {
         handleExit();
       }
@@ -90,7 +91,8 @@ export function useGlobalKeyboard({
       return consume(() => useUIStore.getState().toggleModal("llmSelector"));
     if (evt.ctrl && evt.name === "s")
       return consume(() => useUIStore.getState().toggleModal("skillSearch"));
-    if (evt.ctrl && evt.name === "t") return consume(() => tabMgr.createTab());
+    if (evt.ctrl && evt.name === "t")
+      return consume(() => useUIStore.getState().openModal("tabNamePopup"));
     if (evt.ctrl && evt.name === "n") return consume(() => newSession());
     if (evt.ctrl && evt.name === "d") return consume(() => cycleMode());
     if (evt.ctrl && evt.name === "g")

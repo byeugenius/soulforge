@@ -85,6 +85,7 @@ import { RepoMapStatusPopup } from "./settings/RepoMapStatusPopup.js";
 import { RouterSettings } from "./settings/RouterSettings.js";
 import { SkillSearch } from "./settings/SkillSearch.js";
 import { ToolsPopup } from "./settings/ToolsPopup.js";
+import { TabNamePopup } from "./modals/TabNamePopup.js";
 
 startMemoryPoll();
 
@@ -431,6 +432,7 @@ export function App({
   const modalMCPSettings = useUIStore((s) => s.modals.mcpSettings);
   const modalFirstRunWizard = useUIStore((s) => s.modals.firstRunWizard);
   const modalUpdateModal = useUIStore((s) => s.modals.updateModal);
+  const modalTabNamePopup = useUIStore((s) => s.modals.tabNamePopup);
   const toolsState = useToolsStore();
 
   // Init tools store from config and persist changes
@@ -1520,6 +1522,16 @@ export function App({
       />
 
       <UpdateModal visible={modalUpdateModal} onClose={getCloser("updateModal")} />
+
+      <TabNamePopup
+        visible={modalTabNamePopup}
+        placeholder={`TAB-${String(tabMgr.tabCount + 1)}`}
+        onSubmit={(name) => {
+          useUIStore.getState().closeModal("tabNamePopup");
+          tabMgr.createTab(name || undefined);
+        }}
+        onClose={getCloser("tabNamePopup")}
+      />
 
       <SimpleModalLayer
         messages={activeChatRef.current?.messages ?? []}

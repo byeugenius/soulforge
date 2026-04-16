@@ -84,8 +84,8 @@ function handleTabs(_input: string, ctx: CommandContext): void {
   });
 }
 
-function handleNewTab(_input: string, ctx: CommandContext): void {
-  ctx.tabMgr.createTab();
+function handleNewTab(_input: string, _ctx: CommandContext): void {
+  useUIStore.getState().openModal("tabNamePopup");
 }
 
 function handleCloseTab(_input: string, ctx: CommandContext): void {
