@@ -923,6 +923,7 @@ export const TabInstance = memo(function TabInstance({
                   )
                 }
                 onCycleTab={onCycleTab}
+                viewingCheckpoint={checkpointViewing}
               />
             </box>
           </box>

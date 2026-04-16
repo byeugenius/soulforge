@@ -27,6 +27,8 @@ interface Props {
   widthPct?: number;
   /** Called when Tab is pressed and not consumed by autocomplete. Direction: 1 = next, -1 = prev. */
   onCycleTab?: (direction: 1 | -1) => void;
+  /** When set, the user is browsing a past checkpoint — show a rewind hint. */
+  viewingCheckpoint?: number | null;
 }
 
 let _commands: Array<{ cmd: string; icon: string; desc: string }> | null = null;
@@ -107,6 +109,7 @@ export const InputBox = memo(function InputBox({
   onDropdownChange,
   widthPct,
   onCycleTab,
+  viewingCheckpoint,
 }: Props) {
   const [value, setValue] = useState("");
   const valueRef = useRef(value);
@@ -822,11 +825,13 @@ export const InputBox = memo(function InputBox({
                 onCursorChange={handleCursorChange}
                 keyBindings={INPUT_KEY_BINDINGS}
                 placeholder={
-                  showBusy && !showAutocomplete
-                    ? "'/' for commands · or steer by sending a new message"
-                    : "speak to the forge..."
+                  viewingCheckpoint != null
+                    ? `${icon("rewind")} send a message to rewind to checkpoint #${String(viewingCheckpoint)}`
+                    : showBusy && !showAutocomplete
+                      ? "'/' for commands · or steer by sending a new message"
+                      : "speak to the forge..."
                 }
-                placeholderColor={t.textMuted}
+                placeholderColor={viewingCheckpoint != null ? t.warning : t.textMuted}
                 focused={focused}
                 wrapMode="char"
                 width={textareaWidth}
