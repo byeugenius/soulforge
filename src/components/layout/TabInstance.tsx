@@ -320,7 +320,7 @@ export const TabInstance = memo(function TabInstance({
   const checkpoints = useCheckpointStore((s) => s.tabs[tabId]?.checkpoints ?? []);
   const checkpointViewing = useCheckpointStore((s) => s.tabs[tabId]?.viewing ?? null);
 
-  // Scroll to the viewed checkpoint's anchor message
+  // Scroll to the viewed checkpoint's user message (pinned to top of viewport)
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
@@ -329,7 +329,13 @@ export const TabInstance = memo(function TabInstance({
       return;
     }
     const cp = checkpoints.find((c) => c.index === checkpointViewing);
-    if (cp) sb.scrollChildIntoView(`msg-${cp.anchorMessageId}`);
+    if (!cp) return;
+    const child = sb.content.findDescendantById(`msg-${cp.anchorMessageId}`);
+    if (child) {
+      sb.scrollTop = child.y;
+    } else {
+      sb.scrollChildIntoView(`msg-${cp.anchorMessageId}`);
+    }
   }, [checkpointViewing, checkpoints]);
 
   // Cleanup / dispose on unmount

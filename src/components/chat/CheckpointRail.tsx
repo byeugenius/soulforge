@@ -1,5 +1,5 @@
-import { useTerminalDimensions } from "@opentui/react";
-import { memo, useMemo } from "react";
+import type { ScrollBoxRenderable } from "@opentui/core";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../../core/theme/index.js";
 import type { Checkpoint } from "../../stores/checkpoints.js";
 import { SPINNER_FRAMES, useSpinnerFrame } from "../layout/shared.js";
@@ -35,15 +35,17 @@ function getDotChar(
   return { char: DOT_EMPTY, color: t.textFaint };
 }
 
+const SCROLLBAR_HIDDEN = { visible: false } as const;
+
 export const CheckpointRail = memo(function CheckpointRail({
   checkpoints,
   viewing,
 }: CheckpointRailProps) {
   const t = useTheme();
   const spinnerFrame = useSpinnerFrame();
-  const { height: termHeight } = useTerminalDimensions();
   const isLive = viewing === null;
   const showNav = checkpoints.length > 1;
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   const lastActiveIdx = useMemo(() => {
     for (let i = checkpoints.length - 1; i >= 0; i--) {
@@ -52,88 +54,54 @@ export const CheckpointRail = memo(function CheckpointRail({
     return -1;
   }, [checkpoints]);
 
-  const navRows = showNav ? 2 : 0;
-  const availableForDots = Math.max(1, termHeight - 6 - navRows);
-
-  const { visibleCps, hiddenAbove, hiddenBelow } = useMemo(() => {
-    const totalNeeded = checkpoints.length * 2 - 1;
-    if (totalNeeded <= availableForDots) {
-      return { visibleCps: checkpoints, hiddenAbove: 0, hiddenBelow: 0 };
-    }
-
-    // How many fit? Reserve 2 rows for +N indicators (top + bottom)
-    let maxVisible = 1;
-    for (let n = checkpoints.length; n >= 1; n--) {
-      if (n * 2 - 1 <= availableForDots - 2) {
-        maxVisible = n;
-        break;
-      }
-    }
-    maxVisible = Math.max(1, maxVisible);
-
-    // When live, pin to bottom; when viewing, center on viewed checkpoint
-    let start: number;
-    let end: number;
+  // Scroll to the focused checkpoint dot
+  useEffect(() => {
+    const sb = scrollRef.current;
+    if (!sb) return;
     if (viewing === null) {
-      end = checkpoints.length;
-      start = Math.max(0, end - maxVisible);
+      // Live — scroll to bottom
+      sb.scrollTo(sb.scrollHeight);
     } else {
-      const focusIdx = checkpoints.findIndex((c) => c.index === viewing);
-      const focus = focusIdx >= 0 ? focusIdx : checkpoints.length - 1;
-      start = Math.max(0, focus - Math.floor(maxVisible / 2));
-      end = start + maxVisible;
-      if (end > checkpoints.length) {
-        end = checkpoints.length;
-        start = Math.max(0, end - maxVisible);
-      }
+      // Scroll the viewed checkpoint's dot into view
+      sb.scrollChildIntoView(`dot-${String(viewing)}`);
     }
-
-    return {
-      visibleCps: checkpoints.slice(start, end),
-      hiddenAbove: start,
-      hiddenBelow: checkpoints.length - end,
-    };
-  }, [checkpoints, availableForDots, viewing]);
-
-  // Build flat row array: each row is one character (dot or connector)
-  const rows = useMemo(() => {
-    const result: Array<{ key: string; char: string; color: string }> = [];
-    for (let i = 0; i < visibleCps.length; i++) {
-      const cp = visibleCps[i]!;
-      const isLatest = cp.index === lastActiveIdx;
-      const style = getDotChar(cp, viewing === cp.index, isLatest, isLive, spinnerFrame, t);
-      result.push({ key: `d${String(cp.index)}`, char: style.char, color: style.color });
-      if (i < visibleCps.length - 1) {
-        result.push({ key: `c${String(cp.index)}`, char: CONNECTOR, color: t.textSubtle });
-      }
-    }
-    return result;
-  }, [visibleCps, lastActiveIdx, viewing, isLive, spinnerFrame, t]);
+  }, [viewing, checkpoints.length]);
 
   if (checkpoints.length === 0) return null;
 
-  // Cap height: dot area (dots + indicators) must not exceed availableForDots
-  const indicatorRows = (hiddenAbove > 0 ? 1 : 0) + (hiddenBelow > 0 ? 1 : 0);
-  const dotArea = Math.min(rows.length + indicatorRows, availableForDots);
-  const totalHeight = navRows + dotArea;
-
   return (
-    <box
-      width={3}
-      height={totalHeight}
-      flexShrink={0}
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="flex-end"
-    >
+    <box width={3} flexGrow={1} flexShrink={0} flexDirection="column" alignItems="center">
       {showNav && <text fg={t.textMuted}>▲</text>}
-      {hiddenAbove > 0 && <text fg={t.textDim}>+{String(hiddenAbove)}</text>}
-      {rows.map((row) => (
-        <text key={row.key} fg={row.color}>
-          {row.char}
-        </text>
-      ))}
-      {hiddenBelow > 0 && <text fg={t.textDim}>+{String(hiddenBelow)}</text>}
+      <scrollbox
+        ref={scrollRef}
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        stickyScroll={isLive}
+        stickyStart="bottom"
+        focusable={false}
+        verticalScrollbarOptions={SCROLLBAR_HIDDEN}
+        horizontalScrollbarOptions={SCROLLBAR_HIDDEN}
+        style={{ contentOptions: { alignItems: "center" } }}
+      >
+        {checkpoints.map((cp, idx) => {
+          const isLatest = cp.index === lastActiveIdx;
+          const style = getDotChar(cp, viewing === cp.index, isLatest, isLive, spinnerFrame, t);
+          const isLast = idx === checkpoints.length - 1;
+          return (
+            <box
+              key={`cp${String(cp.index)}`}
+              id={`dot-${String(cp.index)}`}
+              flexDirection="column"
+              alignItems="center"
+              flexShrink={0}
+            >
+              <text fg={style.color}>{style.char}</text>
+              {!isLast && <text fg={t.textSubtle}>{CONNECTOR}</text>}
+            </box>
+          );
+        })}
+      </scrollbox>
       {showNav && <text fg={t.textMuted}>▼</text>}
     </box>
   );
