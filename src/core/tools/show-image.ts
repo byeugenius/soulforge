@@ -558,26 +558,36 @@ async function fetchVideoFromUrl(
         const dlMsg = randomMsg(YT_DL_MESSAGES);
         progress(toolCallId, "YT-DL", `${dlMsg}…`);
 
-        const dlResult = await spawnAsync(
+        const onStderr = (line: string) => {
+          const m = line.match(/(\d+\.\d+)%/);
+          if (m) progress(toolCallId, "YT-DL", `${dlMsg}… ${m[1]}%`);
+        };
+
+        // First attempt: prefer small formats under 20MB
+        let dlResult = await spawnAsync(
           "yt-dlp",
           [
             "-f",
-            "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
+            "best[height<=480][ext=mp4]/best[height<=480]/worst[ext=mp4]/worst",
             "--max-filesize",
             "20M",
             "-o",
             videoPath,
             url,
           ],
-          {
+          { timeout: 120_000, signal, onStderr },
+        );
+
+        // Second attempt: no size cap, lowest quality — ffmpeg will handle the rest
+        if (dlResult.code !== 0 || !existsSync(videoPath)) {
+          safeUnlink(videoPath);
+          progress(toolCallId, "YT-DL", `${dlMsg}… (retrying lowest quality)`);
+          dlResult = await spawnAsync("yt-dlp", ["-f", "worst", "-o", videoPath, url], {
             timeout: 120_000,
             signal,
-            onStderr: (line) => {
-              const m = line.match(/(\d+\.\d+)%/);
-              if (m) progress(toolCallId, "YT-DL", `${dlMsg}… ${m[1]}%`);
-            },
-          },
-        );
+            onStderr,
+          });
+        }
 
         if (dlResult.code === 0 && existsSync(videoPath)) {
           // Kitty: full animated GIF (retry once — ffmpeg two-pass can be flaky)
