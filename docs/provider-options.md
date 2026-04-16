@@ -39,3 +39,25 @@ When provider options cause an API error, the system automatically retries with 
 3. **Level 2:** No Anthropic-specific options
 
 Detection patterns: "not supported", "thinking is not supported", "adaptive thinking", "clear_thinking", "context management", "unknown parameter".
+
+## Retry on Transient Errors
+
+Both the main chat loop and dispatched sub-agents retry automatically on transient provider errors (429 rate limits, 529/503 overloaded, timeouts, socket errors). Wait time doubles each attempt with jitter: `baseDelayMs * 2^attempt + random(0–500ms)`.
+
+Configure in your config file (`~/.config/soulforge/config.json` or `.soulforge/config.json`):
+
+```json
+{
+  "retry": {
+    "maxAttempts": 5,
+    "baseDelayMs": 3000
+  }
+}
+```
+
+| Field | Default | Range | Notes |
+|-------|---------|-------|-------|
+| `maxAttempts` | `3` | 1–10 | Retries on top of the initial attempt. `5` gives delays of ~3s, 6s, 12s, 24s, 48s. |
+| `baseDelayMs` | `2000` (agents), `1000` (chat) | 250–60000 | Starting delay before the first retry. Doubles each attempt. |
+
+If you're hitting `Error: Failed after 3 attempts. Last error: Too Many Requests`, bump `maxAttempts` to 5–6 and `baseDelayMs` to 3000–5000.

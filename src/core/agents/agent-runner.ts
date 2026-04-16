@@ -29,11 +29,10 @@ import {
   type SubagentModels,
 } from "./subagent-tools.js";
 
-const BASE_DELAY_MS = 2000;
-const MAX_RETRIES = 3;
 const MAX_NO_EDIT_RETRIES = 1;
 
 import { loadConfig } from "../../config/index.js";
+import { resolveRetrySettings } from "../retry/settings.js";
 
 export const DEFAULT_MAX_CONCURRENT_AGENTS = 3;
 
@@ -370,6 +369,10 @@ export async function runAgentTask(
 
   let lastError: unknown;
   let attemptsMade = 0;
+  const { maxRetries: MAX_RETRIES, baseDelayMs: BASE_DELAY_MS } = resolveRetrySettings(
+    loadConfig().retry,
+    { agent: true },
+  );
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (abortSignal?.aborted) break;
 

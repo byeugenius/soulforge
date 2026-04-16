@@ -348,6 +348,15 @@ export interface AppConfig {
   watchdog?: boolean;
   /** Tool call timeout in minutes. Applies to shell, project, and agent tools. Default: 2 */
   toolTimeout?: number;
+  /** Retry behavior for transient provider errors (429, 529, 503, timeouts, overloaded). */
+  retry?: RetryConfig;
+}
+
+export interface RetryConfig {
+  /** Max retry attempts per request. Default: 3. Range: 1–10. */
+  maxAttempts?: number;
+  /** Base delay in ms before the first retry. Doubles each attempt + jitter. Default: 2000 (agents), 1000 (chat). Range: 250–60000. */
+  baseDelayMs?: number;
 }
 
 export interface MCPServerConfig {

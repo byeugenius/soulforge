@@ -43,6 +43,7 @@ import {
   supportsTemperature,
 } from "../core/llm/provider-options.js";
 import { resolveTaskModel } from "../core/llm/task-router.js";
+import { resolveRetrySettings } from "../core/retry/settings.js";
 import { onCompaction, writeDiary } from "../core/mcp/mempalace.js";
 import { updateEmergencySnapshot } from "../core/sessions/emergency-save.js";
 import { SessionManager } from "../core/sessions/manager.js";
@@ -1950,7 +1951,8 @@ export function useChat({
           tabLabel,
         });
         let result: StreamTextResult<ToolSet, never> | undefined;
-        const MAX_TRANSIENT_RETRIES = 3;
+        const { maxRetries: MAX_TRANSIENT_RETRIES, baseDelayMs: RETRY_BASE_DELAY_MS } =
+          resolveRetrySettings(effectiveConfig.retry);
         for (let retry = 0; retry <= MAX_TRANSIENT_RETRIES; retry++) {
           if (abortController.signal.aborted) break;
           try {
@@ -2020,7 +2022,7 @@ export function useChat({
             if (!isTransient || retry === MAX_TRANSIENT_RETRIES || abortController.signal.aborted) {
               throw err;
             }
-            const delay = 1000 * 2 ** retry + Math.random() * 500;
+            const delay = RETRY_BASE_DELAY_MS * 2 ** retry + Math.random() * 500;
             const delaySec = Math.round(delay / 1000);
             setMessages((prev) => [
               ...prev,
