@@ -21,6 +21,7 @@ import {
 import { emitToolProgress } from "./tool-progress.js";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
+const TARGET_IMAGE_SIZE = 9 * 1024 * 1024; // 9 MB target after resize
 const SUPPORTED_EXTENSIONS = /\.(png|jpg|jpeg|bmp|gif|webp|tiff|tif)$/i;
 const URL_RE = /^https?:\/\//i;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -105,17 +106,19 @@ async function fetchImageUrl(
       return { error: `not_image:${contentType}` };
     }
 
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length === 0) return { error: "Empty response" };
-    if (buf.length > MAX_IMAGE_SIZE) {
-      return {
-        error: `Image too large (${String(Math.round(buf.length / 1024 / 1024))}MB). Max: 10MB.`,
-      };
-    }
-
     // Extract filename from URL path
     const urlPath = new URL(url).pathname;
     const name = basename(urlPath) || "image.png";
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) return { error: "Empty response" };
+    if (buf.length > MAX_IMAGE_SIZE) {
+      const resized = await resizeImageToTarget(buf, name, TARGET_IMAGE_SIZE);
+      if (resized) return { data: resized, name };
+      return {
+        error: `Image too large (${String(Math.round(buf.length / 1024 / 1024))}MB) and auto-resize failed. Install ffmpeg to fix:\n  macOS:  brew install ffmpeg\n  Linux:  sudo apt install ffmpeg`,
+      };
+    }
 
     return { data: buf, name };
   } catch (e) {
@@ -144,6 +147,83 @@ export function hasYtDlp(): boolean {
 }
 export function hasFfmpeg(): boolean {
   return hasTool("ffmpeg");
+}
+function hasSips(): boolean {
+  return process.platform === "darwin" && hasTool("sips");
+}
+
+/**
+ * Resize an image buffer to fit within targetBytes.
+ * Tries ffmpeg first (best quality, lanczos), then sips on macOS as fallback.
+ * Steps down scale until the result fits within targetBytes.
+ */
+async function resizeImageToTarget(
+  data: Buffer,
+  name: string,
+  targetBytes: number,
+  signal?: AbortSignal,
+): Promise<Buffer | null> {
+  const id = `soul-vision-resize-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
+  const ext = extname(name).toLowerCase() || ".jpg";
+  const srcPath = resolve(tmpdir(), `${id}${ext}`);
+  const dstPath = resolve(tmpdir(), `${id}-resized${ext}`);
+
+  try {
+    writeFileSync(srcPath, data);
+
+    const scales = [0.9, 0.8, 0.7, 0.6, 0.5];
+
+    // Strategy 1: ffmpeg (cross-platform, best quality)
+    if (hasFfmpeg()) {
+      for (const scale of scales) {
+        const result = await spawnAsync(
+          "ffmpeg",
+          [
+            "-y",
+            "-i",
+            srcPath,
+            "-vf",
+            `scale=iw*${String(scale)}:ih*${String(scale)}:flags=lanczos`,
+            "-q:v",
+            "2",
+            dstPath,
+          ],
+          { timeout: 30_000, signal },
+        );
+        if (result.code === 0 && existsSync(dstPath)) {
+          const resized = readFileSync(dstPath);
+          if (resized.length > 0 && resized.length <= targetBytes) return resized;
+        }
+      }
+    }
+
+    // Strategy 2: sips (macOS built-in) — get original width, then resample down
+    if (hasSips()) {
+      const probe = await spawnAsync("sips", ["--getProperty", "pixelWidth", srcPath], {
+        timeout: 10_000,
+        signal,
+      });
+      const widthMatch = probe.stdout.toString().match(/pixelWidth:\s*(\d+)/);
+      const origWidth = widthMatch?.[1] ? parseInt(widthMatch[1], 10) : 4000;
+      for (const scale of scales) {
+        const targetWidth = Math.round(origWidth * scale);
+        const result = await spawnAsync(
+          "sips",
+          ["--resampleWidth", String(targetWidth), srcPath, "--out", dstPath],
+          { timeout: 30_000, signal },
+        );
+        if (result.code === 0 && existsSync(dstPath)) {
+          const resized = readFileSync(dstPath);
+          if (resized.length > 0 && resized.length <= targetBytes) return resized;
+        }
+      }
+    }
+
+    return null;
+  } finally {
+    safeUnlink(srcPath);
+    safeUnlink(dstPath);
+  }
 }
 
 const VIDEO_EXTENSIONS = /\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ts|3gp)$/i;
@@ -385,14 +465,59 @@ async function videoToFrame(
 }
 
 /**
- * Handle a video URL: download with yt-dlp, convert to GIF with ffmpeg.
- *
- * Tool requirements and fallback chain:
- *   yt-dlp + ffmpeg → animated GIF from video
- *   yt-dlp only    → static thumbnail (yt-dlp can extract thumbnails without ffmpeg)
- *   ffmpeg only    → can't download video URLs (need yt-dlp)
- *   neither        → error with install instructions
+ * Download a direct video URL (e.g. .mp4, .webm) and convert to GIF.
+ * Unlike fetchVideoFromUrl, this doesn't need yt-dlp — it fetches directly.
  */
+async function fetchDirectVideoUrl(
+  url: string,
+  toolCallId?: string,
+  signal?: AbortSignal,
+): Promise<{ data: Buffer; name: string; isGif: boolean } | { error: string }> {
+  if (!hasFfmpeg()) {
+    return { error: `Video files require ffmpeg to convert:\n${INSTALL_FFMPEG}` };
+  }
+
+  const urlName = (() => {
+    try {
+      return basename(new URL(url).pathname) || "video";
+    } catch {
+      return "video";
+    }
+  })();
+
+  const id = `soul-vision-direct-${String(Date.now())}-${String(Math.random()).slice(2, 8)}`;
+  const ext = extname(urlName).toLowerCase() || ".mp4";
+  const videoPath = resolve(tmpdir(), `${id}${ext}`);
+
+  try {
+    progress(toolCallId, "FETCH", `Downloading ${urlName}…`);
+    const res = await fetch(url, {
+      headers: { "User-Agent": "SoulForge/1.0" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!res.ok) {
+      return { error: `HTTP ${String(res.status)}: ${res.statusText}` };
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) return { error: "Empty response" };
+    if (buf.length > MAX_VIDEO_DOWNLOAD) {
+      return {
+        error: `Video too large (${String(Math.round(buf.length / 1024 / 1024))}MB). Max: 20MB.`,
+      };
+    }
+
+    writeFileSync(videoPath, buf);
+    return await convertLocalVideo(videoPath, urlName, toolCallId, signal);
+  } catch (e) {
+    return { error: `Fetch failed: ${e instanceof Error ? e.message : String(e)}` };
+  } finally {
+    safeUnlink(videoPath);
+  }
+}
+
 async function fetchVideoFromUrl(
   url: string,
   toolCallId?: string,
@@ -748,22 +873,32 @@ export async function showImage(
 
   if (URL_RE.test(args.path)) {
     // ── URL mode ──
-    const result = await fetchImageUrl(args.path);
-    if ("error" in result) {
-      // If the URL returned non-image content, try video extraction
-      if (result.error.startsWith("not_image:")) {
-        const videoResult = await fetchVideoFromUrl(args.path, toolCallId, signal);
-        if ("error" in videoResult) {
-          return { success: false, output: videoResult.error };
-        }
-        data = videoResult.data;
-        name = videoResult.name;
-      } else {
-        return { success: false, output: result.error };
+    // Route direct video URLs straight to video handler (no yt-dlp needed for direct links)
+    if (VIDEO_EXTENSIONS.test(new URL(args.path).pathname)) {
+      const videoResult = await fetchDirectVideoUrl(args.path, toolCallId, signal);
+      if ("error" in videoResult) {
+        return { success: false, output: videoResult.error };
       }
+      data = videoResult.data;
+      name = videoResult.name;
     } else {
-      data = result.data;
-      name = result.name;
+      const result = await fetchImageUrl(args.path);
+      if ("error" in result) {
+        // If the URL returned non-image content, try video extraction via yt-dlp
+        if (result.error.startsWith("not_image:")) {
+          const videoResult = await fetchVideoFromUrl(args.path, toolCallId, signal);
+          if ("error" in videoResult) {
+            return { success: false, output: videoResult.error };
+          }
+          data = videoResult.data;
+          name = videoResult.name;
+        } else {
+          return { success: false, output: result.error };
+        }
+      } else {
+        data = result.data;
+        name = result.name;
+      }
     }
   } else {
     // ── Local file mode ──
@@ -796,13 +931,6 @@ export async function showImage(
       name = videoResult.name;
     } else {
       // Image file
-      if (stat.size > MAX_IMAGE_SIZE) {
-        return {
-          success: false,
-          output: `Image too large (${String(Math.round(stat.size / 1024 / 1024))}MB). Max: 10MB.`,
-        };
-      }
-
       if (!SUPPORTED_EXTENSIONS.test(filePath)) {
         return {
           success: false,
@@ -813,6 +941,17 @@ export async function showImage(
 
       try {
         data = readFileSync(filePath);
+        if (data.length > MAX_IMAGE_SIZE) {
+          const resized = await resizeImageToTarget(data, args.path, TARGET_IMAGE_SIZE, signal);
+          if (resized) {
+            data = resized;
+          } else {
+            return {
+              success: false,
+              output: `Image too large (${String(Math.round(stat.size / 1024 / 1024))}MB) and auto-resize failed. Install ffmpeg for best results:\n  macOS:  brew install ffmpeg\n  Linux:  sudo apt install ffmpeg`,
+            };
+          }
+        }
       } catch (e) {
         return { success: false, output: `Failed to read file: ${String(e)}` };
       }
