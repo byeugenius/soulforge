@@ -343,6 +343,26 @@ export const TabInstance = memo(function TabInstance({
     });
   }, [checkpointViewing, checkpoints]);
 
+  // Override context bar estimate when viewing a past checkpoint
+  useEffect(() => {
+    if (!visible) return;
+    if (checkpointViewing === null) return;
+    const cp = checkpoints.find((c) => c.index === checkpointViewing);
+    if (!cp) return;
+    const store = useStatusBarStore.getState();
+    const savedChars = store.chatChars;
+    // Estimate chars from the viewed snapshot's messages
+    let chars = 0;
+    for (const m of cp.messagesSnapshot) {
+      if (typeof m.content === "string") chars += m.content.length;
+    }
+    store.setContext(0, chars);
+    return () => {
+      // Restore real chatChars when leaving checkpoint view
+      useStatusBarStore.getState().setContext(0, savedChars);
+    };
+  }, [checkpointViewing, checkpoints, visible]);
+
   // Cleanup / dispose on unmount
   useEffect(() => {
     return () => {
