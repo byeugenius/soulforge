@@ -18,6 +18,8 @@ export interface TaskRouter {
   compact: string | null;
   semantic: string | null;
   default: string | null;
+  /** Max concurrent dispatch agents. Default: 3. Range: 2–8. */
+  maxConcurrentAgents?: number;
   /** @config-compat Legacy fields — mapped to spark/ember on load. Hidden from /router UI. */
   coding?: string | null;
   exploration?: string | null;

@@ -20,13 +20,23 @@ interface SlotRow {
   hint: string;
 }
 
+interface PickerRow {
+  kind: "picker";
+  key: "maxConcurrentAgents";
+  label: string;
+  hint: string;
+  options: number[];
+  defaultValue: number;
+}
+
 interface SectionRow {
   kind: "section";
   title: string;
   subtitle: string;
 }
 
-type ListRow = SlotRow | SectionRow;
+type ListRow = SlotRow | PickerRow | SectionRow;
+type SelectableRow = SlotRow | PickerRow;
 
 const ROWS: ListRow[] = [
   // ── Main Agent ──
@@ -64,6 +74,14 @@ const ROWS: ListRow[] = [
     key: "webSearch",
     label: `${icon("web")} Web`,
     hint: "Searches the web & fetches pages",
+  },
+  {
+    kind: "picker",
+    key: "maxConcurrentAgents",
+    label: `${icon("dispatch")} Concurrency`,
+    hint: "Max parallel agents per dispatch (default 3)",
+    options: [2, 3, 4, 5, 6, 7, 8],
+    defaultValue: 3,
   },
   // ── Post-Dispatch ──
   {
@@ -104,11 +122,11 @@ const ROWS: ListRow[] = [
   },
 ];
 
-// Flat list of only selectable (slot) rows, with their index into ROWS
-const SELECTABLE: { row: SlotRow; rowIdx: number }[] = ROWS.reduce<
-  { row: SlotRow; rowIdx: number }[]
+// Flat list of only selectable (slot/picker) rows, with their index into ROWS
+const SELECTABLE: { row: SelectableRow; rowIdx: number }[] = ROWS.reduce<
+  { row: SelectableRow; rowIdx: number }[]
 >((acc, r, i) => {
-  if (r.kind === "slot") acc.push({ row: r, rowIdx: i });
+  if (r.kind === "slot" || r.kind === "picker") acc.push({ row: r, rowIdx: i });
   return acc;
 }, []);
 
@@ -190,6 +208,46 @@ const SlotRowView = memo(function SlotRowView({
   );
 });
 
+const PickerRowView = memo(function PickerRowView({
+  picker,
+  value,
+  selected,
+  innerW,
+}: {
+  picker: PickerRow;
+  value: number;
+  selected: boolean;
+  innerW: number;
+}) {
+  const t = useTheme();
+  const bg = selected ? POPUP_HL : POPUP_BG;
+  const labelW = 16;
+  return (
+    <PopupRow bg={bg} w={innerW}>
+      <text bg={bg} fg={selected ? t.brand : t.textDim}>
+        {selected ? "› " : "  "}
+      </text>
+      <text
+        bg={bg}
+        fg={selected ? "white" : t.textPrimary}
+        attributes={selected ? TextAttributes.BOLD : undefined}
+      >
+        {picker.label.padEnd(labelW)}
+      </text>
+      {picker.options.map((opt) => (
+        <text
+          key={opt}
+          bg={bg}
+          fg={opt === value ? t.brand : t.textDim}
+          attributes={opt === value ? TextAttributes.BOLD : undefined}
+        >
+          {opt === value ? ` [${String(opt)}] ` : `  ${String(opt)}  `}
+        </text>
+      ))}
+    </PopupRow>
+  );
+});
+
 // ── Main component ──────────────────────────────────────────────────────
 
 interface Props {
@@ -200,6 +258,7 @@ interface Props {
   onScopeChange: (toScope: ConfigScope, fromScope: ConfigScope) => void;
   onPickSlot: (slot: keyof TaskRouter) => void;
   onClearSlot: (slot: keyof TaskRouter) => void;
+  onPickerChange: (key: "maxConcurrentAgents", value: number) => void;
   onClose: () => void;
 }
 
@@ -211,6 +270,7 @@ export function RouterSettings({
   onScopeChange,
   onPickSlot,
   onClearSlot,
+  onPickerChange,
   onClose,
 }: Props) {
   const t = useTheme();
@@ -244,15 +304,31 @@ export function RouterSettings({
     }
     if (evt.name === "return") {
       const sel = SELECTABLE[cursor];
-      if (sel) onPickSlot(sel.row.key);
+      if (sel && sel.row.kind === "slot") onPickSlot(sel.row.key);
       return;
     }
     if (evt.name === "d" || evt.name === "delete" || evt.name === "backspace") {
       const sel = SELECTABLE[cursor];
-      if (sel) onClearSlot(sel.row.key);
+      if (sel && sel.row.kind === "slot") onClearSlot(sel.row.key);
+      if (sel && sel.row.kind === "picker") onPickerChange(sel.row.key, sel.row.defaultValue);
       return;
     }
     if (evt.name === "left" || evt.name === "right") {
+      const sel = SELECTABLE[cursor];
+      if (sel && sel.row.kind === "picker") {
+        const { options, key } = sel.row;
+        const cur = router?.[key] ?? sel.row.defaultValue;
+        const idx = options.indexOf(cur);
+        const nextIdx =
+          evt.name === "left"
+            ? Math.max(0, (idx < 0 ? options.indexOf(sel.row.defaultValue) : idx) - 1)
+            : Math.min(
+                options.length - 1,
+                (idx < 0 ? options.indexOf(sel.row.defaultValue) : idx) + 1,
+              );
+        onPickerChange(key, options[nextIdx] ?? sel.row.defaultValue);
+        return;
+      }
       const idx = CONFIG_SCOPES.indexOf(scope);
       const next =
         evt.name === "left"
@@ -324,7 +400,20 @@ export function RouterSettings({
           // Find which selectable index this slot corresponds to
           const selIdx = SELECTABLE.findIndex((s) => s.row.key === row.key);
           const isSelected = selIdx === cursor;
-          const modelId = router?.[row.key] ?? null;
+          if (row.kind === "picker") {
+            const val = router?.[row.key] ?? row.defaultValue;
+            return (
+              <PickerRowView
+                key={row.key}
+                picker={row}
+                value={typeof val === "number" ? val : row.defaultValue}
+                selected={isSelected}
+                innerW={innerW}
+              />
+            );
+          }
+          const raw = router?.[row.key] ?? null;
+          const modelId = typeof raw === "string" ? raw : null;
           return (
             <SlotRowView
               key={row.key}

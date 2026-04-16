@@ -33,7 +33,15 @@ const BASE_DELAY_MS = 2000;
 const MAX_RETRIES = 3;
 const MAX_NO_EDIT_RETRIES = 1;
 
-export const MAX_CONCURRENT_AGENTS = 3;
+import { loadConfig } from "../../config/index.js";
+
+export const DEFAULT_MAX_CONCURRENT_AGENTS = 3;
+
+export function getMaxConcurrentAgents(): number {
+  const v = loadConfig().taskRouter?.maxConcurrentAgents;
+  if (v == null || !Number.isFinite(v)) return DEFAULT_MAX_CONCURRENT_AGENTS;
+  return Math.min(8, Math.max(2, Math.round(v)));
+}
 
 import { getToolTimeoutMs } from "../tools/tool-timeout.js";
 /** 0 = no timeout (for generate calls). For waitForAgent, use getAgentWaitMs(). */

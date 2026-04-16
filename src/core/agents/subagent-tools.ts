@@ -15,7 +15,7 @@ import { cleanupDispatchDir, type DispatchOutput, type DoneToolResult } from "./
 import {
   classifyTask,
   getAgentWaitMs,
-  MAX_CONCURRENT_AGENTS,
+  getMaxConcurrentAgents,
   runAgentTask,
   selectModel,
   sleep,
@@ -917,7 +917,8 @@ export function buildSubagentTools(models: SubagentModels) {
           const inflightWaiters: Array<() => void> = [];
 
           const acquireConcurrencySlot = async (): Promise<void> => {
-            while (inflightCount >= MAX_CONCURRENT_AGENTS) {
+            const maxConcurrent = getMaxConcurrentAgents();
+            while (inflightCount >= maxConcurrent) {
               await new Promise<void>((resolve) => inflightWaiters.push(resolve));
             }
             inflightCount++;

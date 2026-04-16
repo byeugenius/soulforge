@@ -393,6 +393,9 @@ export async function fetchProviderModels(providerId: string): Promise<FetchMode
  */
 export function prewarmAllModels(): void {
   for (const cfg of PROVIDER_CONFIGS) {
+    // Skip proxy — it auto-installs and spawns a binary.
+    // Only start it when the user explicitly selects the proxy provider.
+    if (cfg.id === "proxy") continue;
     if (cfg.grouped) {
       fetchGroupedModels(cfg.id).catch(() => {});
     } else {

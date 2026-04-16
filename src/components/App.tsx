@@ -1387,6 +1387,11 @@ export function App({
           const updated = { ...current, [slot]: null };
           saveToScope({ taskRouter: updated }, routerScope);
         }}
+        onPickerChange={(key, value) => {
+          const current = effectiveConfig.taskRouter ?? DEFAULT_TASK_ROUTER;
+          const updated = { ...current, [key]: value };
+          saveToScope({ taskRouter: updated }, routerScope);
+        }}
         onClose={getCloser("routerSettings")}
       />
 
