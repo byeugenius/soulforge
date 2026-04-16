@@ -76,12 +76,29 @@ function buildForgePrepareStep(
   tabId?: string,
   codeExecution?: boolean,
   parentMessagesRef?: { current: ModelMessage[] | null },
+  /** When set, instructions are injected as the first user message instead of system prompt.
+   *  Used for proxy+Claude where CLIProxyAPI cloaking replaces the system prompt. */
+  proxyInstructions?: string,
 ) {
   // Cache-stable inject tracking: the ToolLoopAgent discards prepareStep message
   // modifications after each step (it rebuilds from initialMessages + responseMessages).
   // To maintain prefix stability for Anthropic prompt caching, we re-insert previous
   // injects at their original positions so the API always sees an append-only history.
   const previousInjects: Array<{ cleanInsertAt: number; message: ModelMessage }> = [];
+
+  // Proxy instructions message — injected once as the first user message so the proxy
+  // cloaking doesn't strip it (it only replaces the system prompt, not user messages).
+  const proxyInstructionsMessage: ModelMessage | null = proxyInstructions
+    ? {
+        role: "user" as const,
+        content: [
+          {
+            type: "text" as const,
+            text: `<system-instructions>\n${proxyInstructions}\n</system-instructions>`,
+          },
+        ],
+      }
+    : null;
 
   type StepEntry = { providerMetadata?: Record<string, unknown> };
   return async ({
@@ -109,6 +126,12 @@ function buildForgePrepareStep(
       providerOptions?: ProviderOptions;
       toolChoice?: "required" | "auto" | "none";
     } = {};
+
+    // Proxy+Claude: prepend instructions as first user message every step
+    // (ToolLoopAgent rebuilds messages fresh each step, so we must re-prepend).
+    if (proxyInstructionsMessage) {
+      result.messages = [proxyInstructionsMessage, ...sanitized];
+    }
 
     // Forward code execution container ID between steps so the sandbox persists.
     // This reuses the same container (filesystem, installed packages) across steps.
@@ -392,6 +415,8 @@ function buildInstructions(cm: ContextManager, modelId: string): string {
 
 interface ForgeAgentOptions {
   model: LanguageModel;
+  /** Full model ID with provider prefix, e.g. "proxy/claude-sonnet-4-6" */
+  fullModelId?: string;
   contextManager: ContextManager;
   forgeMode?: ForgeMode;
   interactive?: InteractiveCallbacks;
@@ -429,6 +454,7 @@ interface ForgeAgentOptions {
 /** Creates the main Forge ToolLoopAgent — model can change between turns (Ctrl+L). */
 export function createForgeAgent({
   model,
+  fullModelId,
   contextManager,
   forgeMode = "default",
   interactive,
@@ -475,6 +501,13 @@ export function createForgeAgent({
   // (family-specific prompt selection depends on this)
   if (modelId) contextManager.setActiveModel(modelId);
   const isAnthropic = isAnthropicNative(modelId);
+
+  // CLIProxyAPI cloaking: when using proxy + Claude, the proxy replaces the system
+  // prompt with Claude Code's system prompt and demotes ours to a user message (where
+  // it gets lost). Bypass this by sending our instructions as the first user message
+  // instead of as a system prompt — the proxy won't touch user messages.
+  const isProxyClaude =
+    fullModelId?.startsWith("proxy/") && detectModelFamily(fullModelId) === "claude";
   const toolVersions = getAnthropicToolVersions(modelId);
   // Code execution (20260120) requires programmatic tool calling — skip entirely for models
   // that don't support it (e.g. Haiku). Basic code execution (20250825) isn't useful here
@@ -697,11 +730,13 @@ export function createForgeAgent({
     // maxOutputTokens: 16384,
     tools: allTools,
     stopWhen: () => false,
-    instructions: {
-      role: "system" as const,
-      content: buildInstructions(contextManager, modelId),
-      providerOptions: EPHEMERAL_CACHE,
-    },
+    instructions: isProxyClaude
+      ? undefined
+      : {
+          role: "system" as const,
+          content: buildInstructions(contextManager, modelId),
+          providerOptions: EPHEMERAL_CACHE,
+        },
     callOptionsSchema: z.object({
       userMessage: z.string().nullable(),
     }),
@@ -719,6 +754,7 @@ export function createForgeAgent({
       tabId,
       canUseCodeExecution,
       parentMessagesRef,
+      isProxyClaude ? buildInstructions(contextManager, modelId) : undefined,
     ),
     experimental_repairToolCall: repairToolCall,
     providerOptions: wrappedProviderOptions,

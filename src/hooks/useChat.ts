@@ -1901,6 +1901,7 @@ export function useChat({
 
         const agent = createForgeAgent({
           model,
+          fullModelId: modelId,
           contextManager,
           forgeMode: contextManager.getForgeMode(),
           interactive: interactiveCallbacks,
@@ -1950,6 +1951,7 @@ export function useChat({
                         );
                         return createForgeAgent({
                           model,
+                          fullModelId: modelId,
                           contextManager,
                           forgeMode: contextManager.getForgeMode(),
                           interactive: interactiveCallbacks,

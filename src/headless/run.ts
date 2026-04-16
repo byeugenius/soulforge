@@ -124,6 +124,7 @@ async function setupAgent(
 
   const agent = createForgeAgent({
     model,
+    fullModelId: modelId,
     contextManager,
     forgeMode: mode,
     editorIntegration: {
