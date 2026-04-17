@@ -1,4 +1,4 @@
-import { type ChildProcess, execSync, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, execSync, spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -189,8 +189,20 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
     return { ok: false, error: "Proxy is already starting" };
   }
 
+  // If the pinned version changed (e.g. SoulForge update), kill whatever is
+  // serving on the proxy port — even an orphan process from a previous session
+  // where proxyProcess is null.
+  const installed = getInstalledProxyVersion();
+  const needsUpgrade = installed !== PROXY_VERSION;
+
+  if (needsUpgrade) {
+    stopProxy();
+    // Kill orphan process on the proxy port (proxyProcess may be null after restart)
+    killProxyOnPort();
+  }
+
   const health = await healthCheck();
-  if (health === "ok") {
+  if (health === "ok" && !needsUpgrade) {
     setState("running");
     return { ok: true };
   }
@@ -282,7 +294,48 @@ export function stopProxy(): void {
     }
     proxyProcess = null;
   }
+  killProxyOnPort();
   setState("stopped");
+}
+
+/**
+ * Kill any process listening on the proxy port.
+ * Catches orphans from previous SoulForge sessions where proxyProcess handle was lost.
+ */
+function killProxyOnPort(): void {
+  const portMatch = PROXY_URL.match(/:([0-9]+)/);
+  if (!portMatch) return;
+  const port = portMatch[1];
+
+  let out = "";
+  try {
+    // macOS + most Linux: lsof
+    out = execFileSync("lsof", ["-ti", `tcp:${port}`], {
+      encoding: "utf-8",
+      timeout: 3000,
+    }).trim();
+  } catch {
+    try {
+      // Linux fallback: fuser
+      out = execFileSync("fuser", [`${port}/tcp`], {
+        encoding: "utf-8",
+        timeout: 3000,
+      }).trim();
+    } catch {
+      // Neither available — nothing we can do
+      return;
+    }
+  }
+
+  if (!out) return;
+  for (const token of out.split(/[\s\n]+/)) {
+    const pid = Number.parseInt(token.trim(), 10);
+    if (pid > 0 && pid !== process.pid) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    }
+  }
 }
 
 export function getProxyPid(): number | null {

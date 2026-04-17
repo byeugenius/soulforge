@@ -12,7 +12,7 @@ const NVIM_VERSION = "0.11.1";
 const RG_VERSION = "14.1.1";
 const FD_VERSION = "10.2.0";
 const LAZYGIT_VERSION = "0.44.1";
-export const PROXY_VERSION = "6.9.10";
+export const PROXY_VERSION = "6.9.28";
 
 export interface NerdFont {
   id: string;
