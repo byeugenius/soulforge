@@ -202,11 +202,10 @@ function renderComposite(
   const wmOff = Math.max(0, Math.floor((cols - WM_W) / 2));
   const wmStartY = rows - wmRows;
 
-  // Global tint — hard dead zone below 0.35, then fast ramp. Letters
-  // stay purple when the flame is low (no ambient wash), heat up fast
-  // once fire is strong. intensity < 0.35 → 0, 0.5 → 0.12, 0.7 → 0.46,
-  // 1.0 → 1.0.
-  const tintStrength = globalIntensity < 0.35 ? 0 : ((globalIntensity - 0.35) / 0.65) ** 1.3;
+  // Global tint — soft dead zone below 0.2 (only fully-dead flame is
+  // cold), then ramp up. intensity 0.2 → 0, 0.35 → 0.12, 0.5 → 0.33,
+  // 0.7 → 0.62, 1.0 → 1.0.
+  const tintStrength = globalIntensity < 0.2 ? 0 : ((globalIntensity - 0.2) / 0.8) ** 1.2;
 
   // Breath brightness: 0.82…1.0 multiplier synced to flame breath.
   const breathMul = 0.82 + breathPhase * 0.18;
@@ -237,11 +236,11 @@ function renderComposite(
           const ch = wmRow[wmX];
           if (ch && ch !== " ") {
             const localHeat = sampleNeighborHeat(heat, cols, rows, x, y);
-            // Local is gated by tintStrength so individual hot cells
-            // can't tint when the overall flame is weak — fire must be
-            // alive for letters to glow.
-            const localScale = Math.min(1, 0.2 + tintStrength * 1.6);
-            const tint = Math.min(1, localHeat * 1.1 * localScale + tintStrength * 0.7);
+            // Local has a soft floor so letters near visible flame
+            // always show warmth, scaling up with global intensity
+            // so intense fires produce stronger washes.
+            const localScale = 0.7 + tintStrength * 1.0;
+            const tint = Math.min(1, localHeat * 1.4 * localScale + tintStrength * 0.8);
             const litColor = tint > 0.04 ? lerpHex(baseColor, amber, tint) : baseColor;
             parts.push(fgStyle(litColor)(ch));
             continue;
@@ -325,7 +324,9 @@ export function FlameLogo({ cols, rows }: FlameLogoProps) {
       intensityRef.current = introT >= 1 ? 1 : 1 - 2 ** (-10 * introT);
       if (intensityRef.current >= 0.999) {
         const phase = ((t - INTRO_MS) / 2800) * Math.PI * 2;
-        breathRef.current = 0.9 + Math.sin(phase) * 0.15;
+        // Breath oscillates 0.95..1.1 — flame stays alive even at the
+        // trough, only dips slightly rather than fully dying.
+        breathRef.current = 1.025 + Math.sin(phase) * 0.075;
         breathPhaseRef.current = (Math.sin(phase) + 1) * 0.5;
       } else {
         breathRef.current = 1;
@@ -373,7 +374,7 @@ export function FlameLogo({ cols, rows }: FlameLogoProps) {
       }
     }, 100);
     return () => clearInterval(id);
-  }, [sim, tk]);
+  }, [sim, tk, cols, rows]);
 
   return (
     <box flexDirection="column" alignItems="center" gap={0}>
