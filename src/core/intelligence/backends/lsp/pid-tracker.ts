@@ -1,111 +1,252 @@
 /**
- * PID file tracker for LSP child processes.
+ * PID tracker + system-wide reaper for LSP child processes.
  *
- * Writes spawned LSP PIDs to ~/.soulforge/lsp-pids.json so they can be
- * cleaned up on next startup — even after crashes, SIGKILL, or any exit
- * path that bypasses normal cleanup.
+ * Two independent layers of defense against orphan leaks:
  *
- * This is the last line of defense against orphaned LSP processes.
+ * 1. Per-session PID log (~/.soulforge/lsp-pids.json) — PIDs tracked
+ *    in-memory and mirrored to disk via append-only writes. Works even
+ *    across main thread + worker thread (each owns its own Set, but all
+ *    append to the shared file).
+ *
+ * 2. System scan — ignores the PID file entirely and walks `ps` output
+ *    looking for LSP binaries whose parent is init (PPID=1) and owner
+ *    matches the current user. Catches every orphan class the PID file
+ *    misses: crashed-before-flush, killed-before-write, reaper-never-ran,
+ *    PID-file-corrupted, grandchildren reparented by macOS on sudden death.
+ *
+ * The reaper calls BOTH layers. Layer 2 is the load-bearing one — layer
+ * 1 is kept as a fast-path for the common case.
  */
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
-const PID_FILE = join(homedir(), ".soulforge", "lsp-pids.json");
+const SOULFORGE_DIR = join(homedir(), ".soulforge");
+const PID_LOG = join(SOULFORGE_DIR, "lsp-pids.log");
 
-/** In-memory set of PIDs we've spawned this session */
+/** In-memory set of PIDs this thread has spawned */
 const activePids = new Set<number>();
 
 function ensureDir(): void {
-  const dir = join(homedir(), ".soulforge");
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-}
-
-function flush(): void {
-  try {
-    ensureDir();
-    // Atomic write: write to temp file then rename to avoid corruption
-    // if main thread and worker thread flush concurrently.
-    const tmp = `${PID_FILE}.${String(process.pid)}.tmp`;
-    writeFileSync(tmp, JSON.stringify([...activePids]), "utf-8");
-    renameSync(tmp, PID_FILE);
-  } catch {
-    // Best effort — never crash the app over bookkeeping
+  if (!existsSync(SOULFORGE_DIR)) {
+    try {
+      mkdirSync(SOULFORGE_DIR, { recursive: true });
+    } catch {}
   }
 }
 
-/** Record a newly spawned LSP process */
+/** Record a newly spawned LSP process — append-only so main+worker don't race */
 export function trackLspPid(pid: number): void {
   activePids.add(pid);
-  flush();
+  try {
+    ensureDir();
+    appendFileSync(PID_LOG, `+${String(pid)}\n`, "utf-8");
+  } catch {}
 }
 
 /** Remove a PID when the process exits normally */
 export function untrackLspPid(pid: number): void {
   activePids.delete(pid);
-  flush();
+  try {
+    appendFileSync(PID_LOG, `-${String(pid)}\n`, "utf-8");
+  } catch {}
 }
 
-/** Kill all PIDs recorded in the PID file (from previous sessions) */
+/** Read the PID log and compute the set of still-alive tracked PIDs */
+function readLoggedPids(): Set<number> {
+  const alive = new Set<number>();
+  try {
+    if (!existsSync(PID_LOG)) return alive;
+    const raw = readFileSync(PID_LOG, "utf-8");
+    for (const line of raw.split("\n")) {
+      if (!line) continue;
+      const op = line[0];
+      const pid = Number.parseInt(line.slice(1), 10);
+      if (!Number.isFinite(pid) || pid <= 0) continue;
+      if (op === "+") alive.add(pid);
+      else if (op === "-") alive.delete(pid);
+    }
+  } catch {}
+  return alive;
+}
+
+/**
+ * Regex matching LSP server command patterns. Used both for verifying
+ * a tracked PID before killing it AND for system-scan discovery.
+ */
+const LSP_COMMAND_REGEX =
+  /\b(?:biome[^/\s]*(?:\s+lsp-proxy|\s+__run_server)|typescript-language-server|tsserver\.js|vtsls|pyright|pylsp|gopls|rust-analyzer|clangd|lua-language-server|taplo|solargraph|intelephense|zls|jdtls|metals|sourcekit-lsp|dart\s+language-server|elixir-ls|ocamllsp|yaml-language-server|bash-language-server|vscode-eslint-language-server|vscode-json-language-server|vscode-css-language-server|vscode-html-language-server|tailwindcss-language-server|emmet-language-server|deno\s+lsp|vue-language-server|csharp-ls|OmniSharp|kotlin-language-server|docker-langserver|expert)\b/i;
+
+/**
+ * Directory signatures that identify an LSP spawned by SoulForge
+ * (vs nvim's own mason, vscode, etc). We only kill processes whose
+ * command path contains one of these, so foreign LSPs from other
+ * tools are never touched.
+ */
+const SOULFORGE_PATH_MARKERS = [
+  join(homedir(), ".local", "share", "soulforge", "mason"),
+  join(homedir(), ".soulforge", "lsp-servers"),
+  join(homedir(), ".soulforge", "bin"),
+  // node_modules LSPs — project-local typescript/biome/eslint installs
+  // that SoulForge spawned. The orphan leak lives here for biome.
+  "node_modules/.bin/biome",
+  "node_modules/@biomejs/",
+  "node_modules/.bin/typescript-language-server",
+  "node_modules/typescript/lib/tsserver",
+  "node_modules/.bin/vtsls",
+];
+
+interface PsRow {
+  pid: number;
+  ppid: number;
+  pgid: number;
+  user: string;
+  command: string;
+}
+
+function scanProcessTree(): PsRow[] {
+  try {
+    const out = execSync("ps -axo pid=,ppid=,pgid=,user=,command=", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    const rows: PsRow[] = [];
+    for (const line of out.split("\n")) {
+      if (!line) continue;
+      const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+      if (!m) continue;
+      rows.push({
+        pid: Number.parseInt(m[1] ?? "0", 10),
+        ppid: Number.parseInt(m[2] ?? "0", 10),
+        pgid: Number.parseInt(m[3] ?? "0", 10),
+        user: m[4] ?? "",
+        command: m[5] ?? "",
+      });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+function isSoulforgeLspCommand(cmd: string): boolean {
+  if (!LSP_COMMAND_REGEX.test(cmd)) return false;
+  for (const marker of SOULFORGE_PATH_MARKERS) {
+    if (cmd.includes(marker)) return true;
+  }
+  return false;
+}
+
+function killTree(pid: number): boolean {
+  // Kill the process group first (catches grandchildren like biome's
+  // native binary launched via spawnSync). Fall through to plain pid
+  // kill if the group kill fails (e.g. no pgrp set).
+  let ok = false;
+  try {
+    process.kill(-pid, "SIGKILL");
+    ok = true;
+  } catch {}
+  try {
+    process.kill(pid, "SIGKILL");
+    ok = true;
+  } catch {}
+  return ok;
+}
+
+/**
+ * Kill every LSP-looking orphan (PPID=1) owned by the current user
+ * whose command path is under a SoulForge-managed bin directory or
+ * node_modules location. Returns the number killed.
+ *
+ * Runs synchronously — safe to call on every process.exit.
+ */
 export function reapOrphanedLspProcesses(): number {
   let killed = 0;
-  let stale: number[] = [];
-  try {
-    if (!existsSync(PID_FILE)) return 0;
-    const raw = readFileSync(PID_FILE, "utf-8");
-    stale = JSON.parse(raw) as number[];
-  } catch {
-    return 0;
-  }
+  const myUser = safeUser();
+  const myPid = process.pid;
 
-  for (const pid of stale) {
+  // Layer 1: drain the PID log. Kill anything we previously tracked
+  // that we don't still own in-memory.
+  const logged = readLoggedPids();
+  for (const pid of logged) {
     if (activePids.has(pid)) continue;
+    if (pid === myPid) continue;
     try {
-      // Signal 0 checks if process exists without killing it
       process.kill(pid, 0);
     } catch {
-      // ESRCH = process doesn't exist — already dead, good
       continue;
     }
-    // Verify the PID still belongs to an LSP-related process before killing.
-    // PIDs can be reused by the OS — without this check we could SIGKILL
-    // an innocent process that inherited the PID after the LSP died.
-    if (!isLspProcess(pid)) continue;
-    try {
-      process.kill(-pid, "SIGKILL");
-      killed++;
-    } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-        killed++;
-      } catch {}
-    }
+    if (!pidLooksLikeLsp(pid)) continue;
+    if (killTree(pid)) killed++;
   }
 
-  // Clear the file — we've handled everything
+  // Layer 2: system scan. Find every orphan LSP regardless of whether
+  // we ever logged it — this is the one that actually stops the leak.
+  const rows = scanProcessTree();
+  // Build a parent map so we can also kill our-own-pid descendants
+  // (grandchildren that outlived the wrapper but still have a real ppid).
+  const orphaned = new Set<number>();
+  for (const row of rows) {
+    if (row.user !== myUser) continue;
+    if (row.pid === myPid) continue;
+    if (!isSoulforgeLspCommand(row.command)) continue;
+    // Orphan (reparented to init) OR our descendant we already logged —
+    // either way it's ours to clean up.
+    if (row.ppid === 1 || logged.has(row.pid) || logged.has(row.ppid)) {
+      orphaned.add(row.pid);
+    }
+  }
+  for (const pid of orphaned) {
+    if (activePids.has(pid)) continue;
+    if (killTree(pid)) killed++;
+  }
+
+  // Truncate the log — we've handled every pre-existing entry. PIDs this
+  // session has appended for its own active children are still tracked
+  // in the in-memory activePids Set, so future untrack/kill still works.
   try {
-    writeFileSync(PID_FILE, "[]", "utf-8");
+    if (existsSync(PID_LOG)) unlinkSync(PID_LOG);
   } catch {}
+  // Re-log the PIDs we still own so a subsequent reap from another process
+  // still knows about them.
+  if (activePids.size > 0) {
+    try {
+      ensureDir();
+      const payload = [...activePids].map((p) => `+${String(p)}\n`).join("");
+      appendFileSync(PID_LOG, payload, "utf-8");
+    } catch {}
+  }
 
   return killed;
 }
 
-/** Check if a PID belongs to an LSP-related process (not a reused PID for something else) */
-function isLspProcess(pid: number): boolean {
+function safeUser(): string {
   try {
-    // ps -o command= gives just the command with no header
+    return userInfo().username;
+  } catch {
+    return "";
+  }
+}
+
+function pidLooksLikeLsp(pid: number): boolean {
+  try {
     const cmd = execSync(`ps -o command= -p ${String(pid)}`, {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1000,
     }).trim();
-    // Match known LSP server patterns
-    return /language.server|lsp|tsserver|pyright|gopls|rust-analyzer|clangd|biome|taplo|solargraph|intelephense|lua-language-server|zls|jdtls|metals|sourcekit-lsp|dart.*language-server|elixir-ls|ocamllsp|yaml-language-server|bash-language-server|emmet|css-language-server|html-language-server|json-language-server|eslint.*language-server|deno.*lsp|vue-language-server/i.test(
-      cmd,
-    );
+    return isSoulforgeLspCommand(cmd) || LSP_COMMAND_REGEX.test(cmd);
   } catch {
-    // Can't determine — don't kill to be safe
     return false;
   }
 }
@@ -113,21 +254,21 @@ function isLspProcess(pid: number): boolean {
 /**
  * Synchronous kill of all LSP PIDs tracked this session.
  * Called during process exit when async operations won't complete.
- * Sends SIGKILL directly — no grace period, no awaiting.
+ * After killing, runs a system scan to catch anything we missed.
  */
 export function killAllLspSync(): void {
   for (const pid of activePids) {
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {}
-    }
+    killTree(pid);
   }
   activePids.clear();
-  // Clear the PID file so next startup doesn't re-kill
+  // System scan catches LSPs spawned by the worker thread (separate
+  // module scope → separate activePids Set we can't reach directly)
+  // plus grandchildren that outlived their wrapper.
   try {
-    writeFileSync(PID_FILE, "[]", "utf-8");
+    reapOrphanedLspProcesses();
+  } catch {}
+  // Clear the log — nothing left to reap.
+  try {
+    writeFileSync(PID_LOG, "", "utf-8");
   } catch {}
 }

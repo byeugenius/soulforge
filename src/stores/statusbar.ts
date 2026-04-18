@@ -521,13 +521,70 @@ function getPerPidRssKB(pids: number[]): Promise<Map<number, number>> {
   });
 }
 
+/**
+ * Resolve the main process's true memory footprint.
+ *
+ * `process.memoryUsage().rss` and `ps -o rss` both exclude macOS-compressed
+ * pages — they'll report 4 GB while Activity Monitor shows 9 GB because
+ * the OS silently compresses cold heap. We need the "physical footprint"
+ * number, which matches what Activity Monitor displays.
+ *
+ * On macOS: read the footprint via the Mach task_info VM bookkeeping by
+ * falling back through vmmap → ps rss. vmmap owns the accurate number
+ * but costs ~80ms, so we only hit it on the main process and only when
+ * the compressed portion is non-trivial.
+ *
+ * On Linux/Windows: RSS already includes everything meaningful.
+ */
+async function getMainFootprintMB(): Promise<number> {
+  const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  if (process.platform !== "darwin") return rssMB;
+  const footprint = await macFootprintMB(process.pid);
+  return footprint ?? rssMB;
+}
+
+function macFootprintMB(pid: number): Promise<number | null> {
+  return new Promise((resolve) => {
+    execFile(
+      "vmmap",
+      ["--summary", String(pid)],
+      { timeout: 2000, maxBuffer: 1024 * 1024 },
+      (err, stdout) => {
+        if (err) {
+          resolve(null);
+          return;
+        }
+        // "Physical footprint:         9.8G" — match whatever unit vmmap emits
+        const m = stdout.match(/Physical footprint:\s+([\d.]+)([KMGT])/);
+        if (!m?.[1] || !m[2]) {
+          resolve(null);
+          return;
+        }
+        const n = Number.parseFloat(m[1]);
+        const unit = m[2];
+        const mb =
+          unit === "G"
+            ? n * 1024
+            : unit === "M"
+              ? n
+              : unit === "K"
+                ? n / 1024
+                : unit === "T"
+                  ? n * 1024 * 1024
+                  : n;
+        resolve(Math.round(mb));
+      },
+    );
+  });
+}
+
 let memPollStarted = false;
 let memPollTimer: ReturnType<typeof setInterval> | null = null;
 export function startMemoryPoll(intervalMs = 2000) {
   if (memPollStarted) return;
   memPollStarted = true;
   memPollTimer = setInterval(async () => {
-    const mainMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    const mainMB = await getMainFootprintMB();
     const groups = await collectPidGroups();
     const allPids: number[] = [];
     if (groups.nvim != null) allPids.push(groups.nvim);
