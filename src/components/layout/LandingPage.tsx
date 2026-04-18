@@ -9,7 +9,6 @@ import { WORDMARK } from "../../core/utils/splash.js";
 import { useMCPStore } from "../../stores/mcp.js";
 import { useRepoMapStore } from "../../stores/repomap.js";
 import { FlameLogo } from "./FlameLogo.js";
-import { Spinner } from "./shared.js";
 
 const BOLD = TextAttributes.BOLD;
 const ITALIC = TextAttributes.ITALIC;
@@ -227,17 +226,9 @@ function StatusBlock() {
 
   const { status, lspStatus } = repoState;
 
-  // Only surface SoulMap / LSP when something is *not* in the steady ready
-  // state — loading or errors. Healthy = silent.
+  // Only surface SoulMap / LSP errors — scanning/generating are silent.
   let mapNode: React.ReactNode;
-  if (status === "scanning") {
-    mapNode = (
-      <text key="map">
-        <Spinner inline color={tk.amber} suffix={" "} />
-        <span fg={tk.amber}>SoulMap</span>
-      </text>
-    );
-  } else if (status === "error") {
+  if (status === "error") {
     mapNode = (
       <text key="map">
         <span fg={tk.error}>{icon("error")}</span>
@@ -247,14 +238,7 @@ function StatusBlock() {
   }
 
   let lspNode: React.ReactNode;
-  if (lspStatus === "generating") {
-    lspNode = (
-      <text key="lsp">
-        <Spinner inline color={tk.amber} suffix={" "} />
-        <span fg={tk.amber}>LSP</span>
-      </text>
-    );
-  } else if (lspStatus === "error") {
+  if (lspStatus === "error") {
     lspNode = (
       <text key="lsp">
         <span fg={tk.error}>{icon("error")}</span>

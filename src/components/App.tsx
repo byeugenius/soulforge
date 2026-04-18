@@ -35,7 +35,7 @@ import { getMissingRequired } from "../core/setup/prerequisites.js";
 import { suspendAndRun } from "../core/terminal/suspend.js";
 import { useTheme, useThemeStore } from "../core/theme/index.js";
 import { restoreSessionImages } from "../core/tools/show-image.js";
-import { garble, WORDMARK as SHUTDOWN_WORDMARK } from "../core/utils/splash.js";
+import { pickWordmark } from "../core/utils/splash.js";
 import { isDismissed } from "../core/version.js";
 import type { ChatInstance, WorkspaceSnapshot } from "../hooks/useChat.js";
 import { useConfigSync } from "../hooks/useConfigSync.js";
@@ -113,14 +113,27 @@ const DEFAULT_TASK_ROUTER: TaskRouter = {
   default: null,
 };
 
-const SHUTDOWN_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
 const SHUTDOWN_STEPS = [
-  "Quenching active flames…",
-  "Forging session to disk…",
-  "Sealing the vault…",
-  "Until next time, forgemaster.",
+  "quenching active flames",
+  "forging session to disk",
+  "sealing the vault",
+  "until next time, forgemaster",
 ];
+
+// Linear interpolate two #rrggbb hex colors → #rrggbb. Mirrors boot.tsx.
+function lerpHex(a: string, b: string, tVal: number): string {
+  const ar = parseInt(a.slice(1, 3), 16);
+  const ag = parseInt(a.slice(3, 5), 16);
+  const ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16);
+  const bg = parseInt(b.slice(3, 5), 16);
+  const bb = parseInt(b.slice(5, 7), 16);
+  const r = Math.round(ar + (br - ar) * tVal);
+  const g = Math.round(ag + (bg - ag) * tVal);
+  const bl = Math.round(ab + (bb - ab) * tVal);
+  const hex = (v: number) => v.toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(bl)}`;
+}
 
 function ShutdownSplash({
   phase,
@@ -133,6 +146,7 @@ function ShutdownSplash({
 }) {
   const shortId = sessionId?.slice(0, 8);
   const [tick, setTick] = useState(0);
+  const { width: termWidth } = useTerminalDimensions();
 
   useEffect(() => {
     const timer = setInterval(() => setTick((t) => t + 1), 80);
@@ -140,43 +154,101 @@ function ShutdownSplash({
   }, []);
 
   const t = useTheme();
-  const ghostFade = ["▓", "▒", "░", " ", " ", "░", "▒", "▓"];
-  const fadeIdx = Math.min(tick, ghostFade.length - 1);
-  const ghostChar = tick < ghostFade.length ? ghostFade[fadeIdx] : icon("ghost");
-  const spin = SHUTDOWN_SPINNER[tick % SHUTDOWN_SPINNER.length];
+  const wordmark = pickWordmark(termWidth ?? 80);
+  const wmW = wordmark[0]?.length ?? 0;
+
+  // Inverse of the boot warm-up: the forge cools. Start amber (hot
+  // from use) and fade down through warning → brandAlt → brand →
+  // brandDim over ~3s. One-shot — no loop.
+  const FADE_TICKS = 40; // 40 * 80ms = 3.2s
+  const fadeT = Math.min(1, tick / FADE_TICKS);
+  const stops = [t.amber, t.warning, t.brandAlt, t.brand, t.brandDim];
+  const scaled = fadeT * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(scaled));
+  const frac = scaled - i;
+  const wordmarkColor = lerpHex(stops[i] ?? t.brand, stops[i + 1] ?? t.brandDim, frac);
+
+  // Slow highlight sweep (same idea as boot, inverse direction — the
+  // ember trails off toward the left as the forge cools). 4.2s cycle,
+  // 3-cell bright band, tinted 55% toward #ffd68a (amber-cream).
+  const SWEEP_TICKS = 52;
+  const sweepT = (tick % SWEEP_TICKS) / SWEEP_TICKS;
+  const sweepX = Math.floor((1 - sweepT) * (wmW + 8)) - 4;
+  const warmColor = lerpHex(wordmarkColor, "#ffd68a", 0.55);
+
+  const renderRow = (line: string): React.ReactNode => {
+    const nodes: React.ReactNode[] = [];
+    let buffer = "";
+    let bufferColor = wordmarkColor;
+    const flush = (key: string) => {
+      if (!buffer) return;
+      nodes.push(
+        <span key={key} fg={bufferColor}>
+          {buffer}
+        </span>,
+      );
+      buffer = "";
+    };
+    for (let x = 0; x < line.length; x++) {
+      const ch = line.charAt(x);
+      if (ch === " ") {
+        const target = wordmarkColor;
+        if (target !== bufferColor) {
+          flush(`s-${x}`);
+          bufferColor = target;
+        }
+        buffer += " ";
+        continue;
+      }
+      const d = Math.abs(x - sweepX);
+      const target = d <= 1 ? warmColor : wordmarkColor;
+      if (target !== bufferColor) {
+        flush(`c-${x}`);
+        bufferColor = target;
+      }
+      buffer += ch;
+    }
+    flush("end");
+    return nodes;
+  };
 
   return (
     <box flexDirection="column" height={height} justifyContent="center" alignItems="center">
-      <text fg={t.brand} attributes={TextAttributes.BOLD}>
-        {ghostChar}
-      </text>
-      <text fg={t.brandDim} attributes={TextAttributes.DIM}>
-        ∿~∿
-      </text>
-      <box height={1} />
-      {SHUTDOWN_WORDMARK.map((line: string) => (
-        <text key={line} fg={t.brand} attributes={TextAttributes.BOLD}>
-          {tick < 4 ? garble(line) : line}
+      {wordmark.map((line, idx) => (
+        <text
+          // biome-ignore lint/suspicious/noArrayIndexKey: wordmark rows are positional
+          key={idx}
+          attributes={TextAttributes.BOLD}
+        >
+          {renderRow(line)}
         </text>
       ))}
       <box height={1} />
-      <box flexDirection="column" gap={0} alignItems="center" height={SHUTDOWN_STEPS.length + 3}>
+      <box
+        flexDirection="column"
+        gap={0}
+        alignItems="flex-start"
+        height={SHUTDOWN_STEPS.length + 3}
+      >
         {SHUTDOWN_STEPS.map((label, i) => {
           if (i > phase) return null;
+          const active = i === phase;
           const done = i < phase;
+          const dotColor = done ? t.textFaint : active ? wordmarkColor : t.textFaint;
+          const textColor = done ? t.textFaint : active ? t.textPrimary : t.textFaint;
           return (
-            <box key={label} gap={1} flexDirection="row">
-              <text fg={done ? t.success : t.brand}>{done ? "✓" : spin}</text>
-              <text fg={done ? t.textSecondary : t.textPrimary}>{label}</text>
-            </box>
+            <text key={label}>
+              <span fg={dotColor}>·</span>
+              <span fg={textColor}> {label}</span>
+            </text>
           );
         })}
         {shortId && phase >= 3 && (
           <>
             <box height={1} />
             <text>
-              <span fg={t.textMuted}>Resume: </span>
-              <span fg={t.brandAlt}>soulforge --session {shortId}</span>
+              <span fg={t.textMuted}>resume </span>
+              <span fg={wordmarkColor}>soulforge --session {shortId}</span>
             </text>
           </>
         )}
