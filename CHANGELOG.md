@@ -2,6 +2,11 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.13.2] — 2026-04-18
+
+### Bug Fixes
+
+- **retry**: honor retry.maxAttempts in SDK + cover connection errors
 ## [2.13.1] — 2026-04-18
 
 ### Bug Fixes
