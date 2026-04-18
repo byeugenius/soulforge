@@ -275,7 +275,7 @@ async function handleProxyInstall(_input: string, ctx: CommandContext): Promise<
   const { installProxy } = await import("../setup/install.js");
   sysMsg(ctx, "Installing CLIProxyAPI...");
   installProxy()
-    .then((path: string) => sysMsg(ctx, `CLIProxyAPI installed at ${path}`))
+    .then(({ path, version }) => sysMsg(ctx, `CLIProxyAPI v${version} installed at ${path}`))
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       sysMsg(ctx, `Install failed: ${msg}`);

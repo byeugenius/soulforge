@@ -12,12 +12,18 @@ import { join } from "node:path";
 import { logBackgroundError } from "../../stores/errors.js";
 import { toErrorMessage } from "../../utils/errors.js";
 import { trackProcess } from "../process-tracker.js";
-import { getVendoredPath, installProxy, PROXY_VERSION } from "../setup/install.js";
+import { getVendoredPath, installProxy } from "../setup/install.js";
+import {
+  candidateApiKeys,
+  discoverApiKeys,
+  getActiveProxyApiKey,
+  primaryConfigPath,
+  setActiveProxyApiKey,
+} from "./key-resolver.js";
 
 let proxyProcess: ChildProcess | null = null;
 
 const PROXY_URL = process.env.PROXY_API_URL || "http://127.0.0.1:8317/v1";
-const PROXY_API_KEY = process.env.PROXY_API_KEY || "soulforge";
 const PROXY_CONFIG_DIR = join(homedir(), ".soulforge", "proxy");
 const PROXY_CONFIG_PATH = join(PROXY_CONFIG_DIR, "config.yaml");
 const HEALTH_TIMEOUT_MS = 2000;
@@ -49,7 +55,15 @@ function getInstalledProxyVersion(): string {
       if (v) return v;
     }
   } catch {}
-  return PROXY_VERSION;
+  // Self-heal: if the version file is missing but we have a vendored
+  // binary, read the version directly from it. Keeps the status dashboard
+  // accurate after a fresh install, cache reset, or file deletion.
+  const vendored = getVendoredPath("cli-proxy-api");
+  if (vendored) {
+    const v = getBinaryVersion(vendored);
+    if (v) return v;
+  }
+  return "";
 }
 
 function saveInstalledProxyVersion(version: string): void {
@@ -57,52 +71,29 @@ function saveInstalledProxyVersion(version: string): void {
   writeFileSync(VERSION_FILE, version);
 }
 
-// Marker stamped into the config so we know perf defaults were applied.
-// Bump the version when defaults change — the old block is replaced.
-const PERF_MARKER_PREFIX = "# soulforge-perf-defaults";
-const PERF_MARKER_VERSION = 1;
-const PERF_MARKER = `${PERF_MARKER_PREFIX} v${String(PERF_MARKER_VERSION)}`;
+// Legacy marker from older versions that stamped perf defaults into the
+// user's config. We no longer inject anything — just strip the old block
+// on first run so upstream CLIProxyAPI defaults take over cleanly.
+const LEGACY_PERF_MARKER_PREFIX = "# soulforge-perf-defaults";
 
-// Top-level YAML keys our perf block introduces.
-// Go's yaml.v3 rejects duplicate keys, so we must skip if any already exist.
-const PERF_KEYS = [
-  "request-retry",
-  "max-retry-interval",
-  "max-retry-credentials",
-  "streaming",
-  "nonstream-keepalive-interval",
-];
-
-const PERF_BLOCK = [
-  PERF_MARKER,
-  "request-retry: 1",
-  "max-retry-interval: 10",
-  "max-retry-credentials: 2",
-  "streaming:",
-  "  keepalive-seconds: 15",
-  "  bootstrap-retries: 1",
-  "nonstream-keepalive-interval: 30",
-].join("\n");
-
-/**
- * Check whether any of our perf keys already exist as top-level YAML keys.
- * A top-level key is a non-indented, non-comment line starting with `key:`.
- */
-function hasConflictingKeys(content: string): boolean {
-  for (const line of content.split("\n")) {
-    if (line.length === 0 || line[0] === "#" || line[0] === " " || line[0] === "\t") continue;
-    const colon = line.indexOf(":");
-    if (colon === -1) continue;
-    const key = line.slice(0, colon).trim();
-    if (PERF_KEYS.includes(key)) return true;
-  }
-  return false;
+function stripLegacyPerfBlock(content: string): string {
+  if (!content.includes(LEGACY_PERF_MARKER_PREFIX)) return content;
+  const lines = content.split("\n");
+  const start = lines.findIndex((l) => l.startsWith(LEGACY_PERF_MARKER_PREFIX));
+  if (start === -1) return content;
+  let end = start + 1;
+  while (end < lines.length && lines[end]?.trim() !== "") end++;
+  lines.splice(start, end - start);
+  return lines.join("\n");
 }
 
 function ensureConfig(): void {
   mkdirSync(PROXY_CONFIG_DIR, { recursive: true });
 
   if (!existsSync(PROXY_CONFIG_PATH)) {
+    // Minimal bootstrap config — required so soulforge knows the port and
+    // auth key to reach the proxy on. Everything else is left to
+    // CLIProxyAPI's own defaults.
     writeFileSync(
       PROXY_CONFIG_PATH,
       [
@@ -112,39 +103,19 @@ function ensureConfig(): void {
         "api-keys:",
         '  - "soulforge"',
         "",
-        PERF_BLOCK,
-        "",
       ].join("\n"),
     );
     return;
   }
 
-  // Existing config — stamp or upgrade the perf block
+  // Existing config — remove any perf block stamped by older soulforge
+  // versions so the user's (and CLIProxyAPI's) defaults apply unchanged.
   try {
     const existing = readFileSync(PROXY_CONFIG_PATH, "utf-8");
-
-    if (existing.includes(PERF_MARKER)) return; // current version already applied
-
-    // Strip any older perf block (different version) before appending the new one
-    let cleaned = existing;
-    if (existing.includes(PERF_MARKER_PREFIX)) {
-      const lines = existing.split("\n");
-      const start = lines.findIndex((l) => l.startsWith(PERF_MARKER_PREFIX));
-      if (start !== -1) {
-        // Remove from marker to next blank line or EOF
-        let end = start + 1;
-        while (end < lines.length && lines[end]?.trim() !== "") end++;
-        lines.splice(start, end - start);
-        cleaned = lines.join("\n");
-      }
+    const cleaned = stripLegacyPerfBlock(existing);
+    if (cleaned !== existing) {
+      writeFileSync(PROXY_CONFIG_PATH, cleaned);
     }
-
-    // If the user already set any of our keys manually, don't inject — would
-    // create duplicate YAML keys and crash Go's yaml.v3 parser.
-    if (hasConflictingKeys(cleaned)) return;
-
-    const sep = cleaned.endsWith("\n") ? "" : "\n";
-    writeFileSync(PROXY_CONFIG_PATH, `${cleaned}${sep}\n${PERF_BLOCK}\n`);
   } catch {
     // Don't block startup if config is unreadable
   }
@@ -159,21 +130,104 @@ function commandExists(cmd: string): boolean {
   }
 }
 
-function getProxyBinary(): string | null {
-  const vendored = getVendoredPath("cli-proxy-api");
-  if (vendored) return vendored;
-  if (commandExists("cli-proxy-api")) return "cli-proxy-api";
-  if (commandExists("cliproxyapi")) return "cliproxyapi";
-  return null;
+/**
+ * Run `<binary> -help` and extract the version string. CLIProxyAPI prints
+ * "CLIProxyAPI Version: X.Y.Z, ..." as the first line. `-help` exits non-
+ * zero on this binary, so we capture output from the thrown error too.
+ */
+function getBinaryVersion(binary: string): string | null {
+  const parse = (s: string): string | null => {
+    const m = s.match(/Version:\s*(\d+\.\d+\.\d+)/);
+    return m?.[1] ?? null;
+  };
+  try {
+    const out = execFileSync(binary, ["-help"], {
+      encoding: "utf-8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return parse(out);
+  } catch (err) {
+    const e = err as { stdout?: Buffer | string; stderr?: Buffer | string };
+    const stdout = typeof e.stdout === "string" ? e.stdout : (e.stdout?.toString() ?? "");
+    const stderr = typeof e.stderr === "string" ? e.stderr : (e.stderr?.toString() ?? "");
+    return parse(stdout + stderr);
+  }
 }
 
-async function healthCheck(): Promise<"ok" | "auth-required" | "unreachable"> {
+/** Compare semver-like strings. Missing components treated as 0. */
+function compareVersions(a: string, b: string): number {
+  const ap = a.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const bp = b.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const len = Math.max(ap.length, bp.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (ap[i] ?? 0) - (bp[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function getProxyBinary(): string | null {
+  // Prefer a system-installed binary (brew, apt, user install) so upgrades
+  // managed by the user take effect — but only when it is at least as new
+  // as the vendored pin. Brew's `cliproxyapi` formula often lags upstream;
+  // falling back to the vendored copy in that case gives users bug fixes
+  // without requiring them to juggle formulae.
+  const systemBinary = commandExists("cli-proxy-api")
+    ? "cli-proxy-api"
+    : commandExists("cliproxyapi")
+      ? "cliproxyapi"
+      : null;
+  const vendored = getVendoredPath("cli-proxy-api");
+
+  if (systemBinary && vendored) {
+    const sysVersion = getBinaryVersion(systemBinary);
+    const vendoredVersion = getBinaryVersion(vendored);
+    if (sysVersion && vendoredVersion) {
+      if (compareVersions(sysVersion, vendoredVersion) >= 0) return systemBinary;
+      logBackgroundError(
+        "CLIProxyAPI",
+        `system binary v${sysVersion} is older than vendored v${vendoredVersion} — using vendored`,
+      );
+      return vendored;
+    }
+    return systemBinary;
+  }
+  return systemBinary ?? vendored;
+}
+
+/**
+ * Check whether a process is currently listening on the proxy port.
+ * Used to distinguish "no proxy running" from "orphan proxy wedged".
+ */
+function portIsOccupied(): boolean {
+  const portMatch = PROXY_URL.match(/:([0-9]+)/);
+  if (!portMatch) return false;
+  const port = portMatch[1];
+  try {
+    const out = execFileSync("lsof", ["-ti", `tcp:${port}`], {
+      encoding: "utf-8",
+      timeout: 3000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Public: returns true if the proxy answers /v1/models with the active key. */
+export async function proxyHealthProbe(): Promise<boolean> {
+  return (await healthCheck(getActiveProxyApiKey())) === "ok";
+}
+
+async function healthCheck(key: string): Promise<"ok" | "auth-required" | "unreachable"> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     const res = await fetch(`${PROXY_URL}/models`, {
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${PROXY_API_KEY}` },
+      headers: { Authorization: `Bearer ${key}` },
     });
     clearTimeout(timeout);
     if (res.ok) return "ok";
@@ -184,31 +238,63 @@ async function healthCheck(): Promise<"ok" | "auth-required" | "unreachable"> {
   }
 }
 
+/**
+ * Probe each candidate API key against the live proxy until one works.
+ * Returns the working key, or null if every candidate was rejected /
+ * the proxy is unreachable. The first `auth-required` response caches
+ * candidate errors so we can tell the user their keys don't match.
+ */
+async function probeForWorkingKey(): Promise<
+  { key: string; state: "ok" } | { state: "unreachable" } | { state: "auth-required" }
+> {
+  let sawAuthRequired = false;
+  let sawUnreachable = false;
+  for (const candidate of candidateApiKeys()) {
+    const r = await healthCheck(candidate);
+    if (r === "ok") return { key: candidate, state: "ok" };
+    if (r === "auth-required") sawAuthRequired = true;
+    if (r === "unreachable") sawUnreachable = true;
+  }
+  if (sawAuthRequired) return { state: "auth-required" };
+  if (sawUnreachable) return { state: "unreachable" };
+  return { state: "unreachable" };
+}
+
 export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
   if (currentState === "starting") {
     return { ok: false, error: "Proxy is already starting" };
   }
 
-  // If the pinned version changed (e.g. SoulForge update), kill whatever is
-  // serving on the proxy port — even an orphan process from a previous session
-  // where proxyProcess is null.
-  const installed = getInstalledProxyVersion();
-  const needsUpgrade = installed !== PROXY_VERSION;
-
-  if (needsUpgrade) {
-    stopProxy();
-    // Kill orphan process on the proxy port (proxyProcess may be null after restart)
-    killProxyOnPort();
-  }
-
-  const health = await healthCheck();
-  if (health === "ok" && !needsUpgrade) {
+  // Try every candidate API key (env, default, config files) against a
+  // live proxy on the port. A brew-managed service ships with placeholder
+  // keys, so "soulforge" alone won't authenticate — we discover whatever
+  // key is actually configured.
+  const probe = await probeForWorkingKey();
+  if (probe.state === "ok") {
+    setActiveProxyApiKey(probe.key);
     setState("running");
     return { ok: true };
   }
-  if (health === "auth-required") {
+  if (probe.state === "auth-required") {
+    const cfg = primaryConfigPath();
+    const discovered = discoverApiKeys();
+    if (cfg && discovered.length === 0) {
+      // Port answers, but every key listed in the config is a placeholder.
+      // Tell the user exactly which file to edit. Do not touch their config.
+      const msg = `Proxy rejected every candidate API key. Edit ${cfg} (replace placeholder in \`api-keys:\`) or set PROXY_API_KEY, then restart the proxy.`;
+      setState("needs-auth", msg);
+      return { ok: false, error: msg };
+    }
     setState("needs-auth", "Authentication required — run /proxy login");
     return { ok: false, error: "Authentication required — run /proxy login" };
+  }
+
+  // Port is bound but not answering health — orphan from a crashed/wedged
+  // previous run. Kill it so our spawn doesn't collide on the listen port.
+  if (portIsOccupied()) {
+    logBackgroundError("CLIProxyAPI", "orphan process on port — clearing");
+    killProxyOnPort();
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   setState("starting");
@@ -216,8 +302,9 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
   let binary = getProxyBinary();
   if (!binary) {
     try {
-      binary = await installProxy();
-      saveInstalledProxyVersion(PROXY_VERSION);
+      const installed = await installProxy();
+      binary = installed.path;
+      saveInstalledProxyVersion(installed.version);
     } catch (err) {
       const msg = toErrorMessage(err);
       setState("error", `Failed to install CLIProxyAPI: ${msg}`);
@@ -259,7 +346,9 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
 
   for (let i = 0; i < STARTUP_POLL_ATTEMPTS; i++) {
     await new Promise((r) => setTimeout(r, STARTUP_POLL_MS));
-    const status = await healthCheck();
+    // During post-spawn polling the soulforge-managed proxy uses the
+    // vendored config, so the default key is correct. No need to re-probe.
+    const status = await healthCheck(getActiveProxyApiKey());
     if (status === "ok") {
       setState("running");
       return { ok: true };
@@ -277,6 +366,54 @@ export async function ensureProxy(): Promise<{ ok: boolean; error?: string }> {
     error:
       "CLIProxyAPI started but not responding. You may need to authenticate — run /proxy login",
   };
+}
+
+/**
+ * Restart the proxy child process. Use after a connection failure that
+ * suggests the proxy is wedged (stale upstream session, broken keepalive).
+ * Safe to call concurrently — inner ensureProxy early-returns when already
+ * "starting". Returns true if the proxy came back healthy.
+ */
+let bounceInFlight: Promise<boolean> | null = null;
+export async function bounceProxy(): Promise<boolean> {
+  if (bounceInFlight) return bounceInFlight;
+  bounceInFlight = (async () => {
+    try {
+      stopProxy();
+      // Wait for the old process to actually exit and release the port.
+      // Without this, ensureProxy()'s healthcheck can hit the still-alive
+      // wedged process, see "ok", and skip the fresh spawn entirely.
+      await waitForPortFree(3000);
+      const res = await ensureProxy();
+      return res.ok;
+    } catch (err) {
+      logBackgroundError("CLIProxyAPI", `bounce failed: ${toErrorMessage(err)}`);
+      return false;
+    }
+  })();
+  try {
+    return await bounceInFlight;
+  } finally {
+    bounceInFlight = null;
+  }
+}
+
+/**
+ * Poll until the proxy port is no longer bound, or until timeoutMs elapses.
+ * If the process refuses to die, escalate to SIGKILL before giving up.
+ */
+async function waitForPortFree(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let escalated = false;
+  while (Date.now() < deadline) {
+    if (!portIsOccupied()) return;
+    // Halfway through, escalate to SIGKILL if SIGTERM didn't take.
+    if (!escalated && Date.now() - (deadline - timeoutMs) > timeoutMs / 2) {
+      escalated = true;
+      killProxyOnPort(true);
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 export function stopProxy(): void {
@@ -302,24 +439,29 @@ export function stopProxy(): void {
  * Kill any process listening on the proxy port.
  * Catches orphans from previous SoulForge sessions where proxyProcess handle was lost.
  */
-function killProxyOnPort(): void {
+function killProxyOnPort(force = false): void {
   const portMatch = PROXY_URL.match(/:([0-9]+)/);
   if (!portMatch) return;
   const port = portMatch[1];
 
   let out = "";
   try {
-    // macOS + most Linux: lsof
+    // macOS + most Linux: lsof. Silence stderr — lsof writes warnings
+    // to stderr on no-match on some platforms.
     out = execFileSync("lsof", ["-ti", `tcp:${port}`], {
       encoding: "utf-8",
       timeout: 3000,
+      stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
     try {
-      // Linux fallback: fuser
+      // Linux fallback: fuser. Silence stderr — fuser always writes
+      // "<port>/tcp: does not exist" to stderr when no process is on
+      // the port, which was leaking into our output.
       out = execFileSync("fuser", [`${port}/tcp`], {
         encoding: "utf-8",
         timeout: 3000,
+        stdio: ["ignore", "pipe", "ignore"],
       }).trim();
     } catch {
       // Neither available — nothing we can do
@@ -328,11 +470,12 @@ function killProxyOnPort(): void {
   }
 
   if (!out) return;
+  const signal = force ? "SIGKILL" : "SIGTERM";
   for (const token of out.split(/[\s\n]+/)) {
     const pid = Number.parseInt(token.trim(), 10);
     if (pid > 0 && pid !== process.pid) {
       try {
-        process.kill(pid, "SIGTERM");
+        process.kill(pid, signal);
       } catch {}
     }
   }
@@ -570,7 +713,7 @@ export async function fetchProxyStatus(): Promise<ProxyStatus> {
         const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
         const res = await fetch(`${PROXY_URL}/models`, {
           signal: controller.signal,
-          headers: { Authorization: `Bearer ${PROXY_API_KEY}` },
+          headers: { Authorization: `Bearer ${getActiveProxyApiKey()}` },
         });
         clearTimeout(timeout);
         if (res.ok) {

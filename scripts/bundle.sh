@@ -24,7 +24,22 @@ NVIM_VERSION="0.11.2"
 RG_VERSION="14.1.1"
 FD_VERSION="10.2.0"
 LAZYGIT_VERSION="0.44.1"
-PROXY_VERSION="6.8.40"
+
+# PROXY_VERSION: resolved dynamically at bundle-build time so each release
+# ships the latest CLIProxyAPI. Override with `PROXY_VERSION=x.y.z ./bundle.sh`
+# for reproducible builds or to pin when an upstream release regresses.
+# Fallback (last-known-good) is used if GitHub is unreachable.
+PROXY_VERSION_FALLBACK="6.9.29"
+if [[ -z "${PROXY_VERSION:-}" ]]; then
+  PROXY_VERSION="$(curl -fsSL --max-time 10 https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest 2>/dev/null \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null \
+    || echo "")"
+  if [[ -z "$PROXY_VERSION" ]]; then
+    echo "warn: could not fetch latest CLIProxyAPI version — using fallback $PROXY_VERSION_FALLBACK" >&2
+    PROXY_VERSION="$PROXY_VERSION_FALLBACK"
+  fi
+fi
+echo "bundling CLIProxyAPI v${PROXY_VERSION}"
 
 # ── Platform / arch matrix ──
 if [[ "$PLATFORM" == "darwin" ]]; then

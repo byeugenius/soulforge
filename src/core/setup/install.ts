@@ -12,7 +12,47 @@ const NVIM_VERSION = "0.11.1";
 const RG_VERSION = "14.1.1";
 const FD_VERSION = "10.2.0";
 const LAZYGIT_VERSION = "0.44.1";
-export const PROXY_VERSION = "6.9.28";
+/**
+ * Offline safety-net for fresh installs when GitHub is unreachable. The
+ * *actual* version used on a fresh install is the latest GitHub release
+ * (or `SOULFORGE_PROXY_VERSION` if set). Bump this occasionally for users
+ * on locked-down networks; most users will never see it.
+ */
+export const FALLBACK_PROXY_VERSION = "6.9.29";
+
+const PROXY_RELEASES_URL = "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest";
+
+export async function fetchLatestProxyVersion(timeoutMs = 5000): Promise<string | null> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    const res = await fetch(PROXY_RELEASES_URL, {
+      signal: ctl.signal,
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { tag_name?: string };
+    return data.tag_name?.replace(/^v/, "")?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve which CLIProxyAPI version to install when the caller does not
+ * request a specific one. Priority:
+ *   1. `SOULFORGE_PROXY_VERSION` env (CI / reproducible builds / pin)
+ *   2. Latest GitHub release tag
+ *   3. `FALLBACK_PROXY_VERSION` (offline)
+ */
+export async function resolveProxyVersion(): Promise<string> {
+  const env = process.env.SOULFORGE_PROXY_VERSION?.trim();
+  if (env) return env;
+  const latest = await fetchLatestProxyVersion();
+  if (latest) return latest;
+  return FALLBACK_PROXY_VERSION;
+}
 
 export interface NerdFont {
   id: string;
@@ -247,9 +287,9 @@ export async function installLazygit(): Promise<string> {
   });
 }
 
-export async function installProxy(version?: string): Promise<string> {
-  const v = version ?? PROXY_VERSION;
-  return installBinary({
+export async function installProxy(version?: string): Promise<{ path: string; version: string }> {
+  const v = version ?? (await resolveProxyVersion());
+  const path = await installBinary({
     name: "cliproxyapi",
     binName: "cli-proxy-api",
     version: v,
@@ -262,6 +302,7 @@ export async function installProxy(version?: string): Promise<string> {
       };
     },
   });
+  return { path, version: v };
 }
 
 function getUserFontDir(): string {

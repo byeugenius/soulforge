@@ -1,11 +1,11 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
+import { getActiveProxyApiKey } from "../../proxy/key-resolver.js";
 import { ensureProxy, stopProxy } from "../../proxy/lifecycle.js";
 import { SHARED_CONTEXT_WINDOWS } from "./context-windows.js";
 import type { ProviderDefinition, ProviderModelInfo } from "./types.js";
 
 const baseURL = process.env.PROXY_API_URL || "http://127.0.0.1:8317/v1";
-const apiKey = process.env.PROXY_API_KEY || "soulforge";
 
 function isAnthropicModel(modelId: string): boolean {
   return modelId.toLowerCase().startsWith("claude");
@@ -23,6 +23,11 @@ export const proxy: ProviderDefinition = {
     // Claude → Anthropic SDK (proxy serves /v1/messages)
     // Everything else → OpenAI SDK chat completions (proxy serves /v1/chat/completions)
     // Must use .chat() — default uses Responses API (/v1/responses) which proxy can't translate for all providers
+    // Read the key at createModel time so discoveries done by ensureProxy
+    // (e.g. brew config's first non-placeholder entry) are picked up. The
+    // AI SDK captures `apiKey` at factory-call time, so this must not be a
+    // module-level constant.
+    const apiKey = getActiveProxyApiKey();
     if (isAnthropicModel(modelId)) {
       return createAnthropic({ baseURL, apiKey })(modelId);
     }

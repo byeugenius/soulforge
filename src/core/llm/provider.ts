@@ -44,6 +44,10 @@ export async function checkProviders(): Promise<ProviderStatus[]> {
 
 let activeProviderId: string | null = null;
 
+export function getActiveProviderId(): string | null {
+  return activeProviderId;
+}
+
 function extractProviderId(modelId: string): string {
   const slashIdx = modelId.indexOf("/");
   return slashIdx >= 0 ? modelId.slice(0, slashIdx) : "";
@@ -55,7 +59,17 @@ function extractProviderId(modelId: string): string {
  */
 export async function notifyProviderSwitch(newModelId: string): Promise<void> {
   const newProviderId = extractProviderId(newModelId);
-  if (newProviderId === activeProviderId) return;
+
+  // Same provider — re-run onActivate so stateful providers (e.g. proxy) can
+  // self-heal after a crashed child process. onActivate implementations must
+  // be idempotent and cheap when already healthy (ensureProxy healthchecks first).
+  if (newProviderId === activeProviderId) {
+    const provider = getProvider(newProviderId);
+    if (provider?.onActivate) {
+      await provider.onActivate();
+    }
+    return;
+  }
 
   const oldProvider = activeProviderId ? getProvider(activeProviderId) : null;
   if (oldProvider?.onDeactivate) {

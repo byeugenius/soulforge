@@ -2,7 +2,9 @@ import type { ModelMessage, ProviderOptions } from "@ai-sdk/provider-utils";
 import { type LanguageModel, RetryError } from "ai";
 import { logBackgroundError } from "../../stores/errors.js";
 import type { TaskTier } from "../../types/index.js";
+import { getActiveProviderId } from "../llm/provider.js";
 import { detectModelFamily } from "../llm/provider-options.js";
+import { bounceProxy, proxyHealthProbe } from "../proxy/lifecycle.js";
 
 import { taskListTool } from "../tools/task-list.js";
 import {
@@ -107,6 +109,39 @@ function isRetryable(error: unknown, abortSignal?: AbortSignal): boolean {
     lower.includes("socket hang up") ||
     lower.includes("aborted")
   );
+}
+
+const CONNECTION_ERROR_RE =
+  /cannot connect|unable to connect|fetch failed|failed to fetch|socket hang up|econnreset|econnrefused|enotfound|eai_again|network error|stream (?:error|closed)|premature close|terminated|connection (?:error|reset|refused|closed)/i;
+
+function isConnectionError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return CONNECTION_ERROR_RE.test(msg);
+}
+
+const PROXY_BOUNCE_TIMEOUT_MS = 8000;
+
+/**
+ * Self-heal the proxy after a connection failure. Bounces at most once per
+ * call and is hard-capped by a timeout so a wedged child process can never
+ * block the retry loop. Returns true if a bounce was performed.
+ */
+async function selfHealProxyIfNeeded(error: unknown): Promise<boolean> {
+  if (getActiveProviderId() !== "proxy") return false;
+  if (!isConnectionError(error)) return false;
+  // Don't bounce a healthy child process. If /v1/models answers, the proxy
+  // is fine and the error is genuinely upstream (Claude subscription flake,
+  // rate limit, session refresh) — bouncing wastes the retry budget.
+  if (await proxyHealthProbe()) return false;
+  try {
+    await Promise.race([
+      bounceProxy(),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), PROXY_BOUNCE_TIMEOUT_MS)),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -369,6 +404,7 @@ export async function runAgentTask(
 
   let lastError: unknown;
   let attemptsMade = 0;
+  let proxyBounced = false;
   const { maxRetries: MAX_RETRIES, baseDelayMs: BASE_DELAY_MS } = resolveRetrySettings(
     loadConfig().retry,
     { agent: true },
@@ -687,6 +723,9 @@ export async function runAgentTask(
       if (isRetryable(error, abortSignal)) {
         const tripped = bus.recordProviderFailure();
         if (tripped || attempt === MAX_RETRIES) break;
+        if (!proxyBounced && !abortSignal?.aborted) {
+          proxyBounced = await selfHealProxyIfNeeded(error);
+        }
       } else {
         break;
       }
