@@ -855,7 +855,7 @@ export class TsMorphBackend implements IntelligenceBackend {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Surgical AST Mutation Engine — inspired by JS Typer thesis (Ouail Bni)
+  // Surgical AST Mutation Engine — inspired by Ouail Bni's Master's thesis (2022)
   // 100% ts-morph: locate by AST, mutate by AST, serialize by AST.
   // Zero string matching. Zero line math. Zero oldString.
   // ═══════════════════════════════════════════════════════════════════════

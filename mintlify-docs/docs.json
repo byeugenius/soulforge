@@ -59,6 +59,7 @@
           {
             "group": "Tools",
             "pages": [
+              "tools/ast-edit",
               "tools/project",
               "tools/mcp",
               "tools/headless",

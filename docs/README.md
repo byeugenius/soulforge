@@ -11,16 +11,25 @@
 - **[Provider Options](provider-options.md)** — Thinking modes, effort, speed, context management
 - **[Copilot Provider](copilot-provider.md)** — Setup, models, cost, legal review for GitHub Copilot
 - **[MCP Servers](mcp.md)** — Model Context Protocol server integration
+- **[Hooks](hooks.md)** — 13 lifecycle events, Claude Code compatible
+- **[Checkpoints](checkpoints.md)** — Conversation snapshots and rollback
+
+## Tools
+
+- **[AST Editing (`ast_edit`)](ast-edit.md)** — Surgical AST edits for TS/JS, 65+ operations, no `oldString`
+- **[Compound Tools](compound-tools.md)** — `rename_symbol`, `move_symbol`, `refactor`, `project`
+- **[Compound Tools — design rationale](compound-tools.md)** — Why one call beats five
 
 ## Architecture
 
 - **[Architecture](architecture.md)** — System overview, 20 providers, agent tiers, data flow
 - **[Prompt System](prompt-system.md)** — Per-family prompts, Soul Map injection, mode overlays, cache strategy
 - **[Repo Map](repo-map.md)** — Graph intelligence (PageRank, cochange, blast radius, clone detection)
+- **[Repo Map Visual](repo-map-visual.md)** — How the dependency graph is rendered
 - **[Agent Bus](agent-bus.md)** — Multi-agent coordination (shared cache, edit mutex, findings board)
-- **[Compound Tools](compound-tools.md)** — rename_symbol, move_symbol, refactor
 - **[Compaction](compaction.md)** — V1/V2 context management strategies
 - **[Cross-Tab Coordination](cross-tab-coordination.md)** — Advisory file claims, git blocking, contention handling
+- **[Mempalace Integration](mempalace-integration.md)** — Persistent memory layer
 
 ## Design Principles
 

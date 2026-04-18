@@ -86,12 +86,22 @@ SoulForge already knows. It builds a **live dependency graph** on startup and ke
 </tr>
 <tr>
 <td valign="top">
+<h4>🔬 AST editing</h4>
+<p><code>ast_edit</code> for TS/JS — 65+ surgical operations, zero <code>oldString</code>. Micro-edits cost 1-10 tokens. Atomic multi-op batches on a single file. <a href="docs/ast-edit.md">Learn more</a></p>
+</td>
+<td valign="top">
 <h4>🎯 Mix-and-match models</h4>
 <p>Opus for planning, Sonnet for coding, Haiku for cleanup. 20 providers built-in. Task router gives full control.</p>
 </td>
+</tr>
+<tr>
 <td valign="top">
 <h4>📝 Embedded Neovim</h4>
 <p>Your config, your plugins, your LSP servers. The AI edits through the same editor you use.</p>
+</td>
+<td valign="top">
+<h4>📑 Multi-tab</h4>
+<p>Up to 5 concurrent sessions with per-tab models, file claims, and git coordination. <a href="docs/cross-tab-coordination.md">Learn more</a></p>
 </td>
 </tr>
 </table>
@@ -113,8 +123,8 @@ SoulForge already knows. It builds a **live dependency graph** on startup and ke
 <p>Installable domain-specific capabilities with approval gates. Browse and install from the community registry with <code>Ctrl+S</code>.</p>
 </td>
 <td valign="top">
-<h4>📑 Multi-tab</h4>
-<p>Up to 5 concurrent sessions with per-tab models, file claims, and git coordination. <a href="docs/cross-tab-coordination.md">Learn more</a></p>
+<h4>↶ Checkpoints</h4>
+<p>Conversation snapshots you can roll back to. Recover from bad edits or experiment without fear. <a href="docs/checkpoints.md">Learn more</a></p>
 </td>
 </tr>
 </table>
@@ -263,12 +273,20 @@ Set a key and go: `soulforge --set-key anthropic sk-ant-...` or `export ANTHROPI
 |---|---|
 | **[Architecture](docs/architecture.md)** | System overview, agent tiers, intelligence router |
 | **[Repo Map](docs/repo-map.md)** | Graph ranking, co-change analysis, blast radius |
+| **[AST Editing](docs/ast-edit.md)** | `ast_edit` — 65+ surgical operations for TS/JS, zero `oldString` |
+| **[Compound Tools](docs/compound-tools.md)** | `rename_symbol`, `move_symbol`, `refactor`, `project` |
+| **[Agent Bus](docs/agent-bus.md)** | Multi-agent coordination, shared cache, edit mutex |
+| **[Compaction](docs/compaction.md)** | Context management strategies |
 | **[Commands](docs/commands-reference.md)** | All 100 slash commands |
 | **[Headless Mode](docs/headless.md)** | CLI flags, JSON output, CI/CD |
 | **[Configuration](docs/README.md)** | Config files, task router, custom providers |
 | **[Themes](docs/themes.md)** | 24 themes, custom themes, hot reload |
 | **[MCP Servers](docs/mcp.md)** | Model Context Protocol integration |
+| **[Hooks](docs/hooks.md)** | 13 lifecycle events, Claude Code compatible |
+| **[Checkpoints](docs/checkpoints.md)** | Conversation snapshots and rollback |
 | **[Copilot Provider](docs/copilot-provider.md)** | Setup and legal review |
+
+Full index in **[docs/README.md](docs/README.md)**.
 
 <img src="assets/separator.svg" width="100%" height="8" />
 

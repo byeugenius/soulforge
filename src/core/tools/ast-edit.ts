@@ -60,7 +60,7 @@ function getBackend(cwd: string): TsMorphBackend {
 
 /**
  * 100% ts-morph surgical AST editing for TypeScript/JavaScript files.
- * Inspired by the JS Typer thesis (Ouail Bni & Artur Matusiak).
+ * Inspired by Ouail Bni's Master's thesis "Typed vs Untyped Programming Languages" (2022).
  *
  * Three tiers of operations — from micro-edit to full replacement:
  *
