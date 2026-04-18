@@ -15,6 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { logBackgroundError } from "../../stores/errors.js";
 import { getHooks } from "./loader.js";
 import { matchesToolName, toClaudeToolName } from "./tool-names.js";
 import type {
@@ -407,8 +408,9 @@ export async function runHooks(opts: RunHooksOptions): Promise<HookResult> {
 
       // Log non-blocking errors but don't interrupt
       if (!result.ok && !result.blocked) {
-        process.stderr.write(
-          `[soulforge:hooks] ${opts.event} hook warning: ${result.reason ?? "unknown error"}\n`,
+        logBackgroundError(
+          "hooks",
+          `${opts.event} hook warning: ${result.reason ?? "unknown error"}`,
         );
       }
     }

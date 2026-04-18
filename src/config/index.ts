@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CustomProviderConfig } from "../core/llm/providers/types.js";
 import { ensureSoulforgeDir } from "../core/utils/ensure-soulforge-dir.js";
+import { logBackgroundError } from "../stores/errors.js";
 import type { AppConfig, MCPServerConfig } from "../types";
 
 function mergeProviders(
@@ -86,8 +87,9 @@ export function loadConfig(): AppConfig {
     const raw = readFileSync(CONFIG_FILE, "utf-8");
     return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
   } catch (err) {
-    process.stderr.write(
-      `[soulforge] Failed to parse ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)} — using defaults\n`,
+    logBackgroundError(
+      "config",
+      `Failed to parse ${CONFIG_FILE}: ${err instanceof Error ? err.message : String(err)} — using defaults`,
     );
     return DEFAULT_CONFIG;
   }
@@ -101,8 +103,9 @@ export function loadProjectConfig(cwd: string): Partial<AppConfig> | null {
     const raw = readFileSync(projectFile, "utf-8");
     return JSON.parse(raw) as Partial<AppConfig>;
   } catch (err) {
-    process.stderr.write(
-      `[soulforge] Failed to parse ${projectFile}: ${err instanceof Error ? err.message : String(err)} — ignoring project config\n`,
+    logBackgroundError(
+      "config",
+      `Failed to parse ${projectFile}: ${err instanceof Error ? err.message : String(err)} — ignoring project config`,
     );
     return null;
   }

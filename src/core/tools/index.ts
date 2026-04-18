@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { tool } from "ai";
 import { z } from "zod";
+import { logBackgroundError } from "../../stores/errors.js";
 import type { EditorIntegration } from "../../types/index.js";
 import {
   checkAndClaim,
@@ -2297,8 +2298,9 @@ export function buildSubagentExploreTools(opts?: {
     ...(!opts?.repoMap && !_soulToolWarningEmitted
       ? (() => {
           _soulToolWarningEmitted = true;
-          process.stderr.write(
-            "[soulforge] Soul tools (soul_grep, soul_find, soul_analyze, soul_impact) unavailable — repo map not ready\n",
+          logBackgroundError(
+            "soulforge",
+            "Soul tools (soul_grep, soul_find, soul_analyze, soul_impact) unavailable — repo map not ready",
           );
           return {};
         })()

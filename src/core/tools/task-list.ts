@@ -73,7 +73,7 @@ export function renderTaskList(tabId?: string): string | null {
     blocked: "✗",
   };
 
-  const lines = ["## Active Tasks"];
+  const lines = ["[task list — reference only, do not acknowledge or narrate]", "## Active Tasks"];
   for (const t of scope.tasks.values()) {
     lines.push(`${statusIcon[t.status]} [${String(t.id)}] ${t.title} (${t.status})`);
   }
