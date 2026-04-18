@@ -370,10 +370,14 @@ export function invalidateProviderModelCache(providerId: string): void {
   groupedCache.delete(providerId);
 }
 
-export async function fetchProviderModels(providerId: string): Promise<FetchModelsResult> {
+export async function fetchProviderModels(
+  providerId: string,
+  { bypassCache = false }: { bypassCache?: boolean } = {},
+): Promise<FetchModelsResult> {
   // Check cache first
   const entry = modelCache.get(providerId);
-  if (entry && Date.now() - entry.ts <= MODEL_CACHE_TTL) return { models: entry.models };
+  if (!bypassCache && entry && Date.now() - entry.ts <= MODEL_CACHE_TTL)
+    return { models: entry.models };
 
   const provider = getProvider(providerId);
   if (!provider) return { models: [] };
@@ -469,9 +473,12 @@ const GROUP_DISPLAY_NAMES: Record<string, string> = {
   other: "Other",
 };
 
-export async function fetchGroupedModels(providerId: string): Promise<GroupedModelsResult> {
+export async function fetchGroupedModels(
+  providerId: string,
+  { bypassCache = false }: { bypassCache?: boolean } = {},
+): Promise<GroupedModelsResult> {
   const entry = groupedCache.get(providerId);
-  if (entry && Date.now() - entry.ts <= MODEL_CACHE_TTL) return entry.result;
+  if (!bypassCache && entry && Date.now() - entry.ts <= MODEL_CACHE_TTL) return entry.result;
 
   if (providerId === "vercel_gateway") return fetchVercelGatewayGrouped();
   if (providerId === "llmgateway") return fetchLLMGatewayGrouped();

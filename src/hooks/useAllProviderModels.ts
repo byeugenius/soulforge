@@ -10,6 +10,9 @@ import {
 import { checkProviders, getCachedProviderStatuses } from "../core/llm/provider.js";
 import { hasSecret, type SecretKey } from "../core/secrets.js";
 
+const BG_REFRESH_COOLDOWN = 10_000;
+let lastBgRefresh = 0;
+
 const ENV_SK: Record<string, SecretKey> = {
   ANTHROPIC_API_KEY: "anthropic-api-key",
   OPENAI_API_KEY: "openai-api-key",
@@ -77,7 +80,6 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
 
     // Re-read caches — prewarmAllModels() may have populated them since initial state
     const init: Record<string, ProviderModelsState> = {};
-    let anyStale = false;
     for (const cfg of PROVIDER_CONFIGS) {
       if (cfg.grouped) {
         const cached = getCachedGroupedModels(cfg.id);
@@ -88,7 +90,6 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
         const cached = getCachedModels(cfg.id);
         init[cfg.id] = cached ? { items: cached, loading: false } : { items: [], loading: true };
       }
-      if (init[cfg.id]?.loading) anyStale = true;
     }
 
     // Only trigger a re-render if the fresh cache differs from current state.
@@ -135,29 +136,58 @@ export function useAllProviderModels(active: boolean): UseAllProviderModelsRetur
       })
       .catch(() => undefined);
 
-    // If everything is cached, no need to fetch models
-    if (!anyStale) {
-      return () => {
-        dead = true;
-      };
+    // Background-refresh models — catches proxy upgrades, new deployments, etc.
+    // Cooldown prevents hammering when the picker is opened repeatedly.
+    // Stamp deferred until fetches land — if picker closes before completion,
+    // next open retries instead of serving stale data.
+    const now = Date.now();
+    const shouldBgRefresh = now - lastBgRefresh >= BG_REFRESH_COOLDOWN;
+
+    const toFetch: { cfg: (typeof PROVIDER_CONFIGS)[number]; wasCached: boolean }[] = [];
+    for (const cfg of PROVIDER_CONFIGS) {
+      const wasCached = !init[cfg.id]?.loading;
+      if (wasCached && !shouldBgRefresh) continue;
+      toFetch.push({ cfg, wasCached });
     }
 
-    // Only fetch providers that aren't cached yet
-    for (const cfg of PROVIDER_CONFIGS) {
-      if (!init[cfg.id]?.loading) continue;
-      const set = (items: ProviderModelInfo[], error?: string) => {
-        if (!dead) setProviderData((p) => ({ ...p, [cfg.id]: { items, loading: false, error } }));
-      };
-      const fail = () => set([]);
+    if (toFetch.length > 0) {
+      // Collect results, apply as single batch update to avoid N re-renders
+      const results = new Map<string, { items: ProviderModelInfo[]; error?: string }>();
+      let pending = toFetch.length;
 
-      if (cfg.grouped) {
-        fetchGroupedModels(cfg.id)
-          .then((r) => set(flattenGrouped(r), r.error))
-          .catch(fail);
-      } else {
-        fetchProviderModels(cfg.id)
-          .then((r) => set(r.models, r.error))
-          .catch(fail);
+      const flush = () => {
+        if (dead) return;
+        setProviderData((p) => {
+          const next = { ...p };
+          for (const [id, val] of results) {
+            next[id] = { items: val.items, loading: false, error: val.error };
+          }
+          return next;
+        });
+        // Only stamp cooldown after successful flush
+        if (shouldBgRefresh) lastBgRefresh = Date.now();
+      };
+
+      const done = (id: string, items: ProviderModelInfo[], error?: string) => {
+        results.set(id, { items, error });
+        if (--pending === 0) flush();
+      };
+
+      for (const { cfg, wasCached } of toFetch) {
+        const fail = () => {
+          if (!wasCached) done(cfg.id, []);
+          else if (--pending === 0) flush();
+        };
+
+        if (cfg.grouped) {
+          fetchGroupedModels(cfg.id, { bypassCache: wasCached })
+            .then((r) => done(cfg.id, flattenGrouped(r), r.error))
+            .catch(fail);
+        } else {
+          fetchProviderModels(cfg.id, { bypassCache: wasCached })
+            .then((r) => done(cfg.id, r.models, r.error))
+            .catch(fail);
+        }
       }
     }
 
