@@ -44,6 +44,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   project: "shell",
   test_scaffold: "code",
   discover_pattern: "code",
+  ast_edit: "ts-morph",
 
   // Editor (neovim)
   editor: "editor",
@@ -167,6 +168,7 @@ const TOOL_ICON_MAP: Record<string, string> = {
   soul_analyze: "repomap",
   soul_impact: "repomap",
   skills: "skills",
+  ast_edit: "pencil",
   _nudge: "lightning",
 };
 
@@ -206,6 +208,7 @@ export const TOOL_LABELS: Record<string, string> = {
   project: "Project",
   test_scaffold: "Scaffolding tests",
   discover_pattern: "Discovering",
+  ast_edit: "AST editing",
   editor_panel: "Opening editor",
   plan: "Planning",
   update_plan_step: "Updating plan",
@@ -246,6 +249,7 @@ export const TOOL_LABELS_DONE: Record<string, string> = {
   project: "Project",
   test_scaffold: "Scaffolded tests",
   discover_pattern: "Discovered",
+  ast_edit: "AST edited",
   editor_panel: "Opened editor",
   plan: "Planned",
   update_plan_step: "Updated plan",
@@ -308,6 +312,7 @@ function getToolIconColors(): Record<string, string> {
     soul_find: t.success,
     soul_analyze: t.success,
     soul_impact: t.success,
+    ast_edit: t.amber,
     _nudge: t.warning,
   };
 }

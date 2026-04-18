@@ -19,6 +19,7 @@ import {
 import { needsOutsideConfirm } from "../security/outside-cwd.js";
 import type { IntelligenceClient } from "../workers/intelligence-client.js";
 import { analyzeTool } from "./analyze.js";
+import { astEditTool } from "./ast-edit.js";
 import { CORE_TOOL_NAMES, TOOL_CATALOG, truncateBytes, truncateLines } from "./constants.js";
 import { discoverPatternTool } from "./discover-pattern.js";
 import { editFileTool } from "./edit-file";
@@ -633,6 +634,104 @@ export function buildTools(
             error: "contested",
           };
         }
+        await enrichWithBlastRadius(result, args.path, effectiveCwd, opts?.repoMap);
+        return result;
+      }),
+    }),
+
+    ast_edit: tool({
+      ...TEXT_OUTPUT,
+      description: astEditTool.description,
+      inputSchema: z.object({
+        path: z.string().describe("File path to edit (.ts, .tsx, .js, .jsx)"),
+        action: optStr().describe(
+          "Surgical action. " +
+            "Tier 1 (micro, 1-10 tokens): set_type, set_return_type, set_initializer, remove_initializer, set_value, " +
+            "set_async, set_generator, set_export, set_default_export, set_abstract, set_static, set_readonly, " +
+            "set_scope, set_optional, set_overrides, set_ambient, set_const_enum, " +
+            "rename, remove, add_parameter, remove_parameter, set_declaration_kind. " +
+            "Tier 2 (body, 10-100 tokens): set_body, add_statement, insert_statement, remove_statement, " +
+            "add_property, remove_property, add_method, remove_method, add_member, remove_member, " +
+            "add_constructor, add_getter, add_setter, add_decorator, remove_decorator, add_overload, " +
+            "set_extends, remove_extends, add_implements, remove_implements, add_extends, " +
+            "add_type_parameter, add_jsdoc, remove_jsdoc, unwrap, set_structure, extract_interface. " +
+            "Tier 3 (full): replace. " +
+            "File-level: add_import, remove_import, add_named_import, remove_named_import, set_module_specifier, " +
+            "add_export_declaration, add_namespace, organize_imports, fix_missing_imports, fix_unused, " +
+            "add_function, add_class, add_interface, add_type_alias, add_enum, add_variable, insert_text.",
+        ),
+        target: z
+          .enum([
+            "function",
+            "class",
+            "interface",
+            "type",
+            "enum",
+            "variable",
+            "constant",
+            "method",
+            "property",
+          ])
+          .nullable()
+          .optional()
+          .transform(nullToUndef)
+          .describe(
+            "Symbol kind to target. Use 'method' for class methods (name as 'ClassName.methodName' or just 'methodName'). " +
+              "Use 'property' for class/interface properties (same dot notation). " +
+              "'function' also finds class methods as fallback.",
+          ),
+        name: optStr().describe(
+          "Symbol name. For methods/properties use 'ClassName.memberName' or just 'memberName' to search all classes.",
+        ),
+        value: optStr().describe(
+          "Short value for surgical ops (type string, new name, boolean as string, etc.)",
+        ),
+        newCode: optStr().describe(
+          "Code body for set_body/replace/add_statement/add_method/add_property etc.",
+        ),
+        index: z
+          .preprocess(coerceInt, z.number())
+          .nullable()
+          .optional()
+          .transform(nullToUndef)
+          .describe("Statement index for insert_statement/remove_statement"),
+        operations: z
+          .preprocess(
+            coerceJsonArray,
+            z.array(
+              z.object({
+                action: z.string().describe("Surgical action"),
+                target: optStr().describe("Symbol kind"),
+                name: optStr().describe("Symbol name"),
+                value: optStr().describe("Short value"),
+                newCode: optStr().describe("Code body"),
+                index: z
+                  .preprocess(coerceInt, z.number())
+                  .nullable()
+                  .optional()
+                  .transform(nullToUndef)
+                  .describe("Statement index"),
+              }),
+            ),
+          )
+          .nullable()
+          .optional()
+          .transform(nullToUndef)
+          .describe(
+            "Atomic multi-operation mode: array of {action, target?, name?, value?, newCode?, index?}. All-or-nothing.",
+          ),
+      }),
+      execute: deferExecute(async (args) => {
+        const gate = await gateOutsideCwd("ast_edit", resolve(args.path));
+        if (gate.blocked) return gate.result;
+        if (opts?.onApproveDestructive && isSensitiveFile(args.path)) {
+          const approved = await opts.onApproveDestructive(`Edit sensitive file: \`${args.path}\``);
+          if (!approved) {
+            const msg = `Denied: edit to sensitive file ${args.path}`;
+            return { success: false, output: msg, error: msg };
+          }
+        }
+        const result = await astEditTool.execute({ ...args, tabId: opts?.tabId });
         await enrichWithBlastRadius(result, args.path, effectiveCwd, opts?.repoMap);
         return result;
       }),

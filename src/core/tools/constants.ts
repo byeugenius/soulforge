@@ -47,6 +47,8 @@ export const TOOL_CATALOG: Record<string, string> = {
   memory: "Read/write persistent memories across sessions",
   editor: "Open file in embedded Neovim editor",
   task_list: "Create and track tasks for the current session",
+  ast_edit:
+    "[Experimental] Surgical AST editing for TS/JS — 65+ operations from micro-edits (set_type, rename) to full replacement, zero string matching",
 };
 
 /** Tool names allowed in restricted modes (architect, socratic, challenge).

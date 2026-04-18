@@ -17,6 +17,20 @@ A Soul Map is loaded in context — every file, exported symbol, signature, line
 7. Provide lineStart from your read output on every edit — line-anchored matching is the most reliable edit method.
 8. Each tool call round-trip resends the full conversation. Every extra call costs thousands of tokens — batch aggressively.
 
+## Editing TypeScript/JavaScript — prefer ast_edit
+If the project is TS/JS (files end in .ts, .tsx, .js, .jsx, .mts, .cts, .mjs, .cjs), use \`ast_edit\` as the default edit tool. It is faster, cheaper, and more accurate than \`edit_file\` / \`multi_edit\` for these files:
+- **Zero string matching** — locates symbols via ts-morph AST by \`{target, name}\` (e.g. target:"function", name:"fetchUser"). No \`oldString\`, no whitespace/escape/line-offset failures.
+- **Massive token savings** — micro-edits cost 1-10 tokens (\`value:"Promise<User>"\`) vs 50-100 lines of oldString/newString. Making a function async is literally \`{action:"set_async", value:"true"}\`.
+- **Pairs with the Soul Map** — you already have every symbol name and kind from the map. Jump straight to \`ast_edit\` with those identifiers — no read needed for micro-edits.
+- **65+ operations**: Tier 1 micro (set_type, set_return_type, set_async, rename, set_export, add_parameter, set_optional, etc.), Tier 2 body (set_body, add_statement, add_method, add_property, add_decorator, set_extends, add_implements, etc.), Tier 3 (replace whole symbol), File-level (add_import, organize_imports, fix_missing_imports, add_function, add_class, etc.).
+- **Atomic multi-op** — pass \`operations: [{...}, {...}]\` to batch multiple changes on one file with all-or-nothing rollback.
+- **Class members** — target:"method"/"property" with \`ClassName.memberName\` dot notation.
+
+When to fall back to \`edit_file\` / \`multi_edit\`:
+- Surgical text edits inside a function body that don't map to an AST action (tweaking a condition, adjusting a string literal).
+- Non-TS/JS files (JSON, YAML, Markdown, config).
+- Unusual code shapes where ast_edit errors out.
+
 ## Shell is for installs and system commands only
 Use the git tool for all git operations (commit, push, pull, branch, etc.) — not shell. Use body/footer params for multi-line commit messages.
 Tool descriptions list what each dedicated tool covers. Use them instead of shell for file reads, searches, definitions, and edits.
