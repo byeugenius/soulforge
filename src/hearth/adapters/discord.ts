@@ -32,8 +32,12 @@ import { TextRenderer } from "./render-text.js";
 const DISCORD_GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 const DISCORD_API = "https://discord.com/api/v10";
 
-// Intents: GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT
-const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
+// Intents: DIRECT_MESSAGES only. MESSAGE_CONTENT is a privileged intent
+// (requires verification for ≥75 guilds and explicit toggle in the Discord
+// developer portal); omit it since DM content arrives without it on the
+// current gateway version. GUILDS / GUILD_MESSAGES are unused for the DM-
+// only remote-control workflow — least privilege.
+const INTENTS = 1 << 12; // DIRECT_MESSAGES
 
 export interface DiscordSurfaceOptions {
   /** Surface suffix (after "discord:"). Usually the application id. */
@@ -74,6 +78,14 @@ export class DiscordSurface extends BaseSurface {
   private renderers = new Map<string, TextRenderer>();
   private pendingApprovals = new Map<string, PendingApprovalEntry>();
   private stopRequested = false;
+  /** When true a fatal close code (auth-fail / forbidden intents / sharding)
+   *  fired — stop reconnecting so we don't token-loop. */
+  private fatalClose = false;
+  /** Reconnect attempt counter for exponential backoff. */
+  private reconnectAttempts = 0;
+  /** Per-channel outbound throttle — Discord enforces per-route buckets
+   *  and a 50 req/sec global. 1 msg/sec per channel stays well under. */
+  private lastSendAt = new Map<string, number>();
   private fetchImpl: typeof fetch;
   private readToken: () => Promise<string | null>;
   private wsImpl: typeof WebSocket;
@@ -133,8 +145,25 @@ export class DiscordSurface extends BaseSurface {
       this.log(`discord gateway closed ${String(ev.code)}`);
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
-      if (!this.stopRequested) {
-        setTimeout(() => this.openSocket(this.resumeGatewayUrl ?? DISCORD_GATEWAY_URL), 3000);
+      // Discord fatal close codes — these mean retrying will never succeed.
+      //   4004 = authentication failed (bad token)
+      //   4010 = invalid shard
+      //   4011 = sharding required
+      //   4012 = invalid API version
+      //   4013 = invalid intents
+      //   4014 = disallowed intents (privileged intent not toggled)
+      const fatalCodes = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
+      if (fatalCodes.has(ev.code)) {
+        this.fatalClose = true;
+        this.stopRequested = true;
+        this.log(`discord fatal close ${String(ev.code)} — not reconnecting`);
+        return;
+      }
+      if (!this.stopRequested && !this.fatalClose) {
+        // Exponential backoff: 3s, 6s, 12s, 24s, max 60s.
+        this.reconnectAttempts++;
+        const backoff = Math.min(60_000, 3_000 * 2 ** Math.min(4, this.reconnectAttempts - 1));
+        setTimeout(() => this.openSocket(this.resumeGatewayUrl ?? DISCORD_GATEWAY_URL), backoff);
       }
     });
     ws.addEventListener("error", (ev) => {
@@ -255,6 +284,18 @@ export class DiscordSurface extends BaseSurface {
 
   private handleInteraction(interaction: DiscordInteraction): void {
     if (interaction.type !== 3) return; // only button components
+    // Allowlist enforcement on button taps — mirrors Telegram H3/H4 fix.
+    // Without this a non-allowlisted guild member who finds a custom_id can
+    // tap Approve on our tool-use prompts.
+    const interactorId = interaction.member?.user?.id ?? interaction.user?.id ?? null;
+    const chanId = interaction.channel_id ?? null;
+    if (chanId && interactorId != null) {
+      const allowed = this.allowedByChannel[chanId] ?? [];
+      if (allowed.length > 0 && !allowed.includes(interactorId)) {
+        void this.respondInteraction(interaction, "not authorised");
+        return;
+      }
+    }
     const custom = interaction.data?.custom_id;
     if (!custom) return;
     const [kind, approvalId, decisionRaw] = custom.split(":");
@@ -342,21 +383,62 @@ export class DiscordSurface extends BaseSurface {
     components?: unknown[],
   ): Promise<void> {
     if (!this.token) return;
-    try {
-      const resp = await this.fetchImpl(`${DISCORD_API}/channels/${channelId}/messages`, {
-        method: "POST",
-        headers: {
-          authorization: `Bot ${this.token}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ content, components }),
-      });
-      if (!resp.ok) {
-        this.log(redact(`discord send HTTP ${String(resp.status)}`));
+    await this.enforcePerChannelPace(channelId);
+    // Retry once on 429 honoring retry_after (seconds). Further 429s bubble
+    // as a log line. Honoring retry_after is required to avoid Cloudflare bans.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const resp = await this.fetchImpl(`${DISCORD_API}/channels/${channelId}/messages`, {
+          method: "POST",
+          headers: {
+            authorization: `Bot ${this.token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ content, components }),
+        });
+        if (resp.status === 429) {
+          let retryAfter = 5;
+          let isGlobal = false;
+          try {
+            const parsed = (await resp.json()) as {
+              retry_after?: number;
+              global?: boolean;
+            };
+            retryAfter = parsed.retry_after ?? retryAfter;
+            isGlobal = !!parsed.global;
+          } catch {
+            const hdr = resp.headers.get("retry-after");
+            if (hdr) retryAfter = Number.parseFloat(hdr) || retryAfter;
+          }
+          this.log(
+            redact(`discord 429${isGlobal ? " global" : ""} — retry after ${String(retryAfter)}s`),
+          );
+          if (attempt === 0) {
+            await sleep(Math.ceil(retryAfter * 1000));
+            continue;
+          }
+        }
+        if (!resp.ok) {
+          this.log(redact(`discord send HTTP ${String(resp.status)}`));
+        }
+        return;
+      } catch (err) {
+        this.log(
+          redact(`discord send failed: ${err instanceof Error ? err.message : String(err)}`),
+        );
+        return;
       }
-    } catch (err) {
-      this.log(redact(`discord send failed: ${err instanceof Error ? err.message : String(err)}`));
     }
+  }
+
+  /** Per-channel outbound throttle — enforces 1 msg/sec to stay well under
+   *  Discord's per-route bucket limits. */
+  private async enforcePerChannelPace(channelId: string): Promise<void> {
+    const MIN_INTERVAL_MS = 1000;
+    const last = this.lastSendAt.get(channelId) ?? 0;
+    const wait = last + MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    this.lastSendAt.set(channelId, Date.now());
   }
 }
 
@@ -372,5 +454,12 @@ interface DiscordInteraction {
   id: string;
   token: string;
   type: number;
+  channel_id?: string;
+  member?: { user?: { id: string } };
+  user?: { id: string };
   data?: { custom_id?: string };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
