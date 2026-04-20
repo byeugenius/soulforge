@@ -1004,15 +1004,9 @@ export function buildSubagentTools(models: SubagentModels) {
             const done = r.result.startsWith("[done]");
             const status = r.success ? (done ? "✓" : "⚠") : "✗";
             const taskSummary = r.task.split("\n")[0]?.slice(0, 200) ?? r.task.slice(0, 200);
-            // Extract just the summary from [done] prefix — strip the verbose formatDoneResult output
-            const summaryText = done
-              ? (r.result
-                  .replace(/^\[done\]\s*/, "")
-                  .split("\n")[0]
-                  ?.slice(0, 500) ?? r.result.slice(0, 500))
-              : r.result.slice(0, 500);
+            const body = done ? r.result.replace(/^\[done\]\s*/, "") : r.result;
             sections.push(
-              `\n### ${status} Agent: ${r.agentId} (${r.role})\nTask: ${taskSummary}\n${summaryText}\n\n---`,
+              `\n### ${status} Agent: ${r.agentId} (${r.role})\nTask: ${taskSummary}\n${body}\n\n---`,
             );
           }
 
