@@ -22,6 +22,7 @@ import {
   writeGlobalHearthConfig,
 } from "./config.js";
 import { PairingRegistry } from "./pairing.js";
+import { checkPeer } from "./peer-auth.js";
 import { describeTool, evaluatePolicy } from "./policy.js";
 import { attachFrameReader, writeFrame } from "./protocol.js";
 import { installGlobalRedaction, redact } from "./redact.js";
@@ -343,7 +344,31 @@ export class HearthDaemon {
         unlinkSync(path);
       } catch {}
     }
+    // Cache our euid once — every connection compares against this. Bun/Node
+    // expose process.geteuid() on darwin+linux; fall back to process.getuid()
+    // when euid is unavailable.
+    const daemonEuid =
+      typeof process.geteuid === "function"
+        ? process.geteuid()
+        : typeof process.getuid === "function"
+          ? process.getuid()
+          : -1;
+
     this.socketServer = createServer((sock) => {
+      // Peer-auth check — reject any same-box process whose euid differs from
+      // the daemon's. Belt-and-braces: the socket is already chmod 0600 so
+      // only the owning uid can even open this connection, but this blocks
+      // sandboxed same-uid shims (containers, dlopen, postinstall scripts).
+      if (daemonEuid >= 0) {
+        const peer = checkPeer(sock, daemonEuid);
+        if (!peer.ok) {
+          this.log(`socket rejected: ${peer.reason}`);
+          try {
+            sock.destroy();
+          } catch {}
+          return;
+        }
+      }
       attachFrameReader(sock, {
         onFrame: async (frame) => {
           try {
