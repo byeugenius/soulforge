@@ -57,6 +57,8 @@ export class IMessageSurface extends BaseSurface {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private renderers = new Map<string, TextRenderer>();
   private pendingApprovals = new Map<string, PendingApprovalEntry>();
+  /** Per-handle outbound throttle. */
+  private lastSendAt = new Map<ExternalChatId, number>();
   private macOnly: boolean;
 
   constructor(opts: IMessageSurfaceOptions) {
@@ -75,6 +77,19 @@ export class IMessageSurface extends BaseSurface {
       throw new Error(
         `chat.db missing at ${this.chatDbPath} — grant Full Disk Access to the SoulForge binary`,
       );
+    }
+    // Probe Full Disk Access — TCC denies SELECT even when the file exists.
+    // Surface a clear error instead of letting the first real poll swallow it.
+    try {
+      await this.runSqlite("SELECT 1;");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/authorization denied|unable to open|not permitted/i.test(msg)) {
+        throw new Error(
+          `iMessage read denied by TCC — grant Full Disk Access in System Settings > Privacy & Security > Full Disk Access for your terminal / soulforge binary`,
+        );
+      }
+      throw err;
     }
     // Seed lastRowId with the current max so we don't replay history.
     this.lastRowId = await this.queryMaxRowId();
@@ -148,13 +163,18 @@ export class IMessageSurface extends BaseSurface {
 
   private async poll(): Promise<void> {
     try {
+      // Use parameterized SQL via `.parameter set` dot-command so the rowid
+      // bound is never interpolated into the statement. Defense-in-depth —
+      // lastRowId is a Number today but the pattern eliminates the footgun.
+      const safeRowId = Number.isFinite(this.lastRowId) ? Math.trunc(this.lastRowId) : 0;
       const rows = await this.runSqlite(
         `SELECT m.ROWID, h.id, m.text, m.is_from_me, m.date
          FROM message m
          JOIN handle h ON m.handle_id = h.ROWID
-         WHERE m.ROWID > ${String(this.lastRowId)} AND m.is_from_me = 0 AND m.text IS NOT NULL
+         WHERE m.ROWID > :minRowId AND m.is_from_me = 0 AND m.text IS NOT NULL
          ORDER BY m.ROWID ASC
          LIMIT 50;`,
+        { minRowId: String(safeRowId) },
       );
       const lines = rows
         .split("\n")
@@ -170,13 +190,14 @@ export class IMessageSurface extends BaseSurface {
 
         if (!handle || !this.allowedHandles.has(handle)) continue;
 
-        // Approval short-reply parsing: "approve abcdef" / "deny abcdef"
-        const mApprove = /^(approve|deny)\s+([A-Za-z0-9]{4,})/i.exec(text.trim());
+        // Approval short-reply parsing: exact 6-char id prefix required —
+        // prevents "approve a" matching any approval starting with 'a'.
+        const mApprove = /^(approve|deny)\s+([A-Za-z0-9]{6})\b/i.exec(text.trim());
         if (mApprove) {
           const prefix = mApprove[2]?.toLowerCase() ?? "";
-          if (prefix) {
+          if (prefix.length === 6) {
             for (const [id, entry] of this.pendingApprovals) {
-              if (id.slice(0, prefix.length).toLowerCase() === prefix) {
+              if (id.slice(0, 6).toLowerCase() === prefix) {
                 this.pendingApprovals.delete(id);
                 entry.resolve({
                   decision: mApprove[1]?.toLowerCase() === "approve" ? "allow" : "deny",
@@ -203,11 +224,17 @@ export class IMessageSurface extends BaseSurface {
     }
   }
 
-  private runSqlite(sql: string): Promise<string> {
+  /**
+   * Execute a parameterised SQL statement against chat.db. Bindings are set
+   * via the sqlite3 `.parameter set` dot-command on stdin so values never
+   * touch the SQL string. File is opened read-only + immutable so a rogue
+   * statement can't write even if our quoting ever slipped.
+   */
+  private runSqlite(sql: string, params: Record<string, string> = {}): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      const args = [`file:${this.chatDbPath}?mode=ro&immutable=1`, sql];
-      const child = spawn("sqlite3", ["-separator", "|", ...args], {
-        stdio: ["ignore", "pipe", "pipe"],
+      const uri = `file:${this.chatDbPath}?mode=ro&immutable=1`;
+      const child = spawn("sqlite3", ["-separator", "|", uri], {
+        stdio: ["pipe", "pipe", "pipe"],
       });
       let stdout = "";
       let stderr = "";
@@ -222,11 +249,37 @@ export class IMessageSurface extends BaseSurface {
         if (code !== 0) reject(new Error(stderr || `sqlite3 exit ${String(code)}`));
         else resolve(stdout);
       });
+
+      // Strict param validation: names [A-Za-z_], values digits or quoted
+      // strings — no semicolons, no injection surface. Values arrive through
+      // `.parameter set` which sqlite handles as literal bindings.
+      const lines: string[] = [];
+      for (const [name, rawVal] of Object.entries(params)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          reject(new Error(`invalid param name: ${name}`));
+          child.kill();
+          return;
+        }
+        // Only numeric or pre-sanitized strings; reject anything odd.
+        if (!/^-?\d+$/.test(rawVal) && !/^[A-Za-z0-9_.\-+ ]*$/.test(rawVal)) {
+          reject(new Error(`invalid param value for ${name}`));
+          child.kill();
+          return;
+        }
+        lines.push(`.parameter set :${name} ${rawVal}`);
+      }
+      lines.push(sql);
+      child.stdin?.write(lines.join("\n"));
+      child.stdin?.end();
     });
   }
 
   private async sendMessage(handle: ExternalChatId, text: string): Promise<void> {
     if (!this.macOnly) return;
+    // Per-handle throttle — Messages.app chokes on rapid-fire sends, drops
+    // some, sometimes reorders. 1 msg/sec keeps delivery reliable and
+    // reduces the osascript child-process churn.
+    await this.enforcePerHandlePace(handle);
     // Pass text via env var to keep AppleScript immune to quote injection
     const script = `
 on run argv
@@ -256,5 +309,14 @@ end run
       child.stdin?.write(script);
       child.stdin?.end();
     });
+  }
+
+  /** Per-handle outbound throttle — 1 msg/sec avoids Messages.app drops. */
+  private async enforcePerHandlePace(handle: ExternalChatId): Promise<void> {
+    const MIN_INTERVAL_MS = 1000;
+    const last = this.lastSendAt.get(handle) ?? 0;
+    const wait = last + MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    this.lastSendAt.set(handle, Date.now());
   }
 }
