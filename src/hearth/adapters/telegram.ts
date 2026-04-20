@@ -545,8 +545,16 @@ export class TelegramSurface extends BaseSurface {
     if (msg.photo && msg.photo.length > 0) {
       const largest = msg.photo[msg.photo.length - 1];
       if (largest) {
-        const url = await this.downloadFileAsDataUrl(largest.file_id, "image/jpeg");
-        if (url) images.push({ url, mediaType: "image/jpeg" });
+        // L1 — enforce size cap using the file_size Telegram reports.
+        const size = largest.file_size;
+        if (size !== undefined && size > ATTACHMENT_MAX_BYTES) {
+          this.log(
+            `tg attachment rejected: photo ${String(size)}B > ${String(ATTACHMENT_MAX_BYTES)}B`,
+          );
+        } else {
+          const url = await this.downloadFileAsDataUrl(largest.file_id, "image/jpeg");
+          if (url) images.push({ url, mediaType: "image/jpeg" });
+        }
       }
     }
     // Document: only route images through the ImageAttachment channel. Other
@@ -555,11 +563,22 @@ export class TelegramSurface extends BaseSurface {
     if (msg.document) {
       const mime = msg.document.mime_type ?? "application/octet-stream";
       if (mime.startsWith("image/")) {
-        const url = await this.downloadFileAsDataUrl(msg.document.file_id, mime);
-        if (url) images.push({ url, mediaType: mime });
+        const size = msg.document.file_size;
+        if (size !== undefined && size > ATTACHMENT_MAX_BYTES) {
+          this.log(
+            `tg attachment rejected: document ${String(size)}B > ${String(ATTACHMENT_MAX_BYTES)}B`,
+          );
+        } else {
+          const url = await this.downloadFileAsDataUrl(msg.document.file_id, mime);
+          if (url) images.push({ url, mediaType: mime });
+        }
       } else {
-        // Non-image document — surface the filename/mime as context text.
-        const note = `[attachment: ${msg.document.file_name ?? "file"} · ${mime} · ${String(msg.document.file_size ?? 0)} bytes — binary not loaded]`;
+        // L3 + L11 — scrub filename (strip C0 controls, cap length) before
+        // interpolating into the agent's prompt context. Prevents terminal
+        // escape injection AND filename-based prompt injection.
+        const rawName = msg.document.file_name ?? "file";
+        const safeName = sanitizeFilename(rawName);
+        const note = `[attachment: ${safeName} · ${mime} · ${String(msg.document.file_size ?? 0)} bytes — binary not loaded]`;
         const caption = msg.caption ? `${msg.caption}\n\n${note}` : note;
         const inbound: InboundMessage = {
           externalId: chatId,
@@ -597,18 +616,39 @@ export class TelegramSurface extends BaseSurface {
       if (!metaRes.ok) return null;
       const meta = (await metaRes.json()) as {
         ok: boolean;
-        result?: { file_path?: string };
+        result?: { file_path?: string; file_size?: number };
       };
       if (!meta.ok || !meta.result?.file_path) return null;
+      // L1 — second-line defence: re-check reported size from the getFile
+      // response in case the initial update.message.photo[].file_size was
+      // missing or spoofed. Telegram includes file_size in the getFile result
+      // for most (not all) file types.
+      const reportedSize = meta.result.file_size;
+      if (reportedSize !== undefined && reportedSize > ATTACHMENT_MAX_BYTES) {
+        this.log(
+          `tg download rejected: ${String(reportedSize)}B > ${String(ATTACHMENT_MAX_BYTES)}B`,
+        );
+        return null;
+      }
       const fileRes = await this.fetchImpl(
         `https://api.telegram.org/file/bot${this.token}/${meta.result.file_path}`,
       );
       if (!fileRes.ok) return null;
+      // L1 — third-line defence: stop reading once we cross the cap. A liar
+      // upstream (mismatched Content-Length, streamed content) can't OOM us.
+      const contentLength = Number(fileRes.headers.get("content-length") ?? 0);
+      if (contentLength > ATTACHMENT_MAX_BYTES) {
+        this.log(`tg download rejected: content-length ${String(contentLength)}B > cap`);
+        return null;
+      }
       const buf = new Uint8Array(await fileRes.arrayBuffer());
-      // Inline base64 — the forge ImageAttachment pipeline handles data-URLs.
-      let binary = "";
-      for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i] ?? 0);
-      const b64 = btoa(binary);
+      if (buf.length > ATTACHMENT_MAX_BYTES) {
+        this.log(`tg download rejected: actual ${String(buf.length)}B > cap`);
+        return null;
+      }
+      // Chunked base64 — avoid the O(n) String.fromCharCode(...giant) stack
+      // blowup. 64 KiB chunks keep peak intermediate memory bounded.
+      const b64 = chunkedBase64(buf);
       return `data:${mediaType};base64,${b64}`;
     } catch {
       return null;
@@ -708,4 +748,43 @@ function chunkButtons<T>(buttons: T[]): T[][] {
     rows.push(buttons.slice(i, i + 2));
   }
   return rows;
+}
+// ── Attachment limits + scrub helpers ───────────────────────────────────────
+
+/** Maximum byte size we accept for inbound image attachments. */
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Scrub a filename coming from Telegram before it reaches the agent's prompt.
+ * Strips C0 control bytes (0x00–0x1F except newline we'd also strip) and DEL,
+ * and caps at 120 chars. Prevents:
+ *   - Terminal escape injection (\x1b[...) rendering in a shell showing logs.
+ *   - Newline-based prompt injection ("foo.pdf\n\nIgnore previous instructions").
+ *   - Runaway length filenames bloating context.
+ */
+function sanitizeFilename(raw: string): string {
+  let out = "";
+  for (let i = 0; i < raw.length && out.length < 120; i++) {
+    const code = raw.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) continue;
+    out += raw[i];
+  }
+  return out || "file";
+}
+
+/**
+ * Chunked base64 encode — avoids allocating a giant intermediate string via
+ * `String.fromCharCode(...buf)` which can stack-overflow or OOM on large
+ * buffers. 48 KiB chunks (multiple of 3 to keep base64 boundaries clean).
+ */
+function chunkedBase64(buf: Uint8Array): string {
+  const CHUNK = 49152; // 48 KiB, divisible by 3
+  let out = "";
+  for (let i = 0; i < buf.length; i += CHUNK) {
+    const end = Math.min(i + CHUNK, buf.length);
+    let s = "";
+    for (let j = i; j < end; j++) s += String.fromCharCode(buf[j] ?? 0);
+    out += btoa(s);
+  }
+  return out;
 }
