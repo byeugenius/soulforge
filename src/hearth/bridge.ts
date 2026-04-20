@@ -340,7 +340,17 @@ class HearthBridgeImpl {
     const tab = this.tabs.get(tabId);
     if (!tab) return false;
     const inboundId = msg.inboundId ?? randomInboundId();
-    const result = tab.submit(msg.text, origin, inboundId, msg.images);
+    // H7 — stamp the origin into the text the agent sees so the model can
+    // distinguish remote-surface input from local-keyboard input. Prompt-
+    // injection defence: a Telegram user saying "ignore previous
+    // instructions" still prefixes with [via telegram] in the conversation
+    // history, so the model has a signal that this is an untrusted remote
+    // source rather than the operator at the keyboard.
+    const stampedText =
+      origin === "fakechat" || !msg.text
+        ? msg.text
+        : `[via ${origin} — remote surface] ${msg.text}`;
+    const result = tab.submit(stampedText, origin, inboundId, msg.images);
     if (result && typeof (result as Promise<void>).then === "function") {
       (result as Promise<void>).catch((err) =>
         this.notifyError(msg.surfaceId, msg.externalId, err),

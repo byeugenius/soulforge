@@ -41,7 +41,7 @@ describe("HearthBridge — registration + inbound", () => {
     expect(handled).toBe(true);
     // Submit is sync-queued; wait a microtask for the async callback.
     await Promise.resolve();
-    expect(received).toEqual(["hello from telegram"]);
+    expect(received).toEqual(["[via telegram — remote surface] hello from telegram"]);
   });
 
   test("inbound with no binding returns false and drops silently", () => {
