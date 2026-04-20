@@ -412,6 +412,10 @@ export function useChat({
   const webAccessMutexRef = useRef<Promise<void>>(Promise.resolve());
   const autoApproveOutsideCwdRef = useRef(false);
   const outsideCwdMutexRef = useRef<Promise<void>>(Promise.resolve());
+  // Counts concurrent remote approval callbacks awaiting the user on their
+  // phone. Stall watchdog pauses while > 0 — the user may need minutes to
+  // tap Allow/Deny, which is not stream inactivity.
+  const remoteApprovalActiveRef = useRef(0);
   const webSearchModelLabelRef = useRef<string | null>(null);
   const [activePlan, setActivePlanRaw] = useState<Plan | null>(initialState?.activePlan ?? null);
   const activePlanRef = useRef<Plan | null>(activePlan);
@@ -1276,11 +1280,16 @@ export function useChat({
         if (autoApproveRef.current) return true;
         return new Promise<boolean>((resolve) => {
           let done = false;
+          let remoteCancel: (() => void) | null = null;
           const settle = (allowed: boolean, fromLocal: boolean, isAlways: boolean): void => {
             if (done) return;
             done = true;
             if (fromLocal) setPendingQuestion(null);
             if (isAlways) autoApproveRef.current = true;
+            // Local settle (user answered or abort skipped) kills any
+            // outstanding remote callback so Telegram's button doesn't
+            // outlive the turn.
+            if (fromLocal && remoteCancel) remoteCancel();
             resolve(allowed);
           };
           setPendingQuestion({
@@ -1293,34 +1302,49 @@ export function useChat({
             ],
             allowSkip: false,
             resolve: (answer: string) => {
+              // abort()/unmount resolves with "__skipped__" — treat as deny
+              // (no "Allow all" promotion). Any other non-allow value: deny.
               const allowed = answer === "allow" || answer === "always";
               settle(allowed, true, answer === "always");
             },
           });
           if (remotePayload) {
             const payload = remotePayload(...args);
-            void import("../hearth/bridge.js").then(({ askRemote }) => {
-              if (done) return;
-              void askRemote<string>(
-                tabId,
-                (callbackId) => ({
-                  type: "approval-request",
-                  callbackId,
-                  tool: payload.tool,
-                  summary: payload.summary,
-                }),
-                "",
-              ).then((answer) => {
+            void import("../hearth/bridge.js").then(
+              ({ askRemote, cancelRemoteCallbacksForTab }) => {
                 if (done) return;
-                if (answer === "allow") {
-                  setPendingQuestion(null);
-                  settle(true, false, false);
-                } else if (answer === "deny") {
-                  setPendingQuestion(null);
-                  settle(false, false, false);
-                }
-              });
-            });
+                remoteCancel = () => cancelRemoteCallbacksForTab(tabId);
+                remoteApprovalActiveRef.current++;
+                void askRemote<string>(
+                  tabId,
+                  (callbackId) => ({
+                    type: "approval-request",
+                    callbackId,
+                    tool: payload.tool,
+                    summary: payload.summary,
+                  }),
+                  "",
+                )
+                  .then((answer) => {
+                    if (done) return;
+                    if (answer === "allow") {
+                      setPendingQuestion(null);
+                      settle(true, false, false);
+                    } else if (answer === "deny") {
+                      setPendingQuestion(null);
+                      settle(false, false, false);
+                    }
+                    // Any other value (empty from offline-fallback/timeout/cancel):
+                    // leave local TUI prompt as the sole authority.
+                  })
+                  .finally(() => {
+                    remoteApprovalActiveRef.current = Math.max(
+                      0,
+                      remoteApprovalActiveRef.current - 1,
+                    );
+                  });
+              },
+            );
           }
         });
       });
@@ -2362,8 +2386,14 @@ export function useChat({
               return;
             }
             if (abortController.signal.aborted) return;
-            // Pause while a user prompt is active (web access, plan review, ask_user, etc.)
-            if (pendingQuestionRef.current || pendingPlanReviewRef.current) {
+            // Pause while a user prompt is active (local TUI popup, plan review,
+            // ask_user) or a remote approval callback is awaiting Telegram/etc.
+            // The user may need minutes to tap — not stream inactivity.
+            if (
+              pendingQuestionRef.current ||
+              pendingPlanReviewRef.current ||
+              remoteApprovalActiveRef.current > 0
+            ) {
               lastActivityTs = Date.now();
               lastToolActivityTs = Date.now();
               return;
@@ -3531,6 +3561,11 @@ export function useChat({
         pr.resolve("cancel");
         setPendingPlanReview(null);
       }
+      // Kill any outstanding remote callbacks (approval/ask/plan-review waiting
+      // on Telegram button taps) so they can't resolve a dead turn after abort.
+      void import("../hearth/bridge.js").then(({ cancelRemoteCallbacksForTab }) => {
+        cancelRemoteCallbacksForTab(tabId);
+      });
       setActivePlan(null);
       setSidebarPlan(null);
       steeringAbortedRef.current = true;
@@ -3604,6 +3639,11 @@ export function useChat({
         if (pq) pq.resolve("__skipped__");
         const pr = pendingPlanReviewRef.current;
         if (pr) pr.resolve("cancel");
+        // Kill remote callbacks so Telegram buttons don't resolve a dead turn
+        // after tab unmount.
+        void import("../hearth/bridge.js").then(({ cancelRemoteCallbacksForTab }) => {
+          cancelRemoteCallbacksForTab(tabId);
+        });
         abortRef.current.abort();
         abortRef.current = null;
       }

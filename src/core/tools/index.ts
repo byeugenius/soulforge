@@ -1044,7 +1044,17 @@ export function buildTools(
       }),
       execute: deferExecute(async (args) => {
         if (opts?.onApproveFetchPage) {
-          const approved = await opts.onApproveFetchPage(args.url);
+          let approved: boolean;
+          try {
+            approved = await opts.onApproveFetchPage(args.url);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              success: false,
+              output: `Page fetch approval cancelled: ${msg}`,
+              error: "Approval cancelled.",
+            };
+          }
           if (!approved) {
             return {
               success: false,
@@ -2258,7 +2268,17 @@ export function buildSubagentExploreTools(opts?: {
       }),
       execute: deferExecute(async (args) => {
         if (opts?.onApproveFetchPage) {
-          const approved = await opts.onApproveFetchPage(args.url);
+          let approved: boolean;
+          try {
+            approved = await opts.onApproveFetchPage(args.url);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+              success: false,
+              output: `Page fetch approval cancelled: ${msg}`,
+              error: "Approval cancelled.",
+            };
+          }
           if (!approved) {
             return {
               success: false,

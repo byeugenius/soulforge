@@ -546,6 +546,14 @@ class HearthBridgeImpl {
     this.persist();
     return mode;
   }
+
+  /** True when a surface host is attached (daemon live, or TUI host up).
+   *  Used by askRemote to avoid emitting approval-requests into the void when
+   *  Hearth is offline — the callback would just time out and the approval
+   *  would silently deny. */
+  isBridgeLive(): boolean {
+    return this.outboundSender !== null;
+  }
 }
 
 function randomInboundId(): string {
@@ -669,23 +677,12 @@ export class BridgeStreamEmitter {
 
 /** Singleton emitter \u2014 shared across useChat instances in the same process. */
 export const bridgeStreamEmitter = new BridgeStreamEmitter();
-/**
- * Callback-query registry \u2014 lets adapters resolve an awaiting TUI callback
- * (ask_user, plan review, web approval) when the remote user taps a button.
- *
- * Flow:
- *   - TUI/daemon calls `askRemote(tabId, question)`, gets a Promise.
- *   - Bridge assigns a callbackId, pushes `ask-user` HeadlessEvent out.
- *   - Adapter renders an inline keyboard; button tap calls
- *     `resolveRemoteCallback(callbackId, answer)`.
- *   - Promise resolves; TUI proceeds.
- *
- * Unresolved callbacks time out after `timeoutMs` (default 5min) and
- * resolve to a caller-supplied default so the TUI isn't stuck forever.
- */
 interface PendingCallback {
   resolve: (value: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Owning tab — lets cancelRemoteCallbacksForTab scope cleanly so aborting
+   *  one tab doesn't nuke approvals belonging to another tab. */
+  tabId: string;
 }
 
 const pendingCallbacks = new Map<string, PendingCallback>();
@@ -698,6 +695,9 @@ export function askRemote<T>(
 ): Promise<T> {
   const binding = [...hearthBridge.listBindings()].find((b) => b.tabId === tabId);
   if (!binding) return Promise.resolve(fallback);
+  // Bridge offline — the event would be dropped and the promise would time out,
+  // silently collapsing the local approval into a deny. Short-circuit instead.
+  if (!hearthBridge.isBridgeLive()) return Promise.resolve(fallback);
 
   return new Promise<T>((resolve) => {
     const callbackId = `cb_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
@@ -708,6 +708,7 @@ export function askRemote<T>(
     pendingCallbacks.set(callbackId, {
       resolve: (v) => resolve(v as T),
       timer,
+      tabId,
     });
     hearthBridge.emitTabEvent(tabId, outbound(callbackId));
   });
@@ -723,19 +724,28 @@ export function resolveRemoteCallback(callbackId: string, value: unknown): boole
   return true;
 }
 
-/** Cancel all pending callbacks for a tab (e.g. on tab close / abort). */
+/** Cancel all pending callbacks for a tab (e.g. on tab close / abort).
+ *  Resolves each callback with `null` so awaiting code sees a non-answer
+ *  rather than hanging until the 5-min timeout. */
 export function cancelRemoteCallbacksForTab(tabId: string): number {
-  // We don't track tabId-per-callback yet \u2014 simplest: resolve all with default.
   let n = 0;
   for (const [id, entry] of pendingCallbacks) {
+    if (entry.tabId !== tabId) continue;
     clearTimeout(entry.timer);
     pendingCallbacks.delete(id);
     entry.resolve(null);
     n++;
   }
-  // tabId used only to scope \u2014 future refinement.
-  void tabId;
   return n;
+}
+
+/** True when a tab has an outstanding remote callback. Used by the stall
+ *  watchdog to pause while the user is thinking on their phone. */
+export function hasPendingCallbackForTab(tabId: string): boolean {
+  for (const entry of pendingCallbacks.values()) {
+    if (entry.tabId === tabId) return true;
+  }
+  return false;
 }
 /**
  * ReasoningStreamEmitter — separate coalescer for reasoning deltas so native

@@ -69,7 +69,20 @@ export function buildWebSearchTool(opts?: {
           error: "Web search disabled.",
         };
       }
-      const approved = await onApprove(args.query);
+      let approved: boolean;
+      try {
+        approved = await onApprove(args.query);
+      } catch (err) {
+        // Approval races an abort (Ctrl+X, unmount, stall). Surface a clean
+        // denied-shape result instead of propagating AbortError — the tool
+        // loop has no handling for it and would surface as "Request interrupted".
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          output: `Web search approval cancelled: ${msg}`,
+          error: "Approval cancelled.",
+        };
+      }
       if (!approved) {
         return {
           success: false,
