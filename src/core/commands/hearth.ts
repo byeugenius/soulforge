@@ -89,6 +89,24 @@ async function handleHearthStatus(_input: string, ctx: CommandContext): Promise<
       desc: String(health.pendingApprovals),
     });
   }
+  try {
+    const { getServiceStatus } = await import("../../hearth/service.js");
+    const svc = await getServiceStatus();
+    const persistenceDesc = svc.installed
+      ? svc.active
+        ? `active on boot · ${svc.unitLabel}`
+        : `installed (inactive) · ${svc.unitLabel}`
+      : svc.platform === "unsupported"
+        ? "not supported on this OS"
+        : "not installed";
+    lines.push({
+      type: "entry",
+      label: "Persistence",
+      desc: persistenceDesc,
+      descColor:
+        svc.installed && svc.active ? theme.success : svc.installed ? theme.warning : theme.textDim,
+    });
+  } catch {}
   lines.push({ type: "spacer" });
   lines.push({ type: "header", label: "Surfaces" });
 

@@ -35,6 +35,12 @@ import {
 } from "../../hearth/index.js";
 import { socketRequest } from "../../hearth/protocol.js";
 import {
+  getServiceStatus,
+  installService,
+  type ServiceStatus,
+  uninstallService,
+} from "../../hearth/service.js";
+import {
   HEARTH_PROTOCOL_VERSION,
   type HealthResponse,
   type HearthConfig,
@@ -454,6 +460,7 @@ export function HearthSettings({ visible, onClose }: Props) {
   const bootLogRef = useRef<string | null>(null);
   const statusRef = useRef<DaemonStatus>({ running: false });
   const [startupError, setStartupError] = useState<string | null>(null);
+  const [service, setService] = useState<ServiceStatus | null>(null);
 
   const flashMsg = useCallback((kind: "ok" | "err", msg: string) => {
     if (flashTimer.current) clearTimeout(flashTimer.current);
@@ -703,6 +710,62 @@ export function HearthSettings({ visible, onClose }: Props) {
     },
     [flashMsg, refreshStatus],
   );
+
+  const refreshService = useCallback(async () => {
+    try {
+      const s = await getServiceStatus();
+      setService(s);
+    } catch {
+      // ignore — status is best-effort
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    void refreshService();
+  }, [visible, refreshService]);
+
+  const installPersistent = useCallback(async () => {
+    try {
+      const launcher = resolveLauncher();
+      if (!launcher) {
+        flashMsg(
+          "err",
+          "could not locate a soulforge launcher — set SOULFORGE_HEARTH_LAUNCHER or run manually",
+        );
+        return;
+      }
+      const s = await installService({
+        cmd: launcher.cmd,
+        args: [...launcher.args, "hearth", "start"],
+      });
+      if (s.error) {
+        flashMsg("err", `install failed: ${s.error}`);
+      } else if (s.platform === "unsupported") {
+        flashMsg("err", "persistent service not supported on this platform");
+      } else {
+        flashMsg("ok", `installed · ${s.unitLabel} (${s.platform})`);
+      }
+      setService(s);
+      setTimeout(() => void refreshStatus(), 1500);
+    } catch (err) {
+      flashMsg("err", err instanceof Error ? err.message : String(err));
+    }
+  }, [flashMsg, refreshStatus]);
+
+  const uninstallPersistent = useCallback(async () => {
+    try {
+      const s = await uninstallService();
+      if (s.error) {
+        flashMsg("err", `uninstall failed: ${s.error}`);
+      } else {
+        flashMsg("ok", "persistent service removed");
+      }
+      setService(s);
+    } catch (err) {
+      flashMsg("err", err instanceof Error ? err.message : String(err));
+    }
+  }, [flashMsg]);
 
   const surfaceEntries = useMemo(() => Object.entries(config.surfaces), [config.surfaces]);
 
@@ -1339,6 +1402,12 @@ export function HearthSettings({ visible, onClose }: Props) {
       }
       if (evt.name === "r") {
         void refreshStatus();
+        void refreshService();
+        return;
+      }
+      if (evt.name === "b") {
+        if (service?.installed) void uninstallPersistent();
+        else void installPersistent();
         return;
       }
       return;
@@ -1536,7 +1605,16 @@ export function HearthSettings({ visible, onClose }: Props) {
       );
     }
     if (tab === "daemon")
-      return renderDaemon(contentW, bodyRows, t, config, status, filteredLogs, startupError);
+      return renderDaemon(
+        contentW,
+        bodyRows,
+        t,
+        config,
+        status,
+        filteredLogs,
+        startupError,
+        service,
+      );
     if (tab === "pairings") {
       return renderPairings(
         contentW,
@@ -1658,6 +1736,7 @@ function buildFooterHints(
   if (tab === "daemon") {
     return [
       { key: "s", label: status.running ? "stop daemon" : "start daemon" },
+      { key: "b", label: "persist on boot" },
       { key: "r", label: "refresh" },
       { key: "tab", label: "next tab" },
       { key: "esc", label: "close" },
@@ -1965,6 +2044,7 @@ function renderDaemon(
   status: DaemonStatus,
   logs: string[],
   startupError: string | null,
+  service: ServiceStatus | null,
 ) {
   const cardRows = startupError ? 15 : 12;
   const previewRows = Math.max(3, rows - cardRows - 3);
@@ -2096,6 +2176,35 @@ function renderDaemon(
         </>
       ) : null}
 
+      {/* Persistent-service row — survives TUI exit and reboot via launchd/systemd */}
+      <box flexDirection="row" flexShrink={0} paddingX={1} backgroundColor={POPUP_BG}>
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {"Persistence   "}
+          <span
+            bg={POPUP_BG}
+            fg={service?.installed ? t.success : t.textDim}
+            attributes={TextAttributes.BOLD}
+          >
+            {service?.installed
+              ? service.active
+                ? "active on boot"
+                : "installed (inactive)"
+              : service?.platform === "unsupported"
+                ? "not supported on this OS"
+                : "not installed"}
+          </span>
+          {service?.installed && service.unitLabel ? (
+            <>
+              {" · "}
+              <span bg={POPUP_BG} fg={t.textDim}>
+                {service.unitLabel}
+              </span>
+            </>
+          ) : null}
+        </text>
+      </box>
+      <VSpacer />
+
       {/* Actions row */}
       <box flexDirection="row" flexShrink={0} paddingX={1} backgroundColor={POPUP_BG}>
         <text bg={POPUP_BG} fg={t.textMuted}>
@@ -2103,6 +2212,13 @@ function renderDaemon(
             [s]
           </span>{" "}
           {status.running ? "stop daemon" : "start daemon"}
+        </text>
+        <text bg={POPUP_BG} fg={t.textMuted}>
+          {"     "}
+          <span bg={POPUP_BG} fg={t.brandAlt} attributes={TextAttributes.BOLD}>
+            [b]
+          </span>{" "}
+          {service?.installed ? "uninstall persist" : "persist on boot"}
         </text>
         <text bg={POPUP_BG} fg={t.textMuted}>
           {"     "}

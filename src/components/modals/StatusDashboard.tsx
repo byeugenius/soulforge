@@ -202,6 +202,12 @@ export function StatusDashboard({
       toolCalls: number;
       workspacesEver: number;
     };
+    persistence: {
+      installed: boolean;
+      active?: boolean;
+      platform: "darwin" | "linux" | "unsupported";
+      unitLabel?: string;
+    };
   }
   const [hearth, setHearth] = useState<HearthStatusSummary | null>(null);
 
@@ -219,14 +225,26 @@ export function StatusDashboard({
     let stopped = false;
     const probe = async () => {
       try {
-        const [{ loadHearthConfig }, { socketRequest }, { HEARTH_PROTOCOL_VERSION }] =
-          await Promise.all([
-            import("../../hearth/config.js"),
-            import("../../hearth/protocol.js"),
-            import("../../hearth/types.js"),
-          ]);
+        const [
+          { loadHearthConfig },
+          { socketRequest },
+          { HEARTH_PROTOCOL_VERSION },
+          { getServiceStatus },
+        ] = await Promise.all([
+          import("../../hearth/config.js"),
+          import("../../hearth/protocol.js"),
+          import("../../hearth/types.js"),
+          import("../../hearth/service.js"),
+        ]);
         const cfg = loadHearthConfig();
         const { existsSync } = await import("node:fs");
+        const svc = await getServiceStatus();
+        const persistence = {
+          installed: svc.installed,
+          active: svc.active,
+          platform: svc.platform,
+          unitLabel: svc.unitLabel,
+        };
         if (!existsSync(cfg.daemon.socketPath)) {
           if (!stopped)
             setHearth({
@@ -248,6 +266,7 @@ export function StatusDashboard({
                 toolCalls: 0,
                 workspacesEver: 0,
               },
+              persistence,
             });
           return;
         }
@@ -291,6 +310,7 @@ export function StatusDashboard({
             toolCalls: 0,
             workspacesEver: 0,
           },
+          persistence,
         });
       } catch {
         if (!stopped) setHearth(null);
@@ -1053,6 +1073,25 @@ export function StatusDashboard({
           innerW={innerW}
         />,
       );
+      {
+        const p = hearth.persistence;
+        const persistenceValue = p.installed
+          ? p.active
+            ? `active on boot · ${p.unitLabel ?? ""}`
+            : `installed (inactive) · ${p.unitLabel ?? ""}`
+          : p.platform === "unsupported"
+            ? "not supported on this OS"
+            : "not installed";
+        lines.push(
+          <EntryRow
+            key="h-persist"
+            label="  Persistence"
+            value={persistenceValue}
+            valueColor={p.installed && p.active ? t.success : p.installed ? t.warning : t.textMuted}
+            innerW={innerW}
+          />,
+        );
+      }
       if (hearth.running) {
         lines.push(
           <EntryRow
