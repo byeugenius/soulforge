@@ -3648,7 +3648,7 @@ export function useChat({
         abortRef.current = null;
       }
     };
-  }, []);
+  }, [tabId]);
 
   return {
     messages,
