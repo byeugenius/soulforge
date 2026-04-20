@@ -506,24 +506,90 @@ export function formatResult(toolName: string, result?: string): string {
   return result.length > 40 ? `${result.slice(0, 37)}...` : result;
 }
 
+/**
+ * Path-bearing arg keys per tool. Only these values are scanned for
+ * out-of-cwd classification — scanning every string value causes false
+ * positives when tools carry code/regex/URL content (e.g. ast_edit.newCode,
+ * edit_file.oldString/newString) that happens to start with "/".
+ */
+const PATH_ARG_KEYS: Record<string, readonly string[]> = {
+  read: ["path"],
+  edit_file: ["path"],
+  multi_edit: ["path"],
+  undo_edit: ["path"],
+  list_dir: ["path"],
+  rename_file: ["from", "to"],
+  rename_symbol: ["file"],
+  move_symbol: ["from", "to"],
+  ast_edit: ["path"],
+  navigate: ["file"],
+  analyze: ["file"],
+  refactor: ["file"],
+  project: ["file"],
+  test_scaffold: ["file"],
+  discover_pattern: ["file"],
+  soul_grep: ["path"],
+  soul_find: ["path"],
+  soul_impact: ["file"],
+  soul_analyze: ["file"],
+  grep: ["path"],
+  glob: ["path"],
+};
+
+function checkPath(p: string): OutsideKind | null {
+  if (!p) return null;
+  if (!p.startsWith("/") && !p.startsWith("~")) return null;
+  const resolved = resolve(p);
+  if (isInsideCwd(resolved, process.cwd())) return null;
+  return classifyPath(canonicalizePath(resolved), process.cwd());
+}
+
 export function detectOutsideCwd(toolName: string, args?: string): OutsideKind | null {
   if (!args) return null;
   try {
     const parsed: Record<string, unknown> = JSON.parse(args);
-    for (const val of Object.values(parsed)) {
-      if (typeof val === "string" && (val.startsWith("/") || val.startsWith("~"))) {
-        const resolved = resolve(val);
-        if (isInsideCwd(resolved, process.cwd())) continue;
-        const kind = classifyPath(canonicalizePath(resolved), process.cwd());
+
+    // read tool: files[].path
+    if (toolName === "read") {
+      const files = Array.isArray(parsed.files) ? parsed.files : parsed.files ? [parsed.files] : [];
+      for (const f of files) {
+        if (isObj(f) && typeof f.path === "string") {
+          const kind = checkPath(f.path);
+          if (kind) return kind;
+        }
+      }
+      if (typeof parsed.path === "string") {
+        const kind = checkPath(parsed.path);
         if (kind) return kind;
       }
+      return null;
     }
+
+    // Tool-specific path keys
+    const keys = PATH_ARG_KEYS[toolName];
+    if (keys) {
+      for (const key of keys) {
+        const val = parsed[key];
+        if (typeof val === "string") {
+          const kind = checkPath(val);
+          if (kind) return kind;
+        } else if (Array.isArray(val)) {
+          for (const v of val) {
+            if (typeof v === "string") {
+              const kind = checkPath(v);
+              if (kind) return kind;
+            }
+          }
+        }
+      }
+    }
+
+    // shell: extract absolute paths from the command string
     if (toolName === "shell" && typeof parsed.command === "string") {
       for (const match of parsed.command.matchAll(ABS_PATH_RE)) {
         const p = match[1];
         if (p) {
-          if (isInsideCwd(p, process.cwd())) continue;
-          const kind = classifyPath(canonicalizePath(p), process.cwd());
+          const kind = checkPath(p);
           if (kind) return kind;
         }
       }
