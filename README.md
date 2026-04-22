@@ -112,7 +112,7 @@ Same work, a fraction of the tokens, a fraction of the seconds.
 <tr>
 <td valign="top">
 <h4>📱 Reach your forge from anywhere</h4>
-<p><strong>Hearth</strong> turns a running SoulForge into a remote agent. Telegram, Discord, iMessage, or VS Code. Tap-to-approve for destructive ops, auto-redaction of secrets. Your code never leaves your host. <a href="https://soulforge.proxysoul.com/tools/hearth">Learn more</a></p>
+<p><strong>Hearth</strong> turns a running SoulForge into a remote agent. Telegram or Discord. Tap-to-approve for destructive ops, auto-redaction of secrets. Your code never leaves your host. <a href="https://soulforge.proxysoul.com/tools/hearth">Learn more</a></p>
 </td>
 <td valign="top">
 <h4>↶ Undo any turn</h4>
@@ -243,7 +243,7 @@ soulforge                                     # launch, Ctrl+L to pick a model
 </tr>
 <tr>
 <td><strong>Remote control</strong></td>
-<td>Hearth: Telegram, Discord, iMessage, VS Code</td>
+<td>Hearth: Telegram, Discord</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
@@ -325,7 +325,7 @@ Then:
 > run tests and commit
 ```
 
-Pair a Telegram/Discord/iMessage bot once with `/hearth pair`, then keep chatting from your phone — the session auto-syncs both ways.
+Pair a Telegram/Discord bot once with `/hearth pair`, then keep chatting from your phone — the session auto-syncs both ways.
 
 Full docs at **[soulforge.proxysoul.com](https://soulforge.proxysoul.com/introduction)**.
 
