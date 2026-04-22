@@ -5,7 +5,6 @@
 export { BaseSurface, parseCommand } from "./adapters/base.js";
 export { DiscordSurface, type DiscordSurfaceOptions } from "./adapters/discord.js";
 export { type FakechatOptions, FakechatSurface } from "./adapters/fakechat.js";
-export { IMessageSurface, type IMessageSurfaceOptions } from "./adapters/imessage.js";
 export { type RenderedLine, TextRenderer } from "./adapters/render-text.js";
 export { TelegramSurface, type TelegramSurfaceOptions } from "./adapters/telegram.js";
 export { ApprovalRegistry } from "./approvals.js";

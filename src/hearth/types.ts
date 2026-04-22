@@ -8,12 +8,12 @@ import type { ForgeMode, InteractiveCallbacks } from "../types/index.js";
 
 export const HEARTH_PROTOCOL_VERSION = 1;
 
-export type SurfaceKind = "telegram" | "imessage" | "discord" | "vscode" | "web" | "fakechat";
+export type SurfaceKind = "telegram" | "discord" | "vscode" | "web" | "fakechat";
 
-/** A concrete surface+bot pair, e.g. "telegram:1234" or "imessage:default". */
+/** A concrete surface+bot pair, e.g. "telegram:1234" or "discord:<appId>". */
 export type SurfaceId = `${SurfaceKind}:${string}`;
 
-/** A chat inside a surface — external to SoulForge (Telegram chat id, iMessage handle, etc.). */
+/** A chat inside a surface — external to SoulForge (Telegram chat id, Discord channel id, etc.). */
 export type ExternalChatId = string;
 
 export type HearthCaps = "main" | "sandboxed";
@@ -113,7 +113,7 @@ export interface HealthResponse {
   uptime: number;
   /** Lifetime stats since daemon start. */
   stats: HearthLifetimeStats;
-  /** Which process is currently driving Telegram/Discord/iMessage long-polls.
+  /** Which process is currently driving Telegram/Discord long-polls.
    *   "daemon" = this daemon process owns surfaces.
    *   "tui"    = a TUI holds the bridge lock; daemon is a passive socket.
    *   "unknown" = no one owns (transient during handoff). */

@@ -241,7 +241,7 @@ export const TabInstance = memo(function TabInstance({
   }, [tabId, chat, registerChat, unregisterChat]);
 
   // Register this tab's chat handle with the Hearth bridge so Telegram/Discord/
-  // iMessage can drive it. App-level bootstrap (TuiHost start + auto-claim)
+  // App-level bootstrap (TuiHost start + auto-claim)
   // runs once in App.tsx; this effect only wires the per-tab submit/abort.
   useEffect(() => {
     let cancelled = false;
@@ -401,8 +401,11 @@ export const TabInstance = memo(function TabInstance({
     if (!cp) return;
     const store = useStatusBarStore.getState();
     const savedChars = store.chatChars;
+    // Sum chars from live messages up to (and including) this checkpoint's anchor.
+    const anchorIdx = chat.messages.findIndex((m) => m.id === cp.anchorMessageId);
+    const slice = anchorIdx >= 0 ? chat.messages.slice(0, anchorIdx + 1) : chat.messages;
     let chars = 0;
-    for (const m of cp.messagesSnapshot) {
+    for (const m of slice) {
       if (typeof m.content === "string") chars += m.content.length;
     }
     store.setContext(0, chars);
@@ -412,7 +415,7 @@ export const TabInstance = memo(function TabInstance({
       s.setContext(0, savedChars);
       s.setBrowsingCheckpoint(false);
     };
-  }, [checkpointViewing, checkpoints, visible]);
+  }, [checkpointViewing, checkpoints, visible, chat.messages]);
 
   // Cleanup / dispose on unmount
   useEffect(() => {
@@ -648,10 +651,8 @@ export const TabInstance = memo(function TabInstance({
         if (branchingRef.current) return; // guard against double-submit during async undo
         branchingRef.current = true;
         try {
-          const undoResult = await cpStore.undoToCheckpoint(tabId, viewingIdx, cwd);
-          const msgs =
-            undoResult?.messages ??
-            cpStore.getCheckpoints(tabId).find((c) => c.index === viewingIdx)?.messagesSnapshot;
+          const undoResult = await cpStore.undoToCheckpoint(tabId, viewingIdx, cwd, chat.messages);
+          const msgs = undoResult?.messages;
           if (msgs) {
             chat.setMessages(msgs);
             try {

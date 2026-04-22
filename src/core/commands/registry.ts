@@ -888,7 +888,7 @@ const HEARTH_COMMAND_DEFS: CommandDef[] = [
     ic: "network",
     desc: "Hearth — open settings (surfaces, daemon, pairings, logs)",
     category: "System",
-    tags: ["remote", "telegram", "discord", "imessage", "settings"],
+    tags: ["remote", "telegram", "discord", "settings"],
   },
   {
     cmd: "/hearth settings",
@@ -921,7 +921,7 @@ const HEARTH_COMMAND_DEFS: CommandDef[] = [
   {
     cmd: "/hearth bind",
     ic: "link",
-    desc: "Bind the active tab to a Hearth chat (Telegram/Discord/iMessage)",
+    desc: "Bind the active tab to a Hearth chat (Telegram/Discord)",
     category: "System",
     tags: ["bind", "telegram", "mirror"],
   },

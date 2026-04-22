@@ -2,7 +2,7 @@
  * HearthBridge — in-process router between the TUI's live tabs and Hearth surfaces.
  *
  * Architecture:
- *   TUI (useChat per tab) ─┐            ┌─→ Telegram/Discord/iMessage adapter
+ *   TUI (useChat per tab) ─┐            ┌─→ Telegram/Discord adapter
  *                          │            │
  *                          └── Bridge ──┘
  *
@@ -17,7 +17,7 @@
  *      when a user picks a Telegram chat -> TUI tab pairing. Unset via
  *      `clearBinding(surfaceId, externalId)`.
  *   4. Surface adapters call `handleInbound({ surfaceId, externalId, text,
- *      command })` when a Telegram/Discord/iMessage message arrives. If the
+ *      command })` when a Telegram/Discord message arrives. If the
  *      chat has a binding, the bridge routes to the TUI tab's submit handler.
  *
  * No callbacks cross this module by value — everything is registered by id and
@@ -50,7 +50,7 @@ export interface TabHandle {
   label: string;
 }
 
-export type BridgeOrigin = "telegram" | "discord" | "imessage" | "fakechat";
+export type BridgeOrigin = "telegram" | "discord" | "fakechat";
 
 /** A chat ↔ tab pairing. */
 export interface BridgeBinding {
@@ -76,7 +76,7 @@ export type BridgeOutboundSender = (
   event: HeadlessEvent,
 ) => void | Promise<void>;
 
-/** Inbound message coming from a surface (Telegram/Discord/iMessage). */
+/** Inbound message coming from a surface (Telegram/Discord). */
 export interface BridgeInbound {
   surfaceId: SurfaceId;
   externalId: ExternalChatId;
@@ -327,7 +327,7 @@ class HearthBridgeImpl {
   // ── Surface side API (called by adapter inbound handlers) ───────────────
 
   /**
-   * Deliver a Telegram/Discord/iMessage message to the bound TUI tab.
+   * Deliver a Telegram/Discord message to the bound TUI tab.
    * Returns true if the bridge handled it, false if there's no binding
    * (caller should fall back to daemon workspace behavior).
    *

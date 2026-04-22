@@ -661,7 +661,7 @@ export class HearthDaemon {
           text: msg.text ?? "",
           images: msg.images,
         },
-        originKind as "telegram" | "discord" | "imessage" | "fakechat",
+        originKind as "telegram" | "discord" | "fakechat",
       );
       if (handled) return;
     }
@@ -784,7 +784,6 @@ export class HearthDaemon {
               (surface.kind === "fakechat" ? "fakechat" : surface.kind) as
                 | "telegram"
                 | "discord"
-                | "imessage"
                 | "fakechat",
             );
           }

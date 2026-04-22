@@ -3,8 +3,6 @@
  */
 
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { hasSecret, setSecret } from "../core/secrets.js";
 import { GLOBAL_CONFIG_PATH, loadHearthConfig, writeGlobalHearthConfig } from "./config.js";
 import { HearthDaemon } from "./daemon.js";
@@ -275,11 +273,6 @@ async function runDoctor(): Promise<number> {
       const secretKey = `${kind}.bot.${id ?? ""}`;
       const ok = hasSecret(secretKey);
       lines.push(`  token ${secretKey}: ${ok ? "present" : "MISSING"}`);
-    }
-    if (kind === "imessage") {
-      const dbPath = join(homedir(), "Library", "Messages", "chat.db");
-      const ok = existsSync(dbPath);
-      lines.push(`  chat.db: ${ok ? dbPath : "MISSING — grant Full Disk Access"}`);
     }
     const chats = Object.keys(cfg.chats).length;
     lines.push(`  chats: ${String(chats)} paired`);

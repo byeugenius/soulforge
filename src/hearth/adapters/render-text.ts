@@ -11,7 +11,7 @@
  * We chunk at `MAX_CHUNK_CHARS` on paragraph / sentence / hard boundaries.
  *
  * Output format:
- *   - "plain" — default, no markup. Safe for Discord / iMessage / fakechat.
+ *   - "plain" — default, no markup. Safe for Discord / fakechat.
  *   - "html"  — Telegram Bot API subset: <b>, <i>, <code>, <pre>, <a>,
  *     <blockquote>, <tg-spoiler>. Chunker is tag-aware: if a split falls
  *     inside a <pre><code>…</code></pre> block it closes the block cleanly

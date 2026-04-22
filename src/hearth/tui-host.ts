@@ -3,7 +3,7 @@
  *
  * Runs inside the interactive TUI process. When the TUI holds the bridge lock,
  * it:
- *   - Spins up a SurfaceHost so Telegram/Discord/iMessage poll/stream from the
+ *   - Spins up a SurfaceHost so Telegram/Discord poll/stream from the
  *     TUI process (not the daemon).
  *   - Pipes inbound surface messages into the in-process `hearthBridge`, which
  *     routes to the right TabInstance via its registered `submit` handler.
@@ -190,7 +190,7 @@ export class TuiHost {
           text: msg.text ?? "",
           images: msg.images,
         },
-        kind as "telegram" | "discord" | "imessage" | "fakechat",
+        kind as "telegram" | "discord" | "fakechat",
       );
       if (handled) return;
     }
@@ -271,7 +271,6 @@ export class TuiHost {
             (surface.kind === "fakechat" ? "fakechat" : surface.kind) as
               | "telegram"
               | "discord"
-              | "imessage"
               | "fakechat",
           );
         }

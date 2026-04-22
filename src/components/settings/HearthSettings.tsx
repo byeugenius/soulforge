@@ -92,11 +92,10 @@ interface Props {
   onClose: () => void;
 }
 
-type ProviderKind = "telegram" | "discord" | "imessage";
+type ProviderKind = "telegram" | "discord";
 
 type QuickTelegramField = "token" | "userId" | "cwd";
 type QuickDiscordField = "appId" | "token" | "channelId" | "userId" | "cwd";
-type QuickIMessageField = "handle" | "cwd";
 
 type Mode =
   | { k: "list" }
@@ -118,12 +117,6 @@ type Mode =
       token: string;
       channelId: string;
       userId: string;
-      cwd: string;
-    }
-  | {
-      k: "quickIMessage";
-      field: QuickIMessageField;
-      handle: string;
       cwd: string;
     }
   | { k: "addSurface"; field: "kind" | "id"; kind: string; id: string }
@@ -156,12 +149,6 @@ const PROVIDERS: Array<{
     blurb: "Gateway WS · DM or channel · MESSAGE_CONTENT intent",
     macOnly: false,
   },
-  {
-    kind: "imessage",
-    label: "iMessage",
-    blurb: "macOS only · Full Disk Access required",
-    macOnly: true,
-  },
 ];
 
 interface DaemonStatus {
@@ -187,8 +174,6 @@ function surfaceIdFrom(kind: string, id: string): SurfaceId {
 function tokenSecretKey(surfaceId: string): string | null {
   const [kind, id] = surfaceId.split(":");
   if (!kind || !id) return null;
-  // iMessage uses macOS Messages.app — no bot token, no keychain entry.
-  if (kind === "imessage") return null;
   return `${kind}.bot.${id}`;
 }
 
@@ -281,12 +266,6 @@ function appendToMode(mode: Mode, chunk: string): Mode {
       else next.cwd = mode.cwd + chunk;
       return next;
     }
-    case "quickIMessage": {
-      const next = { ...mode } as Extract<Mode, { k: "quickIMessage" }>;
-      if (mode.field === "handle") next.handle = mode.handle + chunk;
-      else next.cwd = mode.cwd + chunk;
-      return next;
-    }
     default:
       return mode;
   }
@@ -305,8 +284,6 @@ const DISCORD_FIELD_ORDER: readonly QuickDiscordField[] = [
   "userId",
   "cwd",
 ];
-const IMESSAGE_FIELD_ORDER: readonly QuickIMessageField[] = ["handle", "cwd"];
-
 function severityColor(line: string, t: Theme): string {
   const l = line.toLowerCase();
   if (l.includes(" error") || l.includes("failed") || l.includes("✗")) return t.error;
@@ -917,7 +894,7 @@ export function HearthSettings({ visible, onClose }: Props) {
   /**
    * Single-shot quickstart save. Stores the token in the keychain, enables the
    * surface, and writes `allowed` + `chats` in one atomic config persist.
-   * Handles all three provider shapes (telegram / discord / imessage).
+   * Handles both provider shapes (telegram / discord).
    */
   const saveQuickstart = useCallback(
     (
@@ -936,8 +913,7 @@ export function HearthSettings({ visible, onClose }: Props) {
             channelId: string;
             userId: string;
             cwd: string;
-          }
-        | { kind: "imessage"; handle: string; cwd: string },
+          },
     ): boolean => {
       const cwd = args.cwd.trim();
       if (!cwd) {
@@ -973,7 +949,7 @@ export function HearthSettings({ visible, onClose }: Props) {
         };
         tokenKey = `telegram.bot.${botId}`;
         tokenValue = token;
-      } else if (args.kind === "discord") {
+      } else {
         const appId = args.appId.trim();
         const channelId = args.channelId.trim();
         const userId = args.userId.trim();
@@ -995,24 +971,6 @@ export function HearthSettings({ visible, onClose }: Props) {
         };
         tokenKey = `discord.bot.${appId}`;
         tokenValue = token;
-      } else {
-        const handle = args.handle.trim();
-        if (!handle) {
-          flashMsg("err", "handle required");
-          return false;
-        }
-        sid = surfaceIdFrom("imessage", "default");
-        // allowed map keyed by "chat id" which for iMessage is the handle itself
-        allowed = { [handle]: [handle] };
-        chats = {
-          [handle]: {
-            surfaceId: sid,
-            externalId: handle,
-            cwd,
-            caps: config.defaults.caps,
-            maxTabs: config.defaults.maxTabs,
-          },
-        };
       }
 
       if (tokenKey && tokenValue) {
@@ -1183,7 +1141,7 @@ export function HearthSettings({ visible, onClose }: Props) {
             validating: false,
             error: null,
           });
-        } else if (pick.kind === "discord") {
+        } else {
           setMode({
             k: "quickDiscord",
             field: "appId",
@@ -1191,13 +1149,6 @@ export function HearthSettings({ visible, onClose }: Props) {
             token: "",
             channelId: "",
             userId: "",
-            cwd: process.cwd(),
-          });
-        } else {
-          setMode({
-            k: "quickIMessage",
-            field: "handle",
-            handle: "",
             cwd: process.cwd(),
           });
         }
@@ -1298,30 +1249,6 @@ export function HearthSettings({ visible, onClose }: Props) {
         else if (mode.field === "channelId") setMode({ ...mode, channelId: add(mode.channelId) });
         else if (mode.field === "userId") setMode({ ...mode, userId: add(mode.userId) });
         else setMode({ ...mode, cwd: add(mode.cwd) });
-      }
-      return;
-    }
-
-    // ── iMessage quickstart ──
-    if (mode.k === "quickIMessage") {
-      if (evt.name === "escape") return void setMode({ k: "pickProvider", cursor: 2 });
-      if (evt.name === "tab") {
-        setMode({ ...mode, field: cycleField(mode.field, IMESSAGE_FIELD_ORDER) });
-        return;
-      }
-      if (evt.name === "return") {
-        const ok = saveQuickstart({ kind: "imessage", handle: mode.handle, cwd: mode.cwd });
-        if (ok) setMode({ k: "list" });
-        return;
-      }
-      if (evt.name === "backspace") {
-        if (mode.field === "handle") setMode({ ...mode, handle: mode.handle.slice(0, -1) });
-        else setMode({ ...mode, cwd: mode.cwd.slice(0, -1) });
-        return;
-      }
-      if (evt.sequence && evt.sequence.length === 1 && !evt.ctrl && !evt.meta) {
-        if (mode.field === "handle") setMode({ ...mode, handle: mode.handle + evt.sequence });
-        else setMode({ ...mode, cwd: mode.cwd + evt.sequence });
       }
       return;
     }
@@ -1589,7 +1516,6 @@ export function HearthSettings({ visible, onClose }: Props) {
     if (mode.k === "pickProvider") return renderPickProvider(contentW, bodyRows, mode, t);
     if (mode.k === "quickTelegram") return renderQuickTelegram(contentW, bodyRows, mode, t);
     if (mode.k === "quickDiscord") return renderQuickDiscord(contentW, bodyRows, mode, t);
-    if (mode.k === "quickIMessage") return renderQuickIMessage(contentW, bodyRows, mode, t);
     if (mode.k === "addSurface") return renderAddSurface(contentW, bodyRows, mode, t);
     if (mode.k === "addChat") return renderAddChat(contentW, bodyRows, mode, t);
     if (mode.k === "token") return renderTokenInput(contentW, bodyRows, mode, t);
@@ -1703,7 +1629,7 @@ function buildFooterHints(
       { key: "esc", label: "back" },
     ];
   }
-  if (mode.k === "quickDiscord" || mode.k === "quickIMessage") {
+  if (mode.k === "quickDiscord") {
     return [
       { key: "⏎", label: "save" },
       { key: "tab", label: "next field" },
@@ -1864,7 +1790,7 @@ function renderSurfaces(
               <span bg={POPUP_BG} fg={t.brandAlt}>
                 a
               </span>{" "}
-              to start a guided setup for Telegram, Discord, or iMessage.
+              to start a guided setup for Telegram or Discord.
             </text>
             <VSpacer />
             <text bg={POPUP_BG} fg={t.textFaint}>
@@ -1872,9 +1798,6 @@ function renderSurfaces(
             </text>
             <text bg={POPUP_BG} fg={t.textFaint}>
               • Discord — app id + bot token + channel id + your snowflake.
-            </text>
-            <text bg={POPUP_BG} fg={t.textFaint}>
-              • iMessage — your handle (e164 or email); macOS only.
             </text>
             <VSpacer />
             <text bg={POPUP_BG} fg={t.textFaint}>
@@ -1928,8 +1851,6 @@ function renderSurfaceDetail(
             t={t}
             valueColor={hasToken ? t.success : t.warning}
           />
-        ) : sid.startsWith("imessage:") ? (
-          <KV k="Auth" v="macOS Messages.app (no token)" t={t} valueColor={t.textMuted} />
         ) : null}
         <KV k="Chats bound" v={String(chatEntries.length)} t={t} />
       </box>
@@ -2473,7 +2394,7 @@ function renderAddSurface(
         fg={mode.field === "kind" ? t.brand : t.textPrimary}
       >
         {"  "}
-        {mode.kind || "(telegram / discord / imessage / fakechat)"}
+        {mode.kind || "(telegram / discord / fakechat)"}
         {mode.field === "kind" ? "▎" : ""}
       </text>
       <VSpacer />
@@ -2525,7 +2446,7 @@ function renderAddChat(
         fg={mode.field === "chatId" ? t.brand : t.textPrimary}
       >
         {"  "}
-        {mode.chatId || "(tg user/chat id · discord channel · imessage handle)"}
+        {mode.chatId || "(tg user/chat id · discord channel)"}
         {mode.field === "chatId" ? "▎" : ""}
       </text>
       <VSpacer />
@@ -2825,60 +2746,6 @@ function renderQuickDiscord(
   );
 }
 
-function renderQuickIMessage(
-  _w: number,
-  _rows: number,
-  mode: Extract<Mode, { k: "quickIMessage" }>,
-  t: Theme,
-) {
-  const isMac = process.platform === "darwin";
-  const chatDb = `${homedir()}/Library/Messages/chat.db`;
-  const hasDb = isMac && existsSync(chatDb);
-  return (
-    <box flexDirection="column" flexGrow={1} paddingX={3} paddingY={1}>
-      <text bg={POPUP_BG} fg={t.brandAlt} attributes={TextAttributes.BOLD}>
-        iMessage setup
-      </text>
-      <text bg={POPUP_BG} fg={t.textFaint}>
-        macOS only · no token · identity is your phone (e164) or iCloud email.
-      </text>
-      <VSpacer />
-      <FieldRow
-        label="Your handle"
-        value={mode.handle}
-        placeholder="(+15551234567 or name@icloud.com)"
-        focused={mode.field === "handle"}
-        t={t}
-      />
-      <FieldRow
-        label="Working directory"
-        value={mode.cwd}
-        placeholder="(absolute path)"
-        focused={mode.field === "cwd"}
-        t={t}
-      />
-      <Divider w={60} t={t} label="System checks" />
-      <VSpacer />
-      <KV
-        k="Platform"
-        v={isMac ? "macOS ✓" : `${process.platform} — not supported`}
-        t={t}
-        valueColor={isMac ? t.success : t.error}
-      />
-      <KV
-        k="chat.db"
-        v={hasDb ? chatDb : "MISSING — grant Full Disk Access"}
-        t={t}
-        valueColor={hasDb ? t.success : t.warning}
-      />
-      <VSpacer />
-      <text bg={POPUP_BG} fg={t.textFaint}>
-        First send prompts Automation permission for Messages.app.
-      </text>
-    </box>
-  );
-}
-
 function renderAddAllowed(
   _w: number,
   _rows: number,
@@ -2901,7 +2768,7 @@ function renderAddAllowed(
       </text>
       <VSpacer rows={2} />
       <text bg={POPUP_BG} fg={t.textDim}>
-        Chat id (numeric for TG, channel snowflake for Discord, handle for iMessage)
+        Chat id (numeric for TG, channel snowflake for Discord)
       </text>
       <text
         bg={mode.field === "chatId" ? POPUP_HL : POPUP_BG}
@@ -2913,7 +2780,7 @@ function renderAddAllowed(
       </text>
       <VSpacer />
       <text bg={POPUP_BG} fg={t.textDim}>
-        User id (numeric TG user.id, Discord snowflake, iMessage handle)
+        User id (numeric TG user.id, Discord snowflake)
       </text>
       <text
         bg={mode.field === "userId" ? POPUP_HL : POPUP_BG}

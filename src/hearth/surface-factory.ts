@@ -6,7 +6,6 @@
 
 import { DiscordSurface } from "./adapters/discord.js";
 import { FakechatSurface } from "./adapters/fakechat.js";
-import { IMessageSurface } from "./adapters/imessage.js";
 import { TelegramSurface } from "./adapters/telegram.js";
 import type { HearthConfig, Surface, SurfaceId } from "./types.js";
 
@@ -40,9 +39,6 @@ export function buildSurfacesFromConfig(
           allowed[chId] = userIds;
         }
         out.push(new DiscordSurface({ appId: id, allowedUserIdsByChannel: allowed, log: onLog }));
-      } else if (kind === "imessage") {
-        const handles = Object.values(cfg.allowed ?? {}).flat();
-        out.push(new IMessageSurface({ id, allowedHandles: handles, log: onLog }));
       } else if (kind === "fakechat") {
         out.push(new FakechatSurface(`fakechat:${id}` as SurfaceId));
       }

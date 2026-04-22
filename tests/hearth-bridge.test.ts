@@ -1,6 +1,6 @@
 /**
  * Tests for the in-process HearthBridge — the singleton router between live
- * TUI tabs and Telegram/Discord/iMessage adapters. Covers the scenarios the
+ * TUI tabs and Telegram/Discord adapters. Covers the scenarios the
  * 2026-04-18 robustness audit called out:
  *   - register → bind → inbound round-trip
  *   - unregister drops bindings but re-queues them by label for restart
