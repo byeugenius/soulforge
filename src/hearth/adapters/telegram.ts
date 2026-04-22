@@ -313,11 +313,14 @@ export class TelegramSurface extends BaseSurface {
     const msg = update.message;
     if (!msg?.from) return;
 
-    // Identity allowlist — numeric id only
+    // Identity allowlist — numeric id only. Default-deny: unknown chat,
+    // empty list, or sender-not-listed all drop silently. Prior form
+    // (`allowed.length > 0 && !allowed.includes(...)`) fell OPEN on any
+    // chat that wasn't explicitly configured.
     const senderId = String(msg.from.id);
     const chatId = String(msg.chat.id);
-    const allowed = this.allowedUserIdsByChat[chatId] ?? [];
-    if (allowed.length > 0 && !allowed.includes(msg.from.id)) {
+    const allowed = this.allowedUserIdsByChat[chatId];
+    if (!allowed || !allowed.includes(msg.from.id)) {
       // Silent drop — no reply. Never disclose the bot's presence to strangers.
       return;
     }
@@ -404,12 +407,14 @@ export class TelegramSurface extends BaseSurface {
     // messages. Without this, a non-allowlisted user who discovers a
     // callback_id can tap Approve on our tool-use prompts.
     const chatIdForAllow = q.message ? String(q.message.chat.id) : null;
-    if (chatIdForAllow && q.from?.id != null) {
-      const allowed = this.allowedUserIdsByChat[chatIdForAllow] ?? [];
-      if (allowed.length > 0 && !allowed.includes(q.from.id)) {
-        this.sendAnswerCallback(q.id, "not authorised");
-        return;
-      }
+    if (!chatIdForAllow || q.from?.id == null) {
+      this.sendAnswerCallback(q.id, "not authorised");
+      return;
+    }
+    const allowed = this.allowedUserIdsByChat[chatIdForAllow];
+    if (!allowed || !allowed.includes(q.from.id)) {
+      this.sendAnswerCallback(q.id, "not authorised");
+      return;
     }
     const parts = q.data.split(":");
     const kind = parts[0];

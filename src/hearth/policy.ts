@@ -22,20 +22,14 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-function matchesAny(value: string, patterns: string[]): string | null {
-  for (const pat of patterns) {
-    try {
-      if (globToRegex(pat).test(value)) return pat;
-    } catch {}
-  }
-  return null;
-}
-
-/** Stringify tool input into the canonical matcher form: `ToolName(firstString)`. */
 function toolSignature(req: PermissionRequest): string {
   const input = req.toolInput ?? {};
   const firstStr = Object.values(input).find((v): v is string => typeof v === "string");
-  return `${req.toolName}(${firstStr ?? ""})`;
+  // M4: collapse all whitespace runs into a single space and trim. A rule
+  // like `git push --force*` would otherwise miss `git push  --force` (two
+  // spaces) and pass autoDeny.
+  const normalized = (firstStr ?? "").replace(/\s+/g, " ").trim();
+  return `${req.toolName}(${normalized})`;
 }
 
 /** Matcher entry can be "toolName" or "toolName(glob)". */
@@ -60,11 +54,6 @@ export function evaluatePolicy(
 
   for (const rule of autoDeny) {
     if (ruleMatches(req, rule)) {
-      return { kind: "deny", matched: rule, reason: `auto-deny rule: ${rule}` };
-    }
-    // Also deny when the rule is a plain command substring match (e.g. "rm -rf *")
-    const sig = toolSignature(req);
-    if (matchesAny(sig, [rule])) {
       return { kind: "deny", matched: rule, reason: `auto-deny rule: ${rule}` };
     }
   }

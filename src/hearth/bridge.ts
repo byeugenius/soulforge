@@ -431,7 +431,12 @@ class HearthBridgeImpl {
         bindings: [...this.bindings.values()],
         activeTabByChat: Object.fromEntries(this.activeTabByChat),
       };
-      writeFileSync(BRIDGE_STATE_PATH, JSON.stringify(state, null, 2), { mode: 0o600 });
+      // H9: atomic write via tmp+rename — a crash mid-write can't truncate the
+      // bindings file and lose every chat->tab mapping on next boot.
+      const tmp = `${BRIDGE_STATE_PATH}.tmp.${String(process.pid)}.${String(Date.now())}`;
+      writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
+      const { renameSync } = require("node:fs") as typeof import("node:fs");
+      renameSync(tmp, BRIDGE_STATE_PATH);
     } catch {
       // Persistence failure is non-fatal — bridge keeps working in memory.
     }
@@ -636,16 +641,47 @@ export function readBridgeOwner(): number | null {
   }
 }
 
-/** TUI call: writes our pid as the bridge owner. Returns true if we took the lock.
- *  Force-steals a stale lock (dead pid, legacy format, implausible timestamp). */
 export function acquireBridgeLock(): boolean {
   const existing = readBridgeOwner();
   if (existing && existing !== process.pid) return false;
   try {
     mkdirSync(dirname(BRIDGE_LOCK_PATH), { recursive: true, mode: 0o700 });
-    writeFileSync(BRIDGE_LOCK_PATH, `${String(process.pid)}:${String(Date.now())}`, {
-      mode: 0o600,
-    });
+    const payload = `${String(process.pid)}:${String(Date.now())}`;
+    // M5: O_EXCL create so two TUIs racing at boot can't both 'win'. If the
+    // file already exists (stale from a crashed owner, or already-held by
+    // our own pid) fall into the recovery path.
+    const {
+      openSync,
+      writeSync,
+      closeSync,
+      unlinkSync: unlinkLock,
+    } = require("node:fs") as typeof import("node:fs");
+    let fd: number;
+    try {
+      fd = openSync(BRIDGE_LOCK_PATH, "wx", 0o600);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") return false;
+      // EEXIST: file exists. Three cases:
+      //   (a) owned by another live pid — refuse (readBridgeOwner != our pid).
+      //   (b) owned by our own pid — idempotent re-acquire: unlink + rewrite.
+      //   (c) stale (dead pid / malformed / implausible ts) — reap + retake.
+      const owner = readBridgeOwner();
+      if (owner && owner !== process.pid) return false;
+      try {
+        unlinkLock(BRIDGE_LOCK_PATH);
+      } catch {}
+      try {
+        fd = openSync(BRIDGE_LOCK_PATH, "wx", 0o600);
+      } catch {
+        return false;
+      }
+    }
+    try {
+      writeSync(fd, payload);
+    } finally {
+      closeSync(fd);
+    }
     installExitCleanup();
     return true;
   } catch {

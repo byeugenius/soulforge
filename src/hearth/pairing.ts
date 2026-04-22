@@ -24,6 +24,12 @@ export function generatePairingCode(length = 6): string {
 
 export class PairingRegistry {
   private codes = new Map<string, PairingCode>();
+  /** Per-(surface|externalId) failed-attempt counter. Locks out after
+   *  `maxFailures` for `lockoutMs`. Prevents brute-forcing 6-char codes
+   *  over the TTL window (30 bits = 1e9 search space — still cap it). */
+  private failures = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly maxFailures = 5;
+  private readonly lockoutMs = 10 * 60_000;
 
   constructor(private ttlMs: number) {}
 
@@ -41,20 +47,53 @@ export class PairingRegistry {
     return entry;
   }
 
-  consume(surfaceId: SurfaceId, code: string): PairingCode | null {
+  /** Redeem a code. Returns the PairingCode on success, null otherwise.
+   *  Counts failures per surface+chat and locks the chat out after 5 bad
+   *  attempts for 10 minutes. Successful consumption resets the counter. */
+  consume(surfaceId: SurfaceId, code: string, attemptKey?: string): PairingCode | null {
+    const key = attemptKey ? `${surfaceId}|${attemptKey}` : null;
+    if (key) {
+      const f = this.failures.get(key);
+      if (f && f.lockedUntil > Date.now()) return null;
+    }
     const upper = code.trim().toUpperCase();
     const entry = this.codes.get(upper);
-    if (!entry) return null;
-    if (entry.surfaceId !== surfaceId) return null;
+    const bump = (): void => {
+      if (!key) return;
+      const now = Date.now();
+      const f = this.failures.get(key) ?? { count: 0, lockedUntil: 0 };
+      f.count++;
+      if (f.count >= this.maxFailures) {
+        f.lockedUntil = now + this.lockoutMs;
+        f.count = 0;
+      }
+      this.failures.set(key, f);
+    };
+    if (!entry) {
+      bump();
+      return null;
+    }
+    if (entry.surfaceId !== surfaceId) {
+      bump();
+      return null;
+    }
     if (entry.expiresAt < Date.now()) {
       this.codes.delete(upper);
+      bump();
       return null;
     }
     this.codes.delete(upper);
+    if (key) this.failures.delete(key);
     return entry;
   }
 
-  /** Drop expired entries — called by daemon sweep. */
+  /** True when the chat is currently locked out from further redeem attempts. */
+  isLocked(surfaceId: SurfaceId, attemptKey: string): boolean {
+    const f = this.failures.get(`${surfaceId}|${attemptKey}`);
+    return !!f && f.lockedUntil > Date.now();
+  }
+
+  /** Drop expired entries and stale lockouts. */
   prune(): number {
     const now = Date.now();
     let n = 0;
@@ -63,6 +102,9 @@ export class PairingRegistry {
         this.codes.delete(k);
         n++;
       }
+    }
+    for (const [k, f] of this.failures) {
+      if (f.lockedUntil !== 0 && f.lockedUntil < now) this.failures.delete(k);
     }
     return n;
   }

@@ -269,8 +269,15 @@ export class DiscordSurface extends BaseSurface {
   private handleMessage(msg: DiscordMessage): void {
     if (!msg || msg.author?.bot) return;
     if (!msg.channel_id || !msg.author?.id || !msg.content) return;
-    const allowed = this.allowedByChannel[msg.channel_id] ?? [];
-    if (allowed.length > 0 && !allowed.includes(msg.author.id)) return;
+    // Default-deny: unknown channel OR empty allowlist OR sender not listed = drop.
+    // The prior `allowed.length > 0 && !allowed.includes(...)` form fell open
+    // for any channel that wasn't explicitly configured.
+    const allowed = this.allowedByChannel[msg.channel_id];
+    if (!allowed || !allowed.includes(msg.author.id)) return;
+    // H5: DM-only — `member` is only present in guild interactions. Any DM
+    // adapter receiving a guild-scoped MESSAGE_CREATE is a misconfiguration
+    // (we request DIRECT_MESSAGES intent only); drop defensively.
+    if ((msg as unknown as { guild_id?: string }).guild_id) return;
     const cmd = parseCommand(msg.content);
     const inbound: InboundMessage = {
       externalId: msg.channel_id,
@@ -284,17 +291,23 @@ export class DiscordSurface extends BaseSurface {
 
   private handleInteraction(interaction: DiscordInteraction): void {
     if (interaction.type !== 3) return; // only button components
-    // Allowlist enforcement on button taps — mirrors Telegram H3/H4 fix.
-    // Without this a non-allowlisted guild member who finds a custom_id can
-    // tap Approve on our tool-use prompts.
-    const interactorId = interaction.member?.user?.id ?? interaction.user?.id ?? null;
+    // H5 DM-only identity: refuse any interaction that carries `member`
+    // (guild context). We only accept DM interactions where `user` is set.
+    if (interaction.member) {
+      void this.respondInteraction(interaction, "dm-only");
+      return;
+    }
+    const interactorId = interaction.user?.id ?? null;
     const chanId = interaction.channel_id ?? null;
-    if (chanId && interactorId != null) {
-      const allowed = this.allowedByChannel[chanId] ?? [];
-      if (allowed.length > 0 && !allowed.includes(interactorId)) {
-        void this.respondInteraction(interaction, "not authorised");
-        return;
-      }
+    // H1 default-deny: drop if channel unknown, allowlist empty, or user not listed.
+    if (!chanId || !interactorId) {
+      void this.respondInteraction(interaction, "not authorised");
+      return;
+    }
+    const allowed = this.allowedByChannel[chanId];
+    if (!allowed || !allowed.includes(interactorId)) {
+      void this.respondInteraction(interaction, "not authorised");
+      return;
     }
     const custom = interaction.data?.custom_id;
     if (!custom) return;

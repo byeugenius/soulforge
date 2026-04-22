@@ -185,13 +185,26 @@ async function runLogin(surfaceId: SurfaceId, tokenArg?: string): Promise<number
     return 1;
   }
   const secretKey = `${kind}.bot.${id}`;
-  let token = tokenArg;
-  if (!token) {
-    // Read from stdin so the token never appears in `ps` output
-    token = (await readStdin()).trim();
+  // H2: refuse positional token — it leaks via `ps auxww` while the CLI runs.
+  // Accept stdin only. If the user passed a token argv we reject with a helpful
+  // message instead of silently accepting.
+  if (tokenArg) {
+    process.stderr.write(
+      "refusing token via argv — visible in `ps`. Pipe it on stdin:\n" +
+        `  cat token.txt | soulforge hearth login ${surfaceId}\n` +
+        `  (or)  printf '%s' '<token>' | soulforge hearth login ${surfaceId}\n`,
+    );
+    return 1;
   }
+  if (process.stdin.isTTY) {
+    process.stderr.write(
+      `pipe the token on stdin:\n  cat token.txt | soulforge hearth login ${surfaceId}\n`,
+    );
+    return 1;
+  }
+  const token = (await readStdin()).trim();
   if (!token) {
-    process.stderr.write("no token provided — pipe it on stdin or pass as argument\n");
+    process.stderr.write("no token on stdin\n");
     return 1;
   }
   setSecret(secretKey, token);

@@ -82,10 +82,20 @@ function plistEscape(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-/** Escape a value for a systemd unit key-value line. Systemd handles single-line strings. */
 function systemdEscape(s: string): string {
-  // systemd: backslashes → \\, no special quoting for our use case.
   return s.replace(/\\/g, "\\\\");
+}
+
+/** M6: quote an ExecStart argv token for systemd. Systemd reads the line
+ *  whitespace-split; any arg containing a space, quote, backslash, `;`, or
+ *  newline must be wrapped. Double-quotes escape `\` and `"`. Throws on an
+ *  argument containing a literal newline (no way to represent safely). */
+function systemdArg(s: string): string {
+  if (/\n/.test(s)) {
+    throw new Error("systemd ExecStart argument contains newline");
+  }
+  const esc = s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${esc}"`;
 }
 
 /** Run a command with argv array, no shell. Returns {code, stdout, stderr}. */
@@ -153,7 +163,11 @@ ${argsXml}
 function buildLinuxUnit(opts: InstallOptions): string {
   const logPath = opts.logPath ?? defaultLogPath();
   const errPath = opts.errPath ?? defaultErrPath();
-  const execStart = [opts.cmd, ...opts.args].map(systemdEscape).join(" ");
+  // M6: each argv token is individually quoted so paths with spaces or
+  // other unit-directive-hostile characters can't inject. Prior form was
+  // plain concatenation with a backslash-only escape — broke on any path
+  // containing a space and permitted injection via `;` or newline.
+  const execStart = [opts.cmd, ...opts.args].map(systemdArg).join(" ");
   return `[Unit]
 Description=SoulForge Hearth daemon (remote surface bridge)
 After=network.target

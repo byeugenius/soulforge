@@ -20,15 +20,8 @@ export interface RedactionRule {
   replacement: string;
 }
 
-/**
- * Built-in rules. Order matters — more specific patterns first so they win
- * before generic bearer/hex fallbacks.
- */
 export const DEFAULT_REDACTION_RULES: RedactionRule[] = [
   // Telegram bot token embedded in a URL path: `/bot123456:AAA-BBB.../...`
-  // (appears in fetch errors and undici request logs before the tokenized
-  // bot:<id>:<token> form fires). Has to run BEFORE the bare-token rule so
-  // the path-form matches in full.
   {
     kind: "telegram-bot-url",
     pattern: /\bbot(\d{6,12}):([A-Za-z0-9_-]{30,})\b/g,
@@ -42,9 +35,42 @@ export const DEFAULT_REDACTION_RULES: RedactionRule[] = [
     pattern: /\b([A-Za-z0-9_-]{20,30})\.([A-Za-z0-9_-]{6,8})\.([A-Za-z0-9_-]{20,40})\b/g,
     replacement: "$1.***",
   },
+  // JWT (header.payload.signature, base64url)
+  {
+    kind: "jwt",
+    pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+    replacement: "eyJ***.***.***",
+  },
+  // PEM private-key blocks (RSA, EC, OPENSSH, generic)
+  {
+    kind: "pem-private-key",
+    pattern:
+      /-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |)PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |ENCRYPTED |)PRIVATE KEY-----/g,
+    replacement: "-----BEGIN PRIVATE KEY----- *** -----END PRIVATE KEY-----",
+  },
+  // Basic-auth credentials embedded in URLs
+  {
+    kind: "basic-auth-url",
+    pattern: /\b(https?:\/\/)[^:@/\s]+:[^@/\s]+@/g,
+    replacement: "$1***:***@",
+  },
+  // DB URLs with credentials (postgres, mysql, mongodb, redis, amqp)
+  {
+    kind: "db-url",
+    pattern: /\b((?:postgres(?:ql)?|mysql|mongodb|redis|amqp)(?:\+[a-z]+)?):\/\/[^:\s]+:[^@\s]+@/g,
+    replacement: "$1://***:***@",
+  },
   // OpenAI / Anthropic style: sk-... / sk-ant-...
-  { kind: "openai", pattern: /\b(sk-[A-Za-z0-9_-]{20,})\b/g, replacement: "sk-***" },
   { kind: "anthropic", pattern: /\b(sk-ant-[A-Za-z0-9_-]{20,})\b/g, replacement: "sk-ant-***" },
+  { kind: "openai", pattern: /\b(sk-[A-Za-z0-9_-]{20,})\b/g, replacement: "sk-***" },
+  // Stripe live keys
+  {
+    kind: "stripe",
+    pattern: /\b(sk|pk|rk)_live_[A-Za-z0-9]{20,}\b/g,
+    replacement: "$1_live_***",
+  },
+  // Google API keys
+  { kind: "google-api", pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g, replacement: "AIza***" },
   // GitHub classic + fine-grained + OAuth
   { kind: "github", pattern: /\b(gh[pousr]_[A-Za-z0-9]{30,})\b/g, replacement: "ghx_***" },
   {
@@ -52,14 +78,24 @@ export const DEFAULT_REDACTION_RULES: RedactionRule[] = [
     pattern: /\b(github_pat_[A-Za-z0-9_]{60,})\b/g,
     replacement: "github_pat_***",
   },
+  // npm tokens
+  { kind: "npm", pattern: /\bnpm_[A-Za-z0-9]{36}\b/g, replacement: "npm_***" },
   // Slack
   {
     kind: "slack",
     pattern: /\b(xox[abprs]-[A-Za-z0-9-]{10,})\b/g,
     replacement: "xoxx-***",
   },
-  // AWS access key ids (keep 4 prefix so we can tell "was leaked" apart)
+  // AWS access key ids (persistent) and session tokens (temporary)
   { kind: "aws-access-key", pattern: /\b(AKIA[0-9A-Z]{16})\b/g, replacement: "AKIA***" },
+  { kind: "aws-session-key", pattern: /\b(ASIA[0-9A-Z]{16})\b/g, replacement: "ASIA***" },
+  // AWS secret access key assignment (key/value form — catches aws_secret_access_key = ...)
+  {
+    kind: "aws-secret",
+    pattern:
+      /\b(aws_secret_access_key|AWS_SECRET_ACCESS_KEY)\s*[:=]\s*['\"]?[A-Za-z0-9/+=]{40}['\"]?/g,
+    replacement: "$1=***",
+  },
   // Bearer tokens in Authorization headers
   {
     kind: "bearer",
@@ -106,7 +142,6 @@ export function redact(input: string): string {
   return out;
 }
 
-/** Redact any value by round-tripping through JSON when needed. */
 export function redactUnknown(value: unknown): unknown {
   if (value == null) return value;
   if (typeof value === "string") return redact(value);
@@ -114,7 +149,11 @@ export function redactUnknown(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactUnknown);
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = redactUnknown(v);
+    for (const [k, v] of Object.entries(value)) {
+      // Also redact the key — defense in depth against attackers stuffing a
+      // token into a JSON key (rare but possible with user-controlled input).
+      out[redact(k)] = redactUnknown(v);
+    }
     return out;
   }
   return value;

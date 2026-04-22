@@ -126,11 +126,15 @@ export abstract class BaseSurface implements Surface {
   protected abstract sendPairingPromptImpl(externalId: ExternalChatId, code: string): Promise<void>;
 }
 
-/** Parse a text message into a slash command if it looks like one. */
 export function parseCommand(text: string): { name: string; args: string[] } | undefined {
-  const trimmed = text.trim();
+  // L3: cap input before split. A 1 MiB line of spaces would otherwise produce
+  // a huge array. 4 KiB is well above any legitimate slash-command length.
+  const capped = text.length > 4096 ? text.slice(0, 4096) : text;
+  const trimmed = capped.trim();
   if (!trimmed.startsWith("/")) return undefined;
-  const parts = trimmed.split(/\s+/);
+  // L3 cont.: cap the number of tokens too, so a pathological all-whitespace
+  // input can't balloon the args array.
+  const parts = trimmed.split(/\s+/, 64);
   const name = parts[0];
   if (!name) return undefined;
   return { name, args: parts.slice(1) };

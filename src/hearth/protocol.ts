@@ -16,7 +16,6 @@ export interface FrameReaderOptions {
   onError?: (err: Error) => void;
 }
 
-/** Attach a length-bounded line reader to a socket. Never throws. */
 export function attachFrameReader(socket: Socket, opts: FrameReaderOptions): void {
   const max = opts.max ?? HEARTH_MAX_FRAME_BYTES;
   let buf = "";
@@ -30,6 +29,11 @@ export function attachFrameReader(socket: Socket, opts: FrameReaderOptions): voi
       socket.destroy();
     } catch {}
   };
+
+  // M1: idle read timeout. A peer that opens the socket and never writes a
+  // complete frame gets killed after 30s — prevents slow-reader DoS and
+  // orphaned half-open connections from holding fds forever.
+  socket.setTimeout(30_000, () => fail(new Error("socket idle timeout")));
 
   socket.setEncoding("utf-8");
   socket.on("data", (chunk) => {

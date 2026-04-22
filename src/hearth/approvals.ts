@@ -10,6 +10,10 @@ import { HEARTH_PROTOCOL_VERSION } from "./types.js";
 export class ApprovalRegistry {
   private pending = new Map<string, PendingApproval>();
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  /** M3: hard cap on concurrent pending approvals. A runaway tool loop
+   *  could otherwise fill memory indefinitely. Overflow denies the new
+   *  request immediately rather than pushing out older waiters. */
+  private static readonly MAX_PENDING = 256;
 
   constructor(private defaultTimeoutMs: number) {
     this.sweepTimer = setInterval(() => this.sweepExpired(), 30_000);
@@ -31,6 +35,23 @@ export class ApprovalRegistry {
         resolve(res);
       } catch {}
     };
+    // M3: refuse new approvals when the map is full. Return a synthetic
+    // entry whose resolve has already fired with deny so callers see the
+    // standard deny path instead of blocking forever.
+    if (this.pending.size >= ApprovalRegistry.MAX_PENDING) {
+      once({
+        v: HEARTH_PROTOCOL_VERSION,
+        decision: "deny",
+        reason: "approval registry full",
+      });
+      return {
+        ...opts,
+        id,
+        createdAt: now,
+        expiresAt: now,
+        resolve: once,
+      };
+    }
     const entry: PendingApproval = {
       ...opts,
       id,
@@ -111,5 +132,9 @@ export class ApprovalRegistry {
       } catch {}
     }
     this.pending.clear();
+  }
+
+  sweepExpiredNowForTests(): void {
+    this.sweepExpired();
   }
 }

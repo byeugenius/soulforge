@@ -90,10 +90,14 @@ function keychainSet(key: SecretKey, value: string): boolean {
       spawnSync("security", ["delete-generic-password", "-a", KEYCHAIN_SERVICE, "-s", key], {
         timeout: 5000,
       });
+      // H3: prior form passed the token as `-w <value>` which is visible in
+      // `ps auxww` while `security` runs. The `-w` flag without a value makes
+      // `security` read the password from stdin; pipe it in via the `input`
+      // option so the secret never touches argv.
       const result = spawnSync(
         "security",
-        ["add-generic-password", "-a", KEYCHAIN_SERVICE, "-s", key, "-w", value],
-        { timeout: 5000 },
+        ["add-generic-password", "-a", KEYCHAIN_SERVICE, "-s", key, "-w"],
+        { input: `${value}\n`, timeout: 5000, encoding: "utf-8" },
       );
       return result.status === 0;
     }

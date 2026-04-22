@@ -64,13 +64,64 @@ export function makeDefaultConfig(): HearthConfig {
   };
 }
 
+const HEARTH_MAX_CONFIG_BYTES = 1 * 1024 * 1024; // 1 MiB — a JSON file larger than this is certainly corrupt
+
 function readJsonFile<T>(path: string): Partial<T> | null {
   if (!existsSync(path)) return null;
   try {
+    const { statSync } = require("node:fs") as typeof import("node:fs");
+    const size = statSync(path).size;
+    if (size > HEARTH_MAX_CONFIG_BYTES) {
+      // H8: refuse huge/malformed configs instead of OOMing the TUI on boot.
+      process.stderr.write(
+        `hearth config ${path} is ${String(size)} bytes (> ${String(HEARTH_MAX_CONFIG_BYTES)}); ignoring.\n`,
+      );
+      return null;
+    }
     return JSON.parse(readFileSync(path, "utf-8")) as Partial<T>;
   } catch {
     return null;
   }
+}
+
+/** H7: every daemon-managed path must stay inside ~/.soulforge. A compromised
+ *  config cannot redirect the log file to /etc/passwd or the socket to
+ *  /tmp/shared.sock. */
+export function containPath(p: string, label: string): string {
+  const home = homedir();
+  const trustRoot = resolve(home, ".soulforge");
+  const abs = resolve(expandHome(p));
+  if (abs === trustRoot) return abs;
+  if (!abs.startsWith(`${trustRoot}/`) && !abs.startsWith(`${trustRoot}\\`)) {
+    process.stderr.write(
+      `hearth config: ${label}=${p} escapes ~/.soulforge; falling back to default\n`,
+    );
+    return "";
+  }
+  return abs;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Minimal runtime shape guard — rejects a surface block whose allowed/chats
+ *  aren't the expected record shape. Prevents adapter crashes on a malformed
+ *  hearth.json instead of silently falling open. */
+export function validateSurfaceShape(
+  sid: string,
+  cfg: Partial<HearthSurfaceConfig> | undefined,
+): cfg is Partial<HearthSurfaceConfig> {
+  if (!cfg) return false;
+  if (cfg.allowed !== undefined && !isPlainObject(cfg.allowed)) {
+    process.stderr.write(`hearth config: ${sid}.allowed is not an object; dropping surface\n`);
+    return false;
+  }
+  if (cfg.chats !== undefined && !isPlainObject(cfg.chats)) {
+    process.stderr.write(`hearth config: ${sid}.chats is not an object; dropping surface\n`);
+    return false;
+  }
+  return true;
 }
 
 function mergeSurfaces(
@@ -97,10 +148,21 @@ export function loadHearthConfig(cwd?: string): HearthConfig {
     ? (readJsonFile<HearthConfig>(join(cwd, ".soulforge", "hearth.json")) ?? {})
     : {};
 
+  // H8: drop malformed surface entries rather than crashing surface-factory.
+  const filterSurfaces = (
+    src: Record<string, Partial<HearthSurfaceConfig>> | undefined,
+  ): Record<string, Partial<HearthSurfaceConfig>> => {
+    const out: Record<string, Partial<HearthSurfaceConfig>> = {};
+    for (const [sid, cfg] of Object.entries(src ?? {})) {
+      if (validateSurfaceShape(sid, cfg)) out[sid] = cfg;
+    }
+    return out;
+  };
+
   const merged: HearthConfig = {
     surfaces: mergeSurfaces(base.surfaces, {
-      ...(global.surfaces ?? {}),
-      ...(project.surfaces ?? {}),
+      ...filterSurfaces(global.surfaces),
+      ...filterSurfaces(project.surfaces),
     }),
     defaults: {
       ...base.defaults,
@@ -114,10 +176,13 @@ export function loadHearthConfig(cwd?: string): HearthConfig {
     },
   };
 
-  // Resolve tilde in socket/state/log paths
-  merged.daemon.socketPath = expandHome(merged.daemon.socketPath);
-  merged.daemon.stateFile = expandHome(merged.daemon.stateFile);
-  merged.daemon.logFile = expandHome(merged.daemon.logFile);
+  // H7: clamp daemon paths to ~/.soulforge. Empty string → default.
+  const socketPath = containPath(merged.daemon.socketPath, "socketPath");
+  const stateFile = containPath(merged.daemon.stateFile, "stateFile");
+  const logFile = containPath(merged.daemon.logFile, "logFile");
+  merged.daemon.socketPath = socketPath || DEFAULT_SOCKET_PATH;
+  merged.daemon.stateFile = stateFile || DEFAULT_STATE_PATH;
+  merged.daemon.logFile = logFile || DEFAULT_LOG_PATH;
   return merged;
 }
 
@@ -158,7 +223,12 @@ export function resolveChatBinding(
 
 export function writeGlobalHearthConfig(config: HearthConfig): void {
   mkdirSync(dirname(GLOBAL_CONFIG_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
+  // H9: atomic write via tmp+rename so a crash mid-write can't truncate
+  // hearth.json (which would silently drop every pairing on next boot).
+  const tmp = `${GLOBAL_CONFIG_PATH}.tmp.${String(process.pid)}.${String(Date.now())}`;
+  const { renameSync } = require("node:fs") as typeof import("node:fs");
+  writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+  renameSync(tmp, GLOBAL_CONFIG_PATH);
 }
 
 /** Persist a freshly paired chat into the global config. Idempotent. */

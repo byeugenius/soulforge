@@ -325,7 +325,14 @@ export class TuiHost {
       case "/pair": {
         const arg = cmd.args[0]?.trim().toUpperCase();
         if (arg) {
-          const entry = this.pairings.consume(surfaceId, arg);
+          if (this.pairings.isLocked(surfaceId, msg.externalId)) {
+            await surface.notify(
+              msg.externalId,
+              "✗ Too many bad pairing attempts. Try again later.",
+            );
+            return;
+          }
+          const entry = this.pairings.consume(surfaceId, arg, msg.externalId);
           if (!entry) {
             await surface.notify(
               msg.externalId,
@@ -908,8 +915,6 @@ let _tuiHost: TuiHost | null = null;
 
 export function getTuiHost(): TuiHost {
   if (!_tuiHost) {
-    // Tee log lines to hearth.log (so /hearth Recent log shows TUI-owned
-    // surface activity) AND to the in-memory error store (/errors panel).
     const cfg = loadHearthConfig();
     const logPath = cfg.daemon.logFile;
     try {
@@ -920,13 +925,18 @@ export function getTuiHost(): TuiHost {
     } catch {}
     _tuiHost = new TuiHost({
       log: (line) => {
+        // M8: redact at the sink so every TUI-owned surface log line is
+        // scrubbed regardless of caller discipline — matches the daemon's
+        // logFn behavior.
+        const { redact } = require("./redact.js") as typeof import("./redact.js");
+        const scrubbed = redact(line);
         if (logPath) {
           try {
-            appendFileSync(logPath, `${new Date().toISOString()} [hearth-tui] ${line}\n`);
+            appendFileSync(logPath, `${new Date().toISOString()} [hearth-tui] ${scrubbed}\n`);
           } catch {}
         }
         void import("../stores/errors.js").then(({ logBackgroundError }) => {
-          logBackgroundError("Hearth", line);
+          logBackgroundError("Hearth", scrubbed);
         });
       },
     });

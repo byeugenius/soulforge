@@ -28,15 +28,37 @@ export function buildSurfacesFromConfig(
       if (kind === "telegram") {
         const allowed: Record<string, number[]> = {};
         for (const [chatId, userIds] of Object.entries(cfg.allowed ?? {})) {
-          allowed[chatId] = userIds
-            .map((n) => Number.parseInt(n, 10))
-            .filter((n) => !Number.isNaN(n));
+          const parsed: number[] = [];
+          for (const raw of userIds) {
+            const n = Number.parseInt(raw, 10);
+            if (Number.isNaN(n)) {
+              // M7: loudly drop non-numeric Telegram allowlist entries so
+              // typos don't silently produce an empty — and after H1,
+              // default-deny — allowlist the user can't diagnose.
+              onLog?.(
+                `telegram:${id} allowlist: dropping non-numeric id "${raw}" for chat ${chatId}`,
+              );
+              continue;
+            }
+            parsed.push(n);
+          }
+          allowed[chatId] = parsed;
+          if (parsed.length === 0) {
+            onLog?.(
+              `telegram:${id} allowlist for chat ${chatId} is empty — chat will reject all messages (default-deny)`,
+            );
+          }
         }
         out.push(new TelegramSurface({ botId: id, allowedUserIdsByChat: allowed, log: onLog }));
       } else if (kind === "discord") {
         const allowed: Record<string, string[]> = {};
         for (const [chId, userIds] of Object.entries(cfg.allowed ?? {})) {
           allowed[chId] = userIds;
+          if (userIds.length === 0) {
+            onLog?.(
+              `discord:${id} allowlist for channel ${chId} is empty — channel will reject all messages (default-deny)`,
+            );
+          }
         }
         out.push(new DiscordSurface({ appId: id, allowedUserIdsByChannel: allowed, log: onLog }));
       } else if (kind === "fakechat") {

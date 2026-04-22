@@ -39,16 +39,16 @@ let _ucredAlloc:
     })
   | null = null;
 
+let _ffiError: Error | null = null;
+
 function loadFfi(): void {
   if (_ffiReady) return;
   _ffiReady = true;
   try {
-    // bun:ffi is the only path — Node doesn't expose raw socket fds uniformly.
     const ffi = require("bun:ffi") as typeof import("bun:ffi");
     const { dlopen, FFIType, suffix, ptr } = ffi;
 
     if (platform() === "linux") {
-      // getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen)
       const lib = dlopen(`libc.so.6`, {
         getsockopt: {
           args: [FFIType.i32, FFIType.i32, FFIType.i32, FFIType.ptr, FFIType.ptr],
@@ -58,7 +58,6 @@ function loadFfi(): void {
       _getsockoptFn = lib.symbols.getsockopt as typeof _getsockoptFn extends null
         ? never
         : NonNullable<typeof _getsockoptFn>;
-      // struct ucred { pid_t pid; uid_t uid; gid_t gid; } — 12 bytes, uid at offset 4
       _ucredAlloc = () => {
         const buf = new Uint8Array(12);
         const lenBuf = new Uint32Array(1);
@@ -88,8 +87,10 @@ function loadFfi(): void {
         };
       };
     }
-  } catch {
-    // FFI unavailable — leave stubs null; checkPeer will fall back to no-op.
+  } catch (err) {
+    // M2: record the FFI error so checkPeer can distinguish "supported OS,
+    // FFI failed" (fail closed) from "unsupported OS" (fall back to 0600).
+    _ffiError = err instanceof Error ? err : new Error(String(err));
   }
 }
 
@@ -123,20 +124,28 @@ export function getPeerEuid(socket: Socket): number | null {
   return null;
 }
 
-/**
- * Check that `socket`'s peer has the same euid as the daemon. Returns a
- * structured result so the caller can log the rejection reason.
- *
- * Defense-in-depth: the socket is already 0600, so "ok" is the expected
- * outcome in practice. This blocks the edge case where a same-uid process
- * tries to impersonate the TUI / CLI via the socket.
- */
 export function checkPeer(socket: Socket, daemonEuid: number): PeerAuthResult {
   const peer = getPeerEuid(socket);
   if (peer === null) {
-    // Platform path unavailable — fall back to 0600 socket perms. This is
-    // what "fail open" means here: the socket file permissions still gate
-    // access, we just can't add the belt-and-braces check.
+    const os = platform();
+    const supported = os === "darwin" || os === "linux";
+    // M2: on a supported OS, peer-uid lookup MUST succeed. If FFI loaded
+    // earlier but we still get null, something's wrong (bun:ffi unavailable
+    // mid-run, socket missing _handle, getpeereid errno). Fail closed — the
+    // socket is already 0600 but we're defence-in-depth here.
+    if (supported && _ffiError !== null) {
+      return {
+        ok: false,
+        reason: `peer-auth unavailable on supported OS: ${_ffiError.message}`,
+      };
+    }
+    if (supported && _ffiReady && (_getpeereidFn !== null || _getsockoptFn !== null)) {
+      return {
+        ok: false,
+        reason: "peer-auth: getPeerEuid returned null on supported OS",
+      };
+    }
+    // Truly unsupported platform — fall back to 0600 permission.
     return { ok: true, euid: daemonEuid, via: "noop" };
   }
   if (peer !== daemonEuid) {

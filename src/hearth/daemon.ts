@@ -115,9 +115,13 @@ export class HearthDaemon {
     const fileLogger = createFileLogger(this.config.daemon.logFile);
     const userLog = opts.onLog;
     this.logFn = (line) => {
-      fileLogger(line);
-      if (userLog) userLog(line);
-      else process.stderr.write(`${line}\n`);
+      // M8: redact at the sink. Every daemon log line passes through here,
+      // so callers that forget to wrap err.message in redact() still can't
+      // leak tokens to disk or to the optional user log callback.
+      const scrubbed = redact(line);
+      fileLogger(scrubbed);
+      if (userLog) userLog(scrubbed);
+      else process.stderr.write(`${scrubbed}\n`);
     };
     this.host = new SurfaceHost({
       config: this.config,
@@ -451,7 +455,19 @@ export class HearthDaemon {
         };
       }
       case "pair": {
-        const entry = this.pairings.consume(req.surfaceId, req.code);
+        // Socket pair op — attemptKey is the socket caller's pid proxy, which
+        // we don't have here; use a fixed key so CLI-path brute force still
+        // counts. Rate-limit only triggers after 5 bad codes, CLI users have
+        // the code at hand so this is defense-in-depth.
+        const attemptKey = `socket:${req.surfaceId}`;
+        if (this.pairings.isLocked(req.surfaceId, attemptKey)) {
+          return {
+            v: HEARTH_PROTOCOL_VERSION,
+            ok: false,
+            error: "locked out: too many bad attempts",
+          };
+        }
+        const entry = this.pairings.consume(req.surfaceId, req.code, attemptKey);
         if (!entry) {
           return { v: HEARTH_PROTOCOL_VERSION, ok: false, error: "invalid or expired code" };
         }
@@ -1199,7 +1215,14 @@ export class HearthDaemon {
 
         // /pair <CODE> — redeem a code minted on the trusted side (TUI / CLI).
         if (arg) {
-          const entry = this.pairings.consume(surfaceId, arg);
+          if (this.pairings.isLocked(surfaceId, msg.externalId)) {
+            await surface.notify(
+              msg.externalId,
+              "✗ Too many bad pairing attempts. Try again later.",
+            );
+            return;
+          }
+          const entry = this.pairings.consume(surfaceId, arg, msg.externalId);
           if (!entry) {
             await surface.notify(
               msg.externalId,
