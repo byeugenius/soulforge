@@ -188,6 +188,15 @@ export class TsMorphBackend implements IntelligenceBackend {
   readonly tier = 2;
   private project: Project | null = null;
   private cwd = "";
+  // LRU cap on SourceFiles attached to the shared Project. Without this, every
+  // file ever queried stays resident with its full AST, and the underlying
+  // ts.Program's symbol tables grow unboundedly. Capping at SOURCE_FILE_CAP and
+  // evicting via project.removeSourceFile() releases the AST and lets the
+  // next type query rebuild the Program without the evicted files — tsconfig
+  // stays parsed, language service stays warm, and hot files are never evicted
+  // because getSourceFile bumps them to MRU on every access.
+  private static readonly SOURCE_FILE_CAP = 200;
+  private readonly sourceFileLru = new Map<string, number>();
 
   supportsLanguage(language: Language): boolean {
     return language === "typescript" || language === "javascript";
@@ -2604,6 +2613,7 @@ export class TsMorphBackend implements IntelligenceBackend {
         // If refresh fails (e.g. file was deleted), drop the cached node and re-add.
         try {
           project.removeSourceFile(sourceFile);
+          this.sourceFileLru.delete(absPath);
           sourceFile = project.addSourceFileAtPath(absPath);
         } catch {
           return null;
@@ -2611,7 +2621,32 @@ export class TsMorphBackend implements IntelligenceBackend {
       }
     }
 
+    // Bump to MRU (delete + set preserves Map insertion order = LRU position).
+    this.sourceFileLru.delete(absPath);
+    this.sourceFileLru.set(absPath, Date.now());
+    this.evictSourceFilesIfNeeded(project);
+
     return sourceFile;
+  }
+
+  private evictSourceFilesIfNeeded(project: Project): void {
+    const overflow = this.sourceFileLru.size - TsMorphBackend.SOURCE_FILE_CAP;
+    if (overflow <= 0) return;
+    let evicted = 0;
+    for (const absPath of this.sourceFileLru.keys()) {
+      if (evicted >= overflow) break;
+      const sf = project.getSourceFile(absPath);
+      if (sf) {
+        try {
+          project.removeSourceFile(sf);
+        } catch {
+          // Best-effort — if removal fails, just drop from tracker so we
+          // don't keep retrying the same entry.
+        }
+      }
+      this.sourceFileLru.delete(absPath);
+      evicted++;
+    }
   }
 
   private findNode(

@@ -257,6 +257,12 @@ export class StandaloneLspClient {
       const oldest = this.openDocuments.keys().next().value;
       if (!oldest) break;
       this.openDocuments.delete(oldest);
+      this.diagnostics.delete(oldest);
+      const waiters = this.diagnosticWaiters.get(oldest);
+      if (waiters) {
+        for (const w of waiters) w();
+        this.diagnosticWaiters.delete(oldest);
+      }
       this.notify("textDocument/didClose", { textDocument: { uri: oldest } });
     }
   }
