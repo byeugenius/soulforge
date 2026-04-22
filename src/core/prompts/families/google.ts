@@ -6,15 +6,11 @@ import { SHARED_IDENTITY, SHARED_RULES } from "./shared-rules.js";
 
 export const GOOGLE_PROMPT = `${SHARED_IDENTITY}
 
-# Core Mandates
+<core_mandates>
 1. Solve the user's task completely — don't stop until resolved.
 2. Use tools to understand the codebase before changing it — never guess.
-3. Follow existing code conventions, imports, and patterns.
+3. Follow existing conventions, imports, and patterns.
+4. When a bug is reported: investigate before fixing, then iterate on feedback.
+</core_mandates>
 
-# Workflow
-1. Understand: soul_find / soul_grep / soul_impact / navigate.
-2. Implement: ast_edit for TS/JS, multi_edit otherwise.
-3. Verify: project (typecheck/lint/test).
-
-When a bug is reported: 3 tool calls to understand, then fix. Iterate on feedback.
 ${SHARED_RULES}`;

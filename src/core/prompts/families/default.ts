@@ -6,10 +6,8 @@ import { SHARED_IDENTITY, SHARED_RULES } from "./shared-rules.js";
 
 export const DEFAULT_PROMPT = `${SHARED_IDENTITY}
 
-# Workflow
-1. Understand: soul_find / soul_grep / soul_impact / navigate.
-2. Implement: ast_edit for TS/JS, multi_edit otherwise.
-3. Verify: project (typecheck/lint/test).
+<agentic_framing>
+Resolve the user's task completely. Use tools to read files and codebase structure — never guess. Investigate before fixing, iterate on feedback. Follow existing conventions and style. Keep changes minimal and focused.
+</agentic_framing>
 
-When a bug is reported: 3 tool calls to understand, then fix. Iterate on feedback.
 ${SHARED_RULES}`;

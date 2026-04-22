@@ -53,12 +53,6 @@ describe("family prompt content", () => {
     }
   });
 
-  test("all family prompts reference soul tools", () => {
-    for (const prompt of [CLAUDE_PROMPT, OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
-      expect(prompt).toContain("soul_find");
-    }
-  });
-
   test("all family prompts include answer-voice compression rules", () => {
     for (const prompt of [CLAUDE_PROMPT, OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
       expect(prompt).toContain("<answer_voice>");
@@ -67,20 +61,20 @@ describe("family prompt content", () => {
 
   test("all family prompts prohibit unsolicited commits", () => {
     for (const prompt of [CLAUDE_PROMPT, OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
-      expect(prompt).toContain("Only commit changes when the user explicitly asks you to");
+      expect(prompt).toContain("Only commit when the user explicitly asks");
     }
   });
 
-  test("claude prompt has workflow section", () => {
-    expect(CLAUDE_PROMPT).toContain("<workflow>");
+  test("claude prompt has tonal delta", () => {
+    expect(CLAUDE_PROMPT).toContain("<tone>");
   });
 
   test("openai prompt has agent framing", () => {
-    expect(OPENAI_PROMPT).toContain("keep going until");
+    expect(OPENAI_PROMPT).toContain("Keep going until");
   });
 
   test("google prompt has structured mandates", () => {
-    expect(GOOGLE_PROMPT).toContain("Core Mandates");
+    expect(GOOGLE_PROMPT).toContain("<core_mandates>");
   });
 });
 
@@ -102,19 +96,20 @@ describe("buildSystemPrompt assembly", () => {
   test("includes family prompt for the model", () => {
     const prompt = buildSystemPrompt(baseOpts());
     expect(prompt).toContain("Forge");
-    expect(prompt).toContain("<workflow>"); // claude-specific
+    expect(prompt).toContain("<tone>"); // claude-specific tonal delta
   });
 
   test("includes tool guidance when repo map is ready", () => {
     const prompt = buildSystemPrompt(baseOpts({ hasRepoMap: true }));
     expect(prompt).toContain("Soul Map");
-    expect(prompt).toContain("Decision flow");
+    expect(prompt).toContain("<workflow>");
+    expect(prompt).toContain("<ast_edit>");
   });
 
   test("includes no-map guidance when repo map not ready", () => {
     const prompt = buildSystemPrompt(baseOpts({ hasRepoMap: false }));
     expect(prompt).toContain("dedicated tools over shell");
-    expect(prompt).not.toContain("Decision flow");
+    expect(prompt).not.toContain("<workflow>");
   });
 
   test("does not include cwd, projectInfo, or memory", () => {
@@ -146,8 +141,8 @@ describe("buildSystemPrompt assembly", () => {
   test("uses correct family for different models", () => {
     const claude = buildSystemPrompt(baseOpts({ modelId: "anthropic/claude-opus-4" }));
     const openai = buildSystemPrompt(baseOpts({ modelId: "openai/gpt-4o" }));
-    expect(claude).toContain("<workflow>"); // claude-specific
-    expect(openai).toContain("keep going until"); // openai-specific
+    expect(claude).toContain("<tone>"); // claude-specific tonal delta
+    expect(openai).toContain("Keep going until"); // openai-specific agentic framing
   });
 });
 

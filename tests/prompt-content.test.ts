@@ -6,27 +6,47 @@ import { OPENAI_PROMPT } from "../src/core/prompts/families/openai";
 import { CORE_RULES, SHARED_IDENTITY, SHARED_RULES } from "../src/core/prompts/families/shared-rules";
 import { TOOL_GUIDANCE_WITH_MAP } from "../src/core/prompts/shared/tool-guidance";
 
+// After the 2026 restructure:
+// - Tool-selection / workflow / ast_edit examples live ONCE in TOOL_GUIDANCE_WITH_MAP.
+// - Family files carry only a tonal delta (<tone> / <agentic_framing> / <core_mandates>).
+// - SHARED_RULES is a tight <task_discipline> block (no more generic architecture homilies).
+
 describe("shared-rules content", () => {
-  test("contains tool usage and verification guidance", () => {
-    expect(SHARED_RULES).toContain("# Tool usage");
-    expect(SHARED_RULES).toContain("project");
+  test("is a tight task_discipline block", () => {
+    expect(SHARED_RULES).toContain("<task_discipline>");
+    expect(SHARED_RULES).toContain("Read code before modifying");
   });
 
-  test("contains commit-to-decisions guidance", () => {
-    expect(SHARED_RULES).toContain("Commit to an approach");
+  test("enforces commit etiquette", () => {
+    expect(SHARED_RULES).toContain("Only commit when the user explicitly asks");
+    expect(SHARED_RULES).toContain("Conventional commits");
   });
 
-  test("does not contain pruning awareness (dropped)", () => {
-    expect(SHARED_RULES).not.toContain("summarized automatically");
-    expect(SHARED_RULES).not.toContain("survive summarization");
+  test("dropped generic architecture homilies", () => {
+    expect(SHARED_RULES).not.toContain("Code architecture");
+    expect(SHARED_RULES).not.toContain("Avoid god files");
+    expect(SHARED_RULES).not.toContain("Compose over inherit");
+  });
+
+  test("does not duplicate tool-selection (moved to TOOL_GUIDANCE_WITH_MAP)", () => {
+    expect(SHARED_RULES).not.toContain("ast_edit is the default");
+    expect(SHARED_RULES).not.toContain("soul_find");
   });
 });
 
 describe("shared-identity content", () => {
-  test("enforces silent tool loop in the identity block", () => {
-    expect(SHARED_IDENTITY).toContain("<silent_tool_loop>");
+  test("enforces the tool loop contract", () => {
+    expect(SHARED_IDENTITY).toContain("<tool_loop>");
     expect(SHARED_IDENTITY).toContain("<forbidden_between_tool_calls>");
-    expect(SHARED_IDENTITY).toContain("Between tool calls: silence");
+    expect(SHARED_IDENTITY).toContain("<answer_voice>");
+  });
+
+  test("collapsed four overlapping sections into two", () => {
+    // Old sections are gone; their content folded into <tool_loop> + <answer_voice>.
+    expect(SHARED_IDENTITY).not.toContain("<output_contract>");
+    expect(SHARED_IDENTITY).not.toContain("<silent_tool_loop>");
+    expect(SHARED_IDENTITY).not.toContain("<when_to_speak>");
+    expect(SHARED_IDENTITY).not.toContain("<clarity_exceptions>");
   });
 
   test("exposes CORE_RULES single-source micro-prompt", () => {
@@ -35,76 +55,90 @@ describe("shared-identity content", () => {
   });
 });
 
-describe("claude prompt content", () => {
-  test("has positive execution-style section (not forbidden-patterns)", () => {
-    expect(CLAUDE_PROMPT).toContain("<execution-style>");
-    expect(CLAUDE_PROMPT).not.toContain("<forbidden-patterns>");
+describe("family prompts carry only tonal delta", () => {
+  test("claude has tone block, no duplicated workflow", () => {
+    expect(CLAUDE_PROMPT).toContain("<tone>");
+    expect(CLAUDE_PROMPT).not.toContain("<workflow>");
+    expect(CLAUDE_PROMPT).not.toContain("soul_find");
   });
 
-  test("has workflow section (not separate working-on-a-task + code-execution)", () => {
-    expect(CLAUDE_PROMPT).toContain("<workflow>");
-    expect(CLAUDE_PROMPT).not.toContain("<working-on-a-task>");
-    expect(CLAUDE_PROMPT).not.toContain("<code-execution>");
+  test("openai has agentic framing, no duplicated workflow", () => {
+    expect(OPENAI_PROMPT).toContain("<agentic_framing>");
+    expect(OPENAI_PROMPT).toContain("Keep going until");
+    expect(OPENAI_PROMPT).not.toContain("<workflow>");
+    expect(OPENAI_PROMPT).not.toContain("soul_find");
   });
 
-  test("does not contain user-preferences section (merged into workflow)", () => {
-    expect(CLAUDE_PROMPT).not.toContain("<user-preferences>");
+  test("google has core mandates, no duplicated workflow", () => {
+    expect(GOOGLE_PROMPT).toContain("<core_mandates>");
+    expect(GOOGLE_PROMPT).not.toContain("<workflow>");
+    expect(GOOGLE_PROMPT).not.toContain("soul_find");
   });
 
-  test("references soul tools and soul map", () => {
-    expect(CLAUDE_PROMPT).toContain("Soul Map");
-    expect(CLAUDE_PROMPT).toContain("soul_find");
-    expect(CLAUDE_PROMPT).toContain("soul_grep");
+  test("default has agentic framing scaffold, no duplicated workflow", () => {
+    expect(DEFAULT_PROMPT).toContain("<agentic_framing>");
+    expect(DEFAULT_PROMPT).not.toContain("<workflow>");
+    expect(DEFAULT_PROMPT).not.toContain("soul_find");
+  });
+
+  test("no family re-declares silent-tool-use (lives in SHARED_IDENTITY)", () => {
+    for (const prompt of [CLAUDE_PROMPT, OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
+      expect(prompt).not.toContain("# Silent tool use");
+    }
+  });
+
+  test("no family mentions Task tool (legacy)", () => {
+    for (const prompt of [CLAUDE_PROMPT, OPENAI_PROMPT, GOOGLE_PROMPT, DEFAULT_PROMPT]) {
+      expect(prompt).not.toContain("Task tool");
+    }
   });
 });
 
 describe("tool guidance content", () => {
-  test("mentions navigate reaching into dependency stubs for type info", () => {
-    expect(TOOL_GUIDANCE_WITH_MAP).toContain("type info");
-    expect(TOOL_GUIDANCE_WITH_MAP).toContain("node_modules");
+  test("uses XML structure per 2026 context-engineering guidance", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<tool_usage>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<workflow>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<soul_map_usage>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<tool_selection>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<ast_edit>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<non_ts_edits>");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("<dispatch>");
   });
 
-  test("mentions dep param for dependency search", () => {
+  test("is the single source for the workflow recipe", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("PLAN from the Soul Map");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("ast_edit for TS/JS");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("project (typecheck/lint/test)");
+  });
+
+  test("contains ast_edit canonical examples (MICRO / BODY / ATOMIC / CREATE)", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("MICRO");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("BODY");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("ATOMIC");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("CREATE");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("operations:");
+  });
+
+  test("keeps navigate / dep-search / soul_impact guidance", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("navigate");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("node_modules");
     expect(TOOL_GUIDANCE_WITH_MAP).toContain("dep");
     expect(TOOL_GUIDANCE_WITH_MAP).toContain("package manager");
-  });
-
-  test("does not duplicate navigate action list (removed)", () => {
-    expect(TOOL_GUIDANCE_WITH_MAP).not.toContain("navigate(definition, symbol=");
-    expect(TOOL_GUIDANCE_WITH_MAP).not.toContain("navigate(references, symbol=");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("soul_impact");
   });
 
   test("keeps shell and git guidance", () => {
-    expect(TOOL_GUIDANCE_WITH_MAP).toContain("shell");
     expect(TOOL_GUIDANCE_WITH_MAP).toContain("git");
-  });
-});
-
-describe("all family prompts", () => {
-  test("openai references soul tools", () => {
-    expect(OPENAI_PROMPT).toContain("soul_find");
-    expect(OPENAI_PROMPT).not.toContain("Task tool");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("soul_vision");
   });
 
-  test("google references soul tools", () => {
-    expect(GOOGLE_PROMPT).toContain("soul_find");
-    expect(GOOGLE_PROMPT).not.toContain("Task tool");
+  test("keeps dispatch directives with BAD/GOOD pair", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("BAD:");
+    expect(TOOL_GUIDANCE_WITH_MAP).toContain("GOOD:");
   });
 
-  test("default references soul tools", () => {
-    expect(DEFAULT_PROMPT).toContain("soul_find");
-    expect(DEFAULT_PROMPT).not.toContain("Task tool");
-  });
-
-  test("all families include verification step", () => {
-    expect(OPENAI_PROMPT).toContain("typecheck/lint/test");
-    expect(GOOGLE_PROMPT).toContain("typecheck/lint/test");
-    expect(DEFAULT_PROMPT).toContain("typecheck/lint/test");
-  });
-
-  test("no family has duplicate silent-tool-use section (moved to shared-rules)", () => {
-    expect(OPENAI_PROMPT).not.toContain("# Silent tool use");
-    expect(GOOGLE_PROMPT).not.toContain("# Silent tool use");
-    expect(DEFAULT_PROMPT).not.toContain("# Silent tool use");
+  test("does not duplicate navigate action list", () => {
+    expect(TOOL_GUIDANCE_WITH_MAP).not.toContain("navigate(definition, symbol=");
+    expect(TOOL_GUIDANCE_WITH_MAP).not.toContain("navigate(references, symbol=");
   });
 });

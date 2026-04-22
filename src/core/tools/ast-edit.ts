@@ -82,18 +82,18 @@ function getBackend(cwd: string): TsMorphBackend {
 export const astEditTool = {
   name: "ast_edit",
   description:
-    "[TIER-1, PREFER FOR TS/JS] AST-addressed edit for TS/JS files (.ts, .tsx, .js, .jsx, .mts, .cts, .mjs, .cjs). " +
-    "First-choice tool over edit_file/multi_edit when the project is TS/JS — locates symbols by target+name via ts-morph AST, " +
-    "no oldString, no whitespace/escape failures, no line-offset drift. " +
-    'Creates new files: action="create_file", newCode=<full file content>. ' +
-    "Single op: pass action, target, name, newCode/value. " +
-    "Multi-op (atomic, single file): pass operations array [{action, target, name, ...}, ...] — all-or-nothing rollback. " +
-    "Idempotent: add_import / add_named_import / add_named_reexport merge into existing declarations, add_constructor modifies if one exists. " +
-    "Safe defaults: rename = declaration-only (use rename_global for project-wide). " +
-    "AST-anchored text fallback: replace_in_body for substring tweaks inside a symbol's body. " +
-    "CANNOT target: anonymous callbacks (inline arrows/IIFEs/object-literal methods without names), discriminated-union members inside a type alias (use `replace` on target:'type' + name=AliasName + newCode=<full alias text>). " +
-    "For arrow-functions stored in `const foo = async (…) => {…}` use target:'arrow_function' + name='foo'. " +
-    "insert_text REQUIRES an anchor: index=0 top, index=-1 bottom, value='after-imports'|'before-exports', or numeric slot. No silent default.",
+    "[TIER-1, DEFAULT FOR TS/JS] AST edit for .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs. " +
+    "Locates symbols via ts-morph by {target, name} — no oldString, no line drift. " +
+    "Single op: {action, target, name, value?, newCode?, index?}. " +
+    "Multi-op (atomic, same file): {operations:[{...}, ...]} — all-or-nothing rollback. " +
+    "Create files: action='create_file', newCode=<full content>. " +
+    "Targets: function|class|interface|type|enum|variable|method|property|constructor|arrow_function. " +
+    "Class members: name='ClassName.memberName' or just 'memberName'. Arrow const: target='arrow_function', name='foo'. " +
+    "Idempotent: add_import/add_named_import/add_named_reexport merge; add_constructor modifies in place. " +
+    "Safe defaults: rename = declaration-only; use rename_global or rename_symbol for project-wide. " +
+    "CANNOT target anonymous callbacks or union members inside a type alias — use replace on the whole symbol, or replace_in_body for AST-anchored text tweaks. " +
+    "insert_text requires an anchor (index=0|-1 or value='after-imports'|'before-exports'). " +
+    "See the <ast_edit> section of the system tool_usage block for the full operation taxonomy and examples.",
   execute: async (args: AstEditArgs): Promise<ToolResult> => {
     try {
       const filePath = resolve(args.path);
