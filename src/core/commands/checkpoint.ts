@@ -96,7 +96,7 @@ async function handleCheckpointUndo(input: string, ctx: CommandContext): Promise
     targetIndex = active[active.length - 2]?.index ?? 1;
   }
 
-  const result = await store.undoToCheckpoint(tabId, targetIndex, ctx.cwd);
+  const result = await store.undoToCheckpoint(tabId, targetIndex, ctx.cwd, ctx.chat.messages);
   if (!result) {
     sysMsg(ctx, `Cannot undo to checkpoint #${String(targetIndex)}.`);
     return;
@@ -115,7 +115,7 @@ async function handleCheckpointUndo(input: string, ctx: CommandContext): Promise
 async function handleCheckpointRedo(_input: string, ctx: CommandContext): Promise<void> {
   const tabId = ctx.tabMgr.activeTabId;
   const store = useCheckpointStore.getState();
-  const result = await store.redo(tabId, ctx.cwd);
+  const result = await store.redo(tabId, ctx.cwd, ctx.chat.messages);
   if (!result) {
     sysMsg(ctx, "Nothing to redo.");
     return;

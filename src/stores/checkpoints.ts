@@ -31,10 +31,18 @@ export interface Checkpoint {
   lineDelta: [number, number];
   gitTag: string | null;
   status: "running" | "done" | "error";
-  /** Messages from conversation start through this checkpoint */
-  messagesSnapshot: ChatMessage[];
   /** True when this checkpoint has been undone */
   undone: boolean;
+}
+
+/**
+ * Redo entry — holds the messages that were dropped by an undo so they can be
+ * restored. Kept separate from Checkpoint so the live checkpoint list never
+ * retains historical message arrays.
+ */
+interface RedoEntry {
+  checkpoint: Checkpoint;
+  droppedMessages: ChatMessage[];
 }
 
 export interface FileConflict {
@@ -132,7 +140,7 @@ function extractFilesFromToolCalls(msg: ChatMessage): { read: string[]; edited: 
 interface PerTab {
   checkpoints: Checkpoint[];
   viewing: number | null; // null = live
-  redoStack: Checkpoint[];
+  redoStack: RedoEntry[];
   lastSyncedLen: number;
   /** Tags waiting to be applied — set by restoreTagsFromMeta before syncFromMessages runs */
   _pendingTags?: Array<{ index: number; anchorMessageId: string; gitTag: string }>;
@@ -153,8 +161,13 @@ interface CheckpointState {
 
   // Git operations
   createGitTag(tabId: string, index: number, cwd: string): Promise<boolean>;
-  undoToCheckpoint(tabId: string, index: number, cwd: string): Promise<UndoResult | null>;
-  redo(tabId: string, cwd: string): Promise<RedoResult | null>;
+  undoToCheckpoint(
+    tabId: string,
+    index: number,
+    cwd: string,
+    liveMessages: ChatMessage[],
+  ): Promise<UndoResult | null>;
+  redo(tabId: string, cwd: string, liveMessages: ChatMessage[]): Promise<RedoResult | null>;
   canRedo(tabId: string): boolean;
   getRedoCount(tabId: string): number;
 
@@ -214,7 +227,6 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
           lineDelta: [0, 0],
           gitTag: null,
           status: "running",
-          messagesSnapshot: [],
           undone: false,
         };
         checkpoints.push(current);
@@ -245,20 +257,6 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
           current.durationMs = lastMsg.timestamp - current.startedAt;
         }
       }
-    }
-
-    // Build message snapshots
-    let cpIdx = 0;
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      if (!msg) continue;
-      if (msg.role === "user" && !msg.isSteering) cpIdx++;
-      const cp = checkpoints[cpIdx - 1];
-      if (cp) cp.messagesSnapshot = messages.slice(0, i + 1);
-    }
-    // Ensure last checkpoint has full snapshot if still running
-    if (current && current.status === "running") {
-      current.messagesSnapshot = [...messages];
     }
 
     // Preserve git tags and undone state from previous state
@@ -383,6 +381,7 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
     tabId: string,
     targetIndex: number,
     cwd: string,
+    liveMessages: ChatMessage[],
   ): Promise<UndoResult | null> {
     const tab = getTab(get().tabs, tabId);
     const targetCp = tab.checkpoints.find((c) => c.index === targetIndex);
@@ -391,6 +390,30 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
     // Collect all checkpoints after target that will be undone
     const toUndo = tab.checkpoints.filter((c) => c.index > targetIndex && !c.undone);
     if (toUndo.length === 0) return null;
+
+    // Slice messages at the target anchor. Everything after is "dropped" —
+    // stashed into the redo stack so a subsequent redo can restore them.
+    const anchorIdx = liveMessages.findIndex((m) => m.id === targetCp.anchorMessageId);
+    const messages = anchorIdx >= 0 ? liveMessages.slice(0, anchorIdx + 1) : liveMessages;
+    const droppedMessages = anchorIdx >= 0 ? liveMessages.slice(anchorIdx + 1) : [];
+
+    // Bucket dropped messages by which undone checkpoint they belonged to,
+    // so each RedoEntry only holds its own slice (not cumulative).
+    const redoBuckets = new Map<string, ChatMessage[]>();
+    for (const cp of toUndo) redoBuckets.set(cp.anchorMessageId, []);
+    {
+      let activeAnchor: string | null = null;
+      for (const m of droppedMessages) {
+        if (m.role === "user" && !m.isSteering) {
+          // Start of a new undone checkpoint's messages
+          if (redoBuckets.has(m.id)) activeAnchor = m.id;
+        }
+        if (activeAnchor) {
+          const bucket = redoBuckets.get(activeAnchor);
+          if (bucket) bucket.push(m);
+        }
+      }
+    }
 
     // Collect all files that need reverting
     const filesToRevert = new Set<string>();
@@ -448,18 +471,19 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
       });
     }
 
-    // The messages to keep = target checkpoint's snapshot
-    const messages = targetCp.messagesSnapshot;
-
     // Use functional updater — async file I/O above may have allowed syncFromMessages to run
     set((s) => {
       const freshTab = s.tabs[tabId] ?? emptyTab();
       const newCheckpoints = freshTab.checkpoints.map((cp) =>
         cp.index > targetIndex ? { ...cp, undone: true } : cp,
       );
+      const newEntries: RedoEntry[] = toUndo.map((cp) => ({
+        checkpoint: { ...cp },
+        droppedMessages: redoBuckets.get(cp.anchorMessageId) ?? [],
+      }));
       // Redo stack: sorted ascending by index for FIFO redo order
-      const newRedoStack = [...freshTab.redoStack, ...toUndo.map((cp) => ({ ...cp }))].sort(
-        (a, b) => a.index - b.index,
+      const newRedoStack = [...freshTab.redoStack, ...newEntries].sort(
+        (a, b) => a.checkpoint.index - b.checkpoint.index,
       );
       return {
         tabs: {
@@ -477,25 +501,26 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
     return { messages, restoredFiles, conflicts };
   },
 
-  async redo(tabId: string, cwd: string): Promise<RedoResult | null> {
+  async redo(tabId: string, cwd: string, liveMessages: ChatMessage[]): Promise<RedoResult | null> {
     const tab = getTab(get().tabs, tabId);
     if (tab.redoStack.length === 0) return null;
 
-    // Pop the FIRST undone checkpoint (FIFO — redo in chronological order)
+    // Pop the FIRST undone entry (FIFO — redo in chronological order)
     const toRedo = tab.redoStack[0];
     if (!toRedo) return null;
+    const redoCp = toRedo.checkpoint;
 
     // Restore files to the redo checkpoint's state.
     // Unlike undo, redo MUST use the checkpoint's own tag — a prior tag would
     // restore to the state BEFORE this checkpoint's edits, which is wrong.
-    const allFiles = new Set(toRedo.filesEdited);
+    const allFiles = new Set(redoCp.filesEdited);
     const restoredFiles: string[] = [];
-    if (toRedo.gitTag && allFiles.size > 0) {
+    if (redoCp.gitTag && allFiles.size > 0) {
       await withGitLock(cwd, async () => {
         const { writeFile } = await import("node:fs/promises");
         for (const absPath of allFiles) {
           const relPath = relative(cwd, absPath);
-          const result = await gitRun(["show", `${toRedo.gitTag}:${relPath}`], cwd, 10_000);
+          const result = await gitRun(["show", `${redoCp.gitTag}:${relPath}`], cwd, 10_000);
           if (result.ok) {
             await writeFile(absPath, result.stdout);
             restoredFiles.push(absPath);
@@ -504,14 +529,14 @@ export const useCheckpointStore = create<CheckpointState>()((set, get) => ({
       });
     }
 
-    // Messages = the redo checkpoint's snapshot
-    const messages = toRedo.messagesSnapshot;
+    // Messages = current live + this redo entry's dropped messages
+    const messages = [...liveMessages, ...toRedo.droppedMessages];
 
     // Use functional updater for consistency after async I/O
     set((s) => {
       const freshTab = s.tabs[tabId] ?? emptyTab();
       const newCheckpoints = freshTab.checkpoints.map((cp) =>
-        cp.anchorMessageId === toRedo.anchorMessageId ? { ...cp, undone: false } : cp,
+        cp.anchorMessageId === redoCp.anchorMessageId ? { ...cp, undone: false } : cp,
       );
       const newRedoStack = freshTab.redoStack.slice(1); // FIFO: remove from front
       return {

@@ -47,10 +47,20 @@ export function buildSessionMeta({
     const cpStore = useCheckpointStore.getState();
     const cpState = cpStore.getCheckpoints(tabState.id);
     const redoStack = cpStore.getTab(tabState.id).redoStack;
-    const allCps = [...cpState, ...redoStack];
     const seen = new Set<string>();
     const checkpointTags: Array<{ index: number; anchorMessageId: string; gitTag: string }> = [];
-    for (const cp of allCps) {
+    for (const cp of cpState) {
+      if (cp.gitTag && !seen.has(cp.gitTag)) {
+        seen.add(cp.gitTag);
+        checkpointTags.push({
+          index: cp.index,
+          anchorMessageId: cp.anchorMessageId,
+          gitTag: cp.gitTag,
+        });
+      }
+    }
+    for (const entry of redoStack) {
+      const cp = entry.checkpoint;
       if (cp.gitTag && !seen.has(cp.gitTag)) {
         seen.add(cp.gitTag);
         checkpointTags.push({
