@@ -2,6 +2,104 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.14.0] — 2026-04-24
+
+### Bug Fixes
+
+- **approvals**: prompt locally when Hearth is offline
+- **approvals**: prompt locally when Hearth is offline
+- **ast-edit**: harden replace_in_body + surgical ops
+- **hearth**: hoist redact import in tui-host log sink
+- **hearth**: production hardening sweep (H1-H9, M1-M8)
+- **hearth**: rebuild all surfaces on config reload
+- **hearth**: guard bridge lock against pid reuse
+- **hearth**: tee TuiHost logs to hearth.log for Recent log visibility
+- **hearth**: log imessage inbound + binding miss for debuggability
+- **hearth**: write daemon log to disk; hide token row for iMessage
+- **hearth**: cap attachments at 10 MB, scrub filenames
+- **hearth**: stamp [via <origin>] on remote-surface messages
+- **hearth**: redact bot token in URL-path form
+- **hearth/discord**: intent minimization, fatal-close lockout, 429 retry, allowlist
+- **hearth/imessage**: parameterized SQL, TCC probe, exact approval prefix, rate limit
+- **hearth/telegram**: spoof detection, 429 retry, callback allowlist, rate limit
+- **intelligence**: cap ts-morph SourceFiles and tie LSP diagnostics to doc eviction
+- **intelligence**: stop biome/LSP zombie process leak; report true memory footprint
+- **subagent-tools**: preserve full dispatch result body in aggregate summary
+- **ui**: tighter popup layouts
+- **useChat**: add tabId to unmount effect deps
+- **wizard**: drop fabricated content, correct URL and web-search providers
+### Documentation
+
+- **ast-edit**: add user-facing docs, README feature, pills pill
+- **hearth**: mark as experimental across UI and docs
+- **hearth**: drop iMessage from README and Mintlify
+- overhaul
+- remove legacy /docs (migrated to mintlify-docs)
+### Features
+
+- **ast-edit**: smart-resolve, anchors, arrow targets, robust errors
+- **hearth**: TUI-aware stop and Discord snowflake validation
+- **hearth**: /hearth status reports TUI host as alive
+- **hearth**: TUI steals bridge from daemon and auto-binds on /pair
+- **hearth**: socket peer-auth via SO_PEERCRED / getpeereid
+- **hearth**: persistent daemon service — launchd/systemd unit install
+- **hearth**: remote control surface layer with TUI + daemon hosts
+- **proxy**: dynamic version, self-heal on connection errors, undici fetch
+- **tools**: add ast_edit — surgical ts-morph AST editing for TS/JS
+- **ui**: introduce popup design system primitives
+### Miscellaneous
+
+- **hearth**: use optional chain in telegram handleUpdate
+- **logs**: route boot-path stderr writes through logBackgroundError
+- formatting + minor cleanups
+### Other
+
+- Load instruction files from the home directory (#49)
+
+## Summary
+This fixes a gap in instruction loading: `instructionFiles` could be
+enabled globally, but the loader still only looked in the repo root.
+
+This change:
+- loads enabled instruction sources from both the project directory and
+the user's home directory
+- keeps both project and global instructions in the prompt and makes
+global precedence explicit when both exist
+- adds targeted loader tests and updates the docs for prompt assembly,
+config, and headless behavior
+
+## Testing
+- `bun test tests/instructions-loader.test.ts tests/shiki-marked.test.ts
+tests/prompt-builder.test.ts`
+- `bunx biome check src/core/instructions.ts
+tests/instructions-loader.test.ts`
+### Performance
+
+- **intelligence**: fix 20+ GB worker heap balloon on long sessions
+### Refactor
+
+- **chat,landing**: ast_edit row label + KeyCaps migration + NewFlameLogo
+- **checkpoints**: redo stack stores dropped messages per entry
+- **context**: make cross-tab coordination block passive FYI
+- **hearth**: remove iMessage surface
+- **popups**: drop POPUP_BG/POPUP_HL module exports
+- **popups**: migrate all modals/settings to PremiumPopup + primitives
+- **prompts**: dedupe workflow, XML-structure tool guidance, add ast_edit examples
+- **prompts**: dedupe shared rules, single-source CORE_RULES
+- **prompts**: rewrite identity + output-discipline grammar rules
+- **tool-formatters**: restrict outside-cwd scan to path args
+- **tools**: prefer ast_edit for TS/JS + forge usage telemetry
+- **tools-popup**: drop redundant keyHint checkmark
+- **ui**: VirtualList primitive replaces usePopupScroll
+- **useChat**: consolidate web + fetch approval prompts into permission helper
+- **wizard**: drop dead Feat and SectionLabel primitives
+- **wizard**: rebuild onboarding around docs feature surface
+- **wizard**: migrate onboarding to new UI primitives
+### Testing
+
+- test
+
+Co-Authored-By: SoulForge <soulforge@proxysoul.com>
 ## [2.13.2] — 2026-04-18
 
 ### Bug Fixes
