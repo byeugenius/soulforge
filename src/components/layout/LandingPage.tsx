@@ -8,7 +8,7 @@ import { getThemeTokens, useTheme } from "../../core/theme/index.js";
 import { WORDMARK } from "../../core/utils/splash.js";
 import { useMCPStore } from "../../stores/mcp.js";
 import { useRepoMapStore } from "../../stores/repomap.js";
-import { FlameLogo } from "./FlameLogo.js";
+import { NewFlameLogo as FlameLogo } from "./NewFlameLogo.js";
 
 const BOLD = TextAttributes.BOLD;
 const ITALIC = TextAttributes.ITALIC;

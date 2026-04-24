@@ -69,6 +69,7 @@ export function formatArgs(toolName: string, args?: string): string {
     if (toolName === "edit_file" && parsed.path) return relPath(String(parsed.path));
     if (toolName === "multi_edit" && parsed.path) return relPath(String(parsed.path));
     if (toolName === "undo_edit" && parsed.path) return relPath(String(parsed.path));
+    if (toolName === "ast_edit" && parsed.path) return relPath(String(parsed.path));
     if (toolName === "list_dir" && parsed.path) {
       if (Array.isArray(parsed.path)) {
         const paths = parsed.path.map(String);

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { icon } from "../../core/icons.js";
 import { useTheme } from "../../core/theme/index.js";
 import type { Plan } from "../../types/index.js";
-import { PopupFooterHints } from "../layout/shared.js";
+import { KeyCaps } from "../ui/index.js";
 
 interface Props {
   onAccept: () => void;
@@ -209,12 +209,11 @@ export function PlanReviewPrompt({
             );
           })}
           <box paddingLeft={1}>
-            <PopupFooterHints
-              w={44}
+            <KeyCaps
               hints={[
                 { key: "↑↓", label: "select" },
-                { key: "⏎", label: "confirm" },
-                { key: "esc", label: "cancel" },
+                { key: "Enter", label: "confirm" },
+                { key: "Esc", label: "cancel" },
               ]}
             />
           </box>

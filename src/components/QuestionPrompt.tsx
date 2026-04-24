@@ -6,7 +6,7 @@ import { useTheme } from "../core/theme/index.js";
 import type { ThemeTokens } from "../core/theme/tokens.js";
 import type { PendingQuestion } from "../types/index.js";
 import { Markdown } from "./chat/Markdown.js";
-import { PopupFooterHints } from "./layout/shared.js";
+import { KeyCaps } from "./ui/index.js";
 
 interface Props {
   question: PendingQuestion;
@@ -145,12 +145,11 @@ export function QuestionPrompt({ question, isActive, onAnswer }: Props) {
           {showOther && <OptionRow label="Other" isSelected={selectedIdx === OTHER_IDX} t={t} />}
           {(totalOptions > 1 || question.allowSkip) && (
             <box paddingLeft={1}>
-              <PopupFooterHints
-                w={40}
+              <KeyCaps
                 hints={[
                   ...(totalOptions > 1 ? [{ key: "↑↓", label: "select" }] : []),
-                  { key: "⏎", label: "confirm" },
-                  ...(question.allowSkip ? [{ key: "esc", label: "skip" }] : []),
+                  { key: "Enter", label: "confirm" },
+                  ...(question.allowSkip ? [{ key: "Esc", label: "skip" }] : []),
                 ]}
               />
             </box>

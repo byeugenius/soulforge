@@ -343,12 +343,19 @@ export function buildLiveToolRowProps(
     if (!backend) backend = tc.backend ?? null;
   }
 
-  const { category, categoryColor, backendTag, backendColor } = resolveBackendCategory(
+  let { category, categoryColor, backendTag, backendColor } = resolveBackendCategory(
     toolCategory,
     backend,
   );
 
   const isDone = tc.state !== "running";
+
+  // ast_edit: fold label into category bracket ([morphing]/[morphed] <path>)
+  let labelOverride: string | null = null;
+  if (tc.toolName === "ast_edit") {
+    category = isDone ? "morphed" : "morphing";
+    labelOverride = "";
+  }
   const argStr = formatArgs(tc.toolName, tc.args);
   const outsideKind = detectOutsideCwd(tc.toolName, tc.args);
   const isEdit = EDIT_TOOL_NAMES.has(tc.toolName);
@@ -388,7 +395,7 @@ export function buildLiveToolRowProps(
     isDone,
     icon: iconVal,
     iconColor: iconColorVal,
-    label: labelVal,
+    label: labelOverride ?? labelVal,
     category,
     categoryColor,
     backendTag,
@@ -443,10 +450,17 @@ export function buildFinalToolRowProps(tc: {
   const outsideKind = detectOutsideCwd(tc.name, argsJson);
   const isEdit = EDIT_TOOL_NAMES.has(tc.name);
 
-  const { category, categoryColor, backendTag, backendColor } = resolveBackendCategory(
+  let { category, categoryColor, backendTag, backendColor } = resolveBackendCategory(
     toolDisplay.category,
     tc.result?.backend ?? null,
   );
+
+  // ast_edit: fold label into category bracket ([morphed] <path>)
+  let labelOverride: string | null = null;
+  if (tc.name === "ast_edit") {
+    category = "morphed";
+    labelOverride = "";
+  }
 
   // Status
   const denied =
@@ -489,7 +503,7 @@ export function buildFinalToolRowProps(tc: {
     isDone: true,
     icon: toolDisplay.icon,
     iconColor: toolDisplay.iconColor,
-    label: TOOL_LABELS_DONE[tc.name] ?? toolDisplay.label,
+    label: labelOverride ?? TOOL_LABELS_DONE[tc.name] ?? toolDisplay.label,
     category,
     categoryColor,
     backendTag,
