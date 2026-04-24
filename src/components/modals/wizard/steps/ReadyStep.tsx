@@ -64,7 +64,7 @@ export const ReadyStep = memo(function ReadyStep() {
       </text>
       <VSpacer />
       <text bg={t.bgPopup} fg={t.textFaint}>
-        Docs: <span fg={t.info}>https://soulforge.dev</span>
+        Docs: <span fg={t.info}>https://soulforge.proxysoul.com</span>
       </text>
     </box>
   );

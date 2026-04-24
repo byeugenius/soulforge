@@ -8,7 +8,7 @@ export const ModesStep = memo(function ModesStep() {
     <FeatureList
       heading="Modes — how Forge approaches work"
       headerIcon={icon("plan")}
-      intro="Cycle with Ctrl+D. Default is auto — one-shot execution. Plan is research-only. UltraReview runs a second audit."
+      intro="Cycle with Ctrl+D. Auto runs hands-free. Plan is research-only. Architect/Socratic/Challenge are read-only design passes."
       items={MODE_ITEMS.map((x) => ({ ...x, ic: icon(x.ic) }))}
     />
   );

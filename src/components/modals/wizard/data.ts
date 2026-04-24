@@ -48,7 +48,7 @@ export const STEP_BLURBS: Record<Step, string> = {
   setup: "pick a provider",
   intelligence: "how Forge reads code",
   editing: "AST surgery & LSP",
-  modes: "plan, auto, challenge",
+  modes: "auto, plan, architect",
   workflow: "tabs · sessions · git",
   automation: "agents & compaction",
   remote: "MCP · skills · hearth",
@@ -164,33 +164,34 @@ export const EDITING_ITEMS = [
 
 export const MODE_ITEMS = [
   {
+    ic: "lightning",
+    title: "Auto (default)",
+    cmd: "/mode · Ctrl+D",
+    desc: "Hands-free execution — Forge runs to completion without confirmations",
+    bullets: [
+      "Cycle with Ctrl+D or pick with /mode",
+      "Destructive actions (rm, force push, reset) still prompt",
+    ],
+  },
+  {
     ic: "plan",
-    title: "Plan Mode",
+    title: "Plan",
     cmd: "/session plan",
     desc: "Research-only — Forge investigates and drafts a plan, no edits",
     bullets: [
-      "Review the plan, then flip back to execute mode",
+      "Review the plan, then flip back to auto to execute",
       "Ideal for large refactors before you commit",
     ],
   },
   {
-    ic: "lightning",
-    title: "Auto Mode",
-    cmd: "Ctrl+D",
-    desc: "Hands-free execution — Forge runs to completion without confirmations",
-    bullets: [
-      "Cycle modes with Ctrl+D or pick with /mode",
-      "Other modes: architect · socratic · challenge · explore",
-    ],
-  },
-  {
     ic: "investigate",
-    title: "UltraReview",
-    cmd: "/ultrareview",
-    desc: "Independent review pass — a second model audits the first model's work",
+    title: "Architect · Socratic · Challenge",
+    cmd: "/mode",
+    desc: "Read-only variants — design analysis, guided Q&A, adversarial review",
     bullets: [
-      "Catches regressions, logic bugs, security smells",
-      "Useful before commits or PR submission",
+      "architect: boundaries, tradeoffs, critical-files list",
+      "socratic: tool-first investigation + concrete options",
+      "challenge: evidence-based pushback on proposed approaches",
     ],
   },
 ] as const;
@@ -316,8 +317,11 @@ export const REMOTE_ITEMS = [
     ic: "web",
     title: "Web Search",
     cmd: "/web-search",
-    desc: "Brave, Exa, Tavily, or Google — pluggable keys, per-search budget",
-    bullets: ["Forge cites sources and caches results across the session"],
+    desc: "Brave for results, Jina for page reads — both have generous free tiers",
+    bullets: [
+      "Brave Search API — 2k queries/mo free",
+      "Jina Reader — 10M tokens/mo free for page content",
+    ],
   },
 ] as const;
 

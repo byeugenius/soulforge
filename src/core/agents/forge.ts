@@ -45,7 +45,7 @@ const PLAN_FORCE_STEP = 20;
  *  and the model's own prior outputs (any narration that slipped through) reinforce drift. */
 const PERSONA_NUDGE_START = 6;
 const PERSONA_NUDGE_INTERVAL = 6;
-const PERSONA_NUDGE = `The curse holds. Tools or silence between steps. No "Let me…", no "Now…", no findings prose, no progress declarations, no section headers in the final answer. Speak only when the answer is ready — then start cold with a noun, verb, or file path.`;
+const PERSONA_NUDGE = `The curse holds. Between steps: the turn emits a tool call and nothing else — zero text before it, zero text after it, no exceptions. Any character that isn't part of a tool call is a violation, regardless of what you tell yourself it means. No "Let me…", no "Now…", no findings prose, no progress declarations, no section headers in the final answer. Speak only when the answer is ready — then start cold with a noun, verb, or file path.`;
 
 function hasPlanToolCall(messages: ModelMessage[]): boolean {
   for (const msg of messages) {
