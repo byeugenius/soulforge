@@ -16,6 +16,7 @@ import {
   appendPostEditDiagnostics,
   startPreEditDiagnostics,
 } from "./post-edit-helpers.js";
+import { consumeAstEditNudge } from "./ts-project-detect.js";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".ts",
@@ -82,7 +83,7 @@ function getBackend(cwd: string): TsMorphBackend {
 export const astEditTool = {
   name: "ast_edit",
   description:
-    "[TIER-1, DEFAULT FOR TS/JS] AST edit for .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs. " +
+    "AST edit for TS/JS (.ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs). Default editor for these files — ts-morph locates symbols by {target, name}, no oldString, no line drift. " +
     "Locates symbols via ts-morph by {target, name} — no oldString, no line drift. " +
     "Single op: {action, target, name, value?, newCode?, index?}. " +
     "Multi-op (atomic, same file): {operations:[{...}, ...]} — all-or-nothing rollback. " +
@@ -90,6 +91,11 @@ export const astEditTool = {
     "Targets: function|class|interface|type|enum|variable|method|property|constructor|arrow_function. " +
     "Class members: name='ClassName.memberName' or just 'memberName'. Arrow const: target='arrow_function', name='foo'. " +
     "Idempotent: add_import/add_named_import/add_named_reexport merge; add_constructor modifies in place. " +
+    "Body shape — critical: set_body/add_statement/insert_statement take body CONTENTS ONLY (no surrounding {}, ts-morph wraps). " +
+    "add_method/add_constructor/add_getter/add_setter take the FULL declaration INCLUDING braces (e.g. 'foo(x: number) { return x; }'). " +
+    "replace takes the WHOLE symbol text including braces. " +
+    "add_property on interface: 'name: type' or 'name?: type'; on class: 'name: type = value' or 'name = value'. " +
+    "Import ops: value=module specifier (e.g. 'zod'), newCode=comma-separated names (e.g. 'z' or 'useState,useEffect'); remove_named_import uses value=module and name=single identifier. " +
     "Safe defaults: rename = declaration-only; use rename_global or rename_symbol for project-wide. " +
     "CANNOT target anonymous callbacks or union members inside a type alias — use replace on the whole symbol, or replace_in_body for AST-anchored text tweaks. " +
     "insert_text requires an anchor (index=0|-1 or value='after-imports'|'before-exports'). " +
@@ -241,15 +247,18 @@ export const astEditTool = {
 
       let output: string;
       if (details.length === 1) {
-        output = `Edited ${displayPath(filePath)} → ${details[0]}`;
+        output = details[0] ?? "";
       } else {
-        output = `Applied ${String(details.length)} AST operations to ${displayPath(filePath)}:\n${details.map((d: string) => `  • ${d}`).join("\n")}`;
+        output = `${String(details.length)} ops:\n${details.map((d: string) => `  • ${d}`).join("\n")}`;
       }
       if (deltas.length > 0) output += ` (${deltas.join(", ")})`;
 
       output = await appendAutoFormatResult(filePath, updated, output, args.tabId);
       output = await appendPostEditDiagnostics(diagsPromise, filePath, output);
       output = await appendCloneHints(filePath, output);
+
+      // Consume any pending nudge (no-op after first fire per session)
+      await consumeAstEditNudge(filePath);
 
       return { success: true, output };
     } catch (err: unknown) {

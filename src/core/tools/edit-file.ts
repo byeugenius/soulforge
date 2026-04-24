@@ -14,6 +14,7 @@ import {
   countOccurrences,
   startPreEditDiagnostics,
 } from "./post-edit-helpers.js";
+import { consumeAstEditNudge } from "./ts-project-detect.js";
 
 interface EditFileArgs {
   path: string;
@@ -192,6 +193,9 @@ async function applyEdit(
   output = await appendPostEditDiagnostics(diagsPromise, filePath, output);
   output = await appendCloneHints(filePath, output);
 
+  const nudge = await consumeAstEditNudge(filePath);
+  if (nudge) output += `\n${nudge}`;
+
   return { success: true, output };
 }
 
@@ -211,7 +215,8 @@ function resolveLineRange(
 export const editFileTool = {
   name: "edit_file",
   description:
-    "[TIER-1] Edit a file by replacing content. Read first, then provide path, oldString, newString. " +
+    "Edit a non-TS/JS file by replacing content (JSON, YAML, Markdown, config, raw text). For .ts/.tsx/.js/.jsx/.mts/.cts/.mjs/.cjs files use ast_edit — it's safer and won't drift. " +
+    "Read first, then provide path, oldString, newString. " +
     "Provide lineStart (1-indexed from read output) for reliable line-anchored matching — " +
     "the range is derived from oldString line count. Without lineStart, falls back to string matching (fails if ambiguous). " +
     "Empty oldString creates a new file. Use multi_edit for multiple changes to the same file. " +
@@ -377,7 +382,7 @@ export const editFileTool = {
       const result = await applyEdit(filePath, content, updated, editLine, "", args.tabId);
       if (result.success) {
         result.output +=
-          "\n⚠ lineStart not provided — pass lineStart from read output to make edits escape-proof.";
+          "\n! lineStart not provided — pass lineStart from read output to make edits escape-proof.";
       }
       return result;
     } catch (err: unknown) {

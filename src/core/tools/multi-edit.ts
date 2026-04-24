@@ -15,6 +15,7 @@ import {
   countOccurrences,
   startPreEditDiagnostics,
 } from "./post-edit-helpers.js";
+import { consumeAstEditNudge } from "./ts-project-detect.js";
 
 interface EditEntry {
   oldString: string;
@@ -35,7 +36,8 @@ interface MultiEditArgs {
 export const multiEditTool = {
   name: "multi_edit",
   description:
-    "Apply multiple edits to a single file atomically. All-or-nothing: if any edit fails, ZERO edits are applied. " +
+    "Apply multiple edits to a single non-TS/JS file atomically (JSON, YAML, Markdown, config, raw text). For TS/JS files use ast_edit with operations:[...] — safer and no line drift. " +
+    "All-or-nothing: if any edit fails, ZERO edits are applied. " +
     "lineStart values reference the ORIGINAL file (pre-edit) — the tool tracks cumulative line offsets internally. " +
     "Provide lineStart (1-indexed) for reliable line-anchored matching. Without it, falls back to string matching against evolved content. " +
     "The range is derived from oldString line count.",
@@ -229,6 +231,9 @@ export const multiEditTool = {
         output +=
           "\n⚠ Some edits lacked lineStart — pass lineStart from read output to make edits escape-proof.";
       }
+
+      const nudge = await consumeAstEditNudge(filePath);
+      if (nudge) output += `\n${nudge}`;
 
       return { success: true, output };
     } catch (err: unknown) {

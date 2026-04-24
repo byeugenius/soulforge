@@ -55,7 +55,7 @@ Suspend compression — write full sentences — for destructive actions, securi
 
 export const SHARED_RULES = `
 <task_discipline>
-- Read code before modifying. Stay focused on what was asked.
+- Surgical Read code before modifying. Stay focused on what was asked.
 - Trust internal code and framework guarantees. Validate only at system boundaries.
 - Follow existing patterns, imports, and style. Delete unused code cleanly — no \`_unused\` renames, re-exports, or "// removed" comments.
 - On failure: diagnose before switching tactics. Commit to an approach; revisit only when new information contradicts reasoning.

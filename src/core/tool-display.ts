@@ -210,7 +210,7 @@ export const TOOL_LABELS: Record<string, string> = {
   project: "Project",
   test_scaffold: "Scaffolding tests",
   discover_pattern: "Discovering",
-  ast_edit: "morph",
+  ast_edit: "morphing",
   editor_panel: "Opening editor",
   plan: "Planning",
   update_plan_step: "Updating plan",

@@ -47,6 +47,13 @@ Targets: function | class | interface | type | enum | variable | method | proper
 
 CANNOT target: anonymous callbacks (inline arrows/IIFEs/object-literal methods without names), discriminated-union members inside a type alias — for those use \`replace\` on the whole type, or \`replace_in_body\` (AST-anchored string replace scoped to a named symbol's text).
 
+Body shape — critical, get this wrong and you corrupt the file:
+- \`set_body\` / \`add_statement\` / \`insert_statement\`: newCode is body CONTENTS ONLY — no surrounding \`{}\`. ts-morph wraps it. Passing \`{ … }\` produces \`{ { … } }\`.
+- \`add_method\` / \`add_constructor\` / \`add_getter\` / \`add_setter\`: newCode is the FULL declaration including braces (e.g. \`foo(x: number) { return x + 1; }\`).
+- \`replace\`: newCode is the WHOLE symbol text including its braces (full declaration).
+- \`add_property\` on interface: newCode is \`"name: type"\` or \`"name?: type"\`. On class: \`"name: type = value"\` or \`"name = value"\`.
+- \`add_statement\` on expression-body arrow (\`(x) => x + 1\`) auto-wraps into a block — safe to call.
+
 \`rename\` is declaration-only by default (safe). Use \`rename_global\` for project-wide propagation — or \`rename_symbol\` / \`move_symbol\` / \`rename_file\` for cross-file refactors.
 
 Examples:
@@ -62,7 +69,7 @@ ast_edit(path, action:"add_statement", target:"function", name:"loadConfig",
 
 // ATOMIC — add import, then add a method that uses it
 ast_edit(path, operations: [
-  { action:"add_named_import", value:"z",            newCode:"zod" },
+  { action:"add_named_import", value:"zod",          newCode:"z" },
   { action:"add_method",       target:"class", name:"Validator",
     newCode:"validate(input: unknown) { return z.string().parse(input); }" }
 ])

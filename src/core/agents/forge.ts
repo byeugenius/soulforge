@@ -107,7 +107,18 @@ function buildForgePrepareStep(
       }
     : null;
 
-  type StepEntry = { providerMetadata?: Record<string, unknown> };
+  type StepEntry = {
+    providerMetadata?: Record<string, unknown>;
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      inputTokenDetails?: {
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        noCacheTokens?: number;
+      };
+    };
+  };
   return async ({
     stepNumber,
     messages,
@@ -364,11 +375,34 @@ function buildForgePrepareStep(
           return p;
         });
       };
+      const lastStep = steps.length > 0 ? steps[steps.length - 1] : undefined;
+      const prevUsage = lastStep?.usage;
+      const previousStepUsage = prevUsage
+        ? (() => {
+            const d = prevUsage.inputTokenDetails;
+            const cacheRead = d?.cacheReadTokens ?? 0;
+            const cacheWrite = d?.cacheWriteTokens ?? 0;
+            const noCache = d?.noCacheTokens ?? 0;
+            const inputTokens = prevUsage.inputTokens ?? 0;
+            const cacheableInput = cacheRead + cacheWrite + noCache;
+            const hitRatio = cacheableInput > 0 ? cacheRead / cacheableInput : 0;
+            return {
+              inputTokens,
+              outputTokens: prevUsage.outputTokens ?? 0,
+              cacheReadTokens: cacheRead,
+              cacheWriteTokens: cacheWrite,
+              noCacheTokens: noCache,
+              cacheHitRatio: Number(hitRatio.toFixed(3)),
+            };
+          })()
+        : null;
+
       const exportData = {
         agent: "forge",
         step: stepNumber,
         timestamp: new Date().toISOString(),
         messageCount: msgs.length,
+        previousStepUsage,
         messages: msgs.map((m, i) => {
           const content = serializeContent(m.content);
           const charCount =
