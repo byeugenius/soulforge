@@ -104,7 +104,6 @@ type Project = import("ts-morph").Project;
 type SourceFile = import("ts-morph").SourceFile;
 type Node = import("ts-morph").Node;
 
-/** A single surgical AST operation — from micro-edit to full replacement. */
 export interface SurgicalOperation {
   action: string;
   /** Symbol kind: function, class, interface, type, enum, variable, constant */
@@ -117,6 +116,14 @@ export interface SurgicalOperation {
   newCode?: string;
   /** Statement index for insert_statement / remove_statement */
   index?: number;
+  /**
+   * For replace_in_body only — optional end-anchor to replace a RANGE between
+   * `value` (start anchor) and `valueEnd` (end anchor). Both anchors must each
+   * appear exactly once inside the symbol's text, and valueEnd must follow value.
+   * The entire span [start-of-value … end-of-valueEnd] is replaced with newCode.
+   * Lets you rewrite a 100-line block with ~20 tokens of anchor text.
+   */
+  valueEnd?: string;
 }
 
 /** Result from surgicalEdit() — before/after content for the CAS + undo pipeline. */
@@ -2294,49 +2301,92 @@ export class TsMorphBackend implements IntelligenceBackend {
 
       case "replace_in_body": {
         // AST-anchored string replacement scoped to a symbol's text range.
-        // Inputs: target+name (locates the node), value (substring to find — must be unique
-        // within the node's text), newCode (replacement). Resolves the "arbitrary text
-        // tweak inside a function body" case where AST has no dedicated mutator.
-        if (!op.value) throw new Error("replace_in_body requires value (substring to find)");
+        // Three modes, picked by shape of args:
+        //   1. Exact/fuzzy substring  — value + newCode
+        //   2. Anchor pair (RANGE)    — value + valueEnd + newCode (replaces span between anchors)
+        //   3. (Future) line numbers  — value as digit string + valueEnd as digit string
+        // Whitespace drift (tab↔space, CRLF, leading indent) is handled automatically.
+        if (!op.value) throw new Error("replace_in_body requires value (substring/anchor to find)");
         if (op.newCode === undefined)
           throw new Error("replace_in_body requires newCode (replacement text)");
-        const nodeStart = node.getStart();
-        const nodeEnd = node.getEnd();
         const nodeText = node.getFullText();
-        const haystack = nodeText;
-        const needle = op.value;
-        const firstIdx = haystack.indexOf(needle);
-        if (firstIdx === -1) {
-          throw new Error(
-            `replace_in_body: substring not found inside ${op.target} "${op.name}". ` +
-              `Check exact spacing/quotes. Body preview:\n${haystack.slice(0, 400)}${
-                haystack.length > 400 ? "\n…(truncated)" : ""
-              }`,
-          );
-        }
-        const secondIdx = haystack.indexOf(needle, firstIdx + needle.length);
-        if (secondIdx !== -1) {
-          throw new Error(
-            `replace_in_body: substring is ambiguous (found at least twice) inside ${op.target} "${op.name}". ` +
-              `Include more surrounding context in 'value' to make the match unique.`,
-          );
-        }
-        // Compute absolute file positions and apply via source-file level replaceText
-        // so ts-morph keeps the AST consistent and invalidates descendants correctly.
-        const absStart =
-          nodeStart - (nodeEnd - nodeStart) + (nodeText.length - haystack.length) + firstIdx;
-        // Use getFullStart offset math: node.getFullText() starts at node.getFullStart()
         const absFullStart = node.getFullStart();
-        const from = absFullStart + firstIdx;
-        const to = from + needle.length;
-        // Guard rail: the range must sit inside the node's text span.
+
+        const findOneIn = (
+          hay: string,
+          raw: string,
+          label: string,
+        ): { index: number; length: number } => {
+          // Try 3 passes in order of specificity — stop at first unique hit.
+          const passes: Array<{ needle: string; matcher: "exact" | "fuzzy" }> = [
+            { needle: raw, matcher: "exact" },
+            { needle: stripCommonIndent(raw), matcher: "exact" },
+            { needle: raw, matcher: "fuzzy" },
+          ];
+          for (const { needle, matcher } of passes) {
+            if (!needle) continue;
+            if (matcher === "exact") {
+              const first = hay.indexOf(needle);
+              if (first === -1) continue;
+              const second = hay.indexOf(needle, first + needle.length);
+              if (second !== -1) {
+                // Ambiguous — DO NOT fall through. Force the caller to disambiguate.
+                throw new Error(
+                  `replace_in_body: ${label} is ambiguous (found ≥2 exact matches) inside ${op.target} "${op.name}". ` +
+                    `Add more surrounding context to make the anchor unique, or use an anchor pair (value + valueEnd).`,
+                );
+              }
+              return { index: first, length: needle.length };
+            }
+            // fuzzy (only useful for multi-line needles)
+            if (!needle.includes("\n")) continue;
+            const hit = fuzzyMatchMultilineInText(hay, needle);
+            if (hit) return hit;
+          }
+          const bodyPreview =
+            hay.length > 1200
+              ? `${hay.slice(0, 1200)}\n…(truncated — ${String(hay.length)} chars total)`
+              : hay;
+          const valPreview =
+            raw.length > 300
+              ? `${raw.slice(0, 300)}…(${label} has ${String(raw.length)} chars)`
+              : raw;
+          const hint =
+            raw.length > 200
+              ? `\nHINT: ${label} is long — use an anchor pair (value + valueEnd, each 1-2 unique lines) to replace a large range, or \`replace\` on the whole symbol for full rewrites.`
+              : "";
+          throw new Error(
+            `replace_in_body: ${label} not found inside ${op.target} "${op.name}".${hint}\nSearched for:\n${valPreview}\n\nActual body:\n${bodyPreview}`,
+          );
+        };
+
+        let fromRel: number;
+        let toRel: number;
+        let modeDesc: string;
+
+        if (op.valueEnd) {
+          // ── ANCHOR PAIR: replace span between two short anchors ──
+          const startHit = findOneIn(nodeText, op.value, "value (start anchor)");
+          const searchAfter = nodeText.slice(startHit.index + startHit.length);
+          const endHit = findOneIn(searchAfter, op.valueEnd, "valueEnd (end anchor)");
+          fromRel = startHit.index;
+          toRel = startHit.index + startHit.length + endHit.index + endHit.length;
+          modeDesc = `anchors (${String(toRel - fromRel)} chars)`;
+        } else {
+          // ── SINGLE ANCHOR: exact → dedented → fuzzy ──
+          const hit = findOneIn(nodeText, op.value, "value");
+          fromRel = hit.index;
+          toRel = hit.index + hit.length;
+          modeDesc = `substring (${String(hit.length)} chars)`;
+        }
+
+        const from = absFullStart + fromRel;
+        const to = absFullStart + toRel;
         if (from < absFullStart || to > absFullStart + nodeText.length) {
           throw new Error("replace_in_body: computed range outside node — aborting");
         }
         sf.replaceText([from, to], op.newCode);
-        // Silence unused-variable — kept for clarity during review of the math above.
-        void absStart;
-        return `Replaced substring in ${op.target} "${op.name}" (${String(needle.length)} → ${String(op.newCode.length)} chars)`;
+        return `Replaced ${modeDesc} in ${op.target} "${op.name}" → ${String(op.newCode.length)} chars`;
       }
 
       default:
@@ -2765,4 +2815,89 @@ export class TsMorphBackend implements IntelligenceBackend {
     }
     return out;
   }
+}
+/**
+ * Whitespace-tolerant multi-line substring match inside a node's text.
+ * Returns the absolute offset + matched length in `haystack`, or null.
+ *
+ * Handles the realistic failure modes of `replace_in_body` with long needles:
+ *   - tab ↔ space indent drift
+ *   - CRLF ↔ LF line endings
+ *   - trailing whitespace variance
+ *   - leading/trailing blank-line drift
+ *
+ * Strategy: split both sides into lines, normalize each line (strip leading
+ * whitespace, rtrim, strip CR), then slide the needle's normalized lines over
+ * the haystack's normalized lines. When a match wins, reconstruct the exact
+ * span in the original haystack by summing original line lengths + newlines.
+ *
+ * Only used as a fallback after exact `indexOf` fails — so no false positives
+ * on already-correct input.
+ */
+function fuzzyMatchMultilineInText(
+  haystack: string,
+  needle: string,
+): { index: number; length: number } | null {
+  if (!needle.includes("\n")) return null;
+  const hLines = haystack.split("\n");
+  const nLines = needle.split("\n");
+  if (nLines.length === 0 || nLines.length > hLines.length) return null;
+
+  const norm = (s: string): string =>
+    s
+      .replace(/\r$/, "")
+      .replace(/^[\t ]+/, "")
+      .trimEnd();
+  const hNorm = hLines.map(norm);
+  const nNorm = nLines.map(norm);
+
+  // Line offsets into the original haystack: offsets[i] = absolute char index
+  // of the start of line i. offsets[hLines.length] = haystack.length + 1 (for +"\n" math).
+  const offsets: number[] = [0];
+  for (let i = 0; i < hLines.length; i++) {
+    offsets.push((offsets[i] ?? 0) + (hLines[i] ?? "").length + 1);
+  }
+
+  let match: { index: number; length: number } | null = null;
+  for (let i = 0; i <= hLines.length - nLines.length; i++) {
+    let ok = true;
+    for (let j = 0; j < nLines.length; j++) {
+      if (hNorm[i + j] !== nNorm[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    const start = offsets[i] ?? 0;
+    const endLineIdx = i + nLines.length - 1;
+    const end = (offsets[endLineIdx] ?? 0) + (hLines[endLineIdx] ?? "").length;
+    const found = { index: start, length: end - start };
+    if (match !== null) return null; // ambiguous — bail
+    match = found;
+  }
+  return match;
+}
+/**
+ * Strip the shared leading indentation from a multi-line string.
+ * "  const a = 1;\n  const b = 2;" → "const a = 1;\nconst b = 2;"
+ *
+ * Used by replace_in_body so an agent can paste code copied from a Read output
+ * (already indented for file context) and have it match whether the surrounding
+ * indent level in the target symbol matches or not. Single-line inputs pass
+ * through unchanged.
+ */
+function stripCommonIndent(s: string): string {
+  if (!s.includes("\n")) return s;
+  const lines = s.split("\n");
+  let minIndent = Infinity;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    const m = line.match(/^[\t ]*/);
+    const len = m ? m[0].length : 0;
+    if (len < minIndent) minIndent = len;
+    if (minIndent === 0) break;
+  }
+  if (!Number.isFinite(minIndent) || minIndent === 0) return s;
+  const indent = minIndent as number;
+  return lines.map((l) => (l.length >= indent ? l.slice(indent) : l)).join("\n");
 }

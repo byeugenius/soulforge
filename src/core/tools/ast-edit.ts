@@ -91,6 +91,7 @@ export const astEditTool = {
     "Targets: function|class|interface|type|enum|variable|method|property|constructor|arrow_function. " +
     "Class members: name='ClassName.memberName' or just 'memberName'. Arrow const: target='arrow_function', name='foo'. " +
     "Idempotent: add_import/add_named_import/add_named_reexport merge; add_constructor modifies in place. " +
+    "replace_in_body is whitespace-tolerant (tab↔space, CRLF, indent drift auto-handled) and supports anchor-pair range mode: pass value=<short unique start anchor> + valueEnd=<short unique end anchor> to replace the span between them — rewrite a 100-line block with ~20 tokens. " +
     "Body shape — critical: set_body/add_statement/insert_statement take body CONTENTS ONLY (no surrounding {}, ts-morph wraps). " +
     "add_method/add_constructor/add_getter/add_setter take the FULL declaration INCLUDING braces (e.g. 'foo(x: number) { return x; }'). " +
     "replace takes the WHOLE symbol text including braces. " +
