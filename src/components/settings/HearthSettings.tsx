@@ -1532,7 +1532,7 @@ export function HearthSettings({ visible, onClose }: Props) {
       paddingX={1}
     >
       <text bg={t.bgPopup} fg={t.brand} attributes={TextAttributes.BOLD}>
-        {" ⌂ Hearth"}
+        {" ⌂ Hearth [experimental]"}
       </text>
       <VSpacer />
       {TABS.map((tk) => {

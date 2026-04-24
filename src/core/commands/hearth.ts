@@ -168,7 +168,7 @@ async function handleHearthStatus(_input: string, ctx: CommandContext): Promise<
   });
 
   ctx.openInfoPopup({
-    title: "Hearth",
+    title: "Hearth [experimental]",
     icon: icon("network"),
     lines,
   });

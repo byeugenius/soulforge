@@ -1066,7 +1066,10 @@ function SystemPane({
       </Section>
 
       {hearth && (
-        <Section title="Hearth" description={hearth.running ? "daemon online" : "daemon offline"}>
+        <Section
+          title="Hearth [experimental]"
+          description={hearth.running ? "daemon online" : "daemon offline"}
+        >
           <Field
             label="Status"
             labelWidth={18}
