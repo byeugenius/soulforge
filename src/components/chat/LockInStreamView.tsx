@@ -10,6 +10,7 @@ import { Spinner } from "../layout/shared.js";
 export const LOCKIN_EDIT_TOOLS = new Set([
   "edit_file",
   "multi_edit",
+  "ast_edit",
   "write_file",
   "create_file",
   "rename_file",
