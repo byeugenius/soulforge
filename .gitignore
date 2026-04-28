@@ -23,6 +23,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.production.local
 .env.local
 roadmap_local
+app
+dist-app
+components.json
+
 
 skills-lock.json 
 scripts/test-local.sh
