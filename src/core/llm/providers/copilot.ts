@@ -1,4 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { getProviderApiKey } from "../../secrets.js";
@@ -8,10 +7,16 @@ import type { ProviderDefinition, ProviderModelInfo } from "./types.js";
 const ENV_VAR = "COPILOT_API_KEY";
 const COPILOT_API = "https://api.githubcopilot.com";
 const TOKEN_EXCHANGE = "https://api.github.com/copilot_internal/v2/token";
+const COPILOT_CHAT_VERSION = "0.26.7";
+const COPILOT_API_VERSION = "2025-04-01";
 const COPILOT_HEADERS: Record<string, string> = {
-  "Editor-Version": `SoulForge/${CURRENT_VERSION}`,
-  "Editor-Plugin-Version": `SoulForge/${CURRENT_VERSION}`,
+  "Editor-Version": "vscode/1.95.0",
+  "Editor-Plugin-Version": `copilot-chat/${COPILOT_CHAT_VERSION}`,
   "Copilot-Integration-Id": "vscode-chat",
+  "User-Agent": `GitHubCopilotChat/${COPILOT_CHAT_VERSION}`,
+  "OpenAI-Intent": "conversation-panel",
+  "X-GitHub-Api-Version": COPILOT_API_VERSION,
+  "X-VSCode-User-Agent-Library-Version": "electron-fetch",
 };
 
 interface TokenResponse {
@@ -20,29 +25,44 @@ interface TokenResponse {
 }
 
 let cachedBearer: { token: string; expiresAt: number } | null = null;
+let bearerInflight: Promise<string> | null = null;
 
 async function exchangeToken(githubToken: string): Promise<string> {
   if (cachedBearer && Date.now() / 1000 < cachedBearer.expiresAt - 60) {
     return cachedBearer.token;
   }
-  const res = await fetch(TOKEN_EXCHANGE, {
-    headers: {
-      Authorization: `Token ${githubToken}`,
-      "User-Agent": `SoulForge/${CURRENT_VERSION}`,
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) {
-    cachedBearer = null;
-    const body = await res.text().catch(() => "");
-    throw new Error(
-      `Copilot token exchange failed (${String(res.status)})${body ? `: ${body.slice(0, 200)}` : ""}`,
-    );
-  }
-  const data = (await res.json()) as TokenResponse;
-  if (!data.token) throw new Error("Copilot token exchange returned empty token");
-  cachedBearer = { token: data.token, expiresAt: data.expires_at };
-  return data.token;
+  if (bearerInflight) return bearerInflight;
+  bearerInflight = (async () => {
+    try {
+      const res = await fetch(TOKEN_EXCHANGE, {
+        headers: {
+          Authorization: `Token ${githubToken}`,
+          "User-Agent": `SoulForge/${CURRENT_VERSION}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        cachedBearer = null;
+        const body = await res.text().catch(() => "");
+        const hint =
+          res.status === 401 || res.status === 403
+            ? " — your GitHub OAuth token is invalid or expired. Re-run the login flow in VS Code/JetBrains and copy the fresh oauth_token from ~/.config/github-copilot/apps.json."
+            : res.status >= 500
+              ? " — GitHub is having issues, try again in a moment."
+              : "";
+        throw new Error(
+          `Copilot token exchange failed (${String(res.status)})${body ? `: ${body.slice(0, 200)}` : ""}${hint}`,
+        );
+      }
+      const data = (await res.json()) as TokenResponse;
+      if (!data.token) throw new Error("Copilot token exchange returned empty token");
+      cachedBearer = { token: data.token, expiresAt: data.expires_at };
+      return data.token;
+    } finally {
+      bearerInflight = null;
+    }
+  })();
+  return bearerInflight;
 }
 
 /** Invalidate cached bearer so next request triggers a fresh exchange. */
@@ -58,15 +78,17 @@ function getGitHubToken(): string {
   );
 }
 
-function needsResponsesApi(modelId: string): boolean {
-  const id = modelId.toLowerCase();
-  if (id.includes("codex")) return true;
-  if (id.startsWith("gpt-5")) return true;
-  return false;
-}
-
-function isAnthropicModel(modelId: string): boolean {
-  return modelId.toLowerCase().startsWith("claude");
+function detectInitiator(body: unknown): "agent" | "user" {
+  if (typeof body !== "string") return "user";
+  try {
+    const parsed = JSON.parse(body) as { messages?: Array<{ role?: string }> };
+    if (Array.isArray(parsed.messages)) {
+      for (const m of parsed.messages) {
+        if (m?.role === "assistant" || m?.role === "tool") return "agent";
+      }
+    }
+  } catch {}
+  return "user";
 }
 
 function createCopilotFetch(githubToken: string): typeof fetch {
@@ -79,43 +101,53 @@ function createCopilotFetch(githubToken: string): typeof fetch {
       invalidateBearer();
       bearer = await exchangeToken(githubToken);
     }
-    const headers = new Headers(init?.headers);
-    headers.set("Authorization", `Bearer ${bearer}`);
-    const res = await fetch(url, { ...init, headers });
+    const buildHeaders = (token: string): Headers => {
+      const h = new Headers(init?.headers);
+      h.set("Authorization", `Bearer ${token}`);
+      h.set("X-Request-Id", crypto.randomUUID());
+      h.set("X-Initiator", detectInitiator(init?.body));
+      return h;
+    };
+    const res = await fetch(url, { ...init, headers: buildHeaders(bearer) });
     if (res.status === 401) {
       invalidateBearer();
       const retryBearer = await exchangeToken(githubToken);
-      const retryHeaders = new Headers(init?.headers);
-      retryHeaders.set("Authorization", `Bearer ${retryBearer}`);
-      return fetch(url, { ...init, headers: retryHeaders });
+      return fetch(url, { ...init, headers: buildHeaders(retryBearer) });
     }
     return res;
   }) as typeof fetch;
 }
 
+// Cache of model -> supported endpoints, populated by fetchModels.
+// Empty set means "unknown, allow through" so we don't break offline use.
+const supportedEndpoints = new Map<string, string[]>();
+
+function assertChatCompletionsSupported(modelId: string): void {
+  const endpoints = supportedEndpoints.get(modelId);
+  if (!endpoints || endpoints.length === 0) return; // unknown, let SDK try
+  const hasChat = endpoints.some((e) => e.includes("chat") || e.includes("completions"));
+  if (hasChat) return;
+  throw new Error(
+    `Copilot model "${modelId}" only supports ${endpoints.join(", ")} — ` +
+      "SoulForge routes Copilot through /chat/completions. " +
+      "Try claude-sonnet-4.6, gpt-4.1, or another chat-compatible model.",
+  );
+}
+
 function createCopilotModel(modelId: string): LanguageModel {
+  assertChatCompletionsSupported(modelId);
   const githubToken = getGitHubToken();
   const copilotFetch = createCopilotFetch(githubToken);
 
-  if (isAnthropicModel(modelId)) {
-    return createAnthropic({
-      baseURL: COPILOT_API,
-      apiKey: "copilot",
-      headers: { ...COPILOT_HEADERS },
-      fetch: copilotFetch,
-    })(modelId);
-  }
-
+  // Copilot exposes /chat/completions for both OpenAI and Claude models
+  // (translated server-side). The /responses path requires a separate parser
+  // we don't ship; /messages returns 404 entirely.
   const client = createOpenAI({
     baseURL: COPILOT_API,
     apiKey: "copilot",
     headers: { ...COPILOT_HEADERS },
     fetch: copilotFetch,
   });
-
-  if (needsResponsesApi(modelId)) {
-    return client.responses(modelId);
-  }
 
   return client.chat(modelId);
 }
@@ -142,13 +174,18 @@ export const copilot: ProviderDefinition = {
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as { data: { id: string }[] };
+      const data = (await res.json()) as {
+        data: Array<{ id: string; supported_endpoints?: string[] }>;
+      };
       if (!Array.isArray(data?.data)) return null;
       const skip = /embed|text-embedding|oswe|goldeneye|inference/i;
       const result: ProviderModelInfo[] = [];
       for (const m of data.data) {
         if (skip.test(m.id)) continue;
         if (result.some((r) => r.id === m.id)) continue;
+        if (Array.isArray(m.supported_endpoints)) {
+          supportedEndpoints.set(m.id, m.supported_endpoints);
+        }
         result.push({ id: m.id, name: m.id });
       }
       return result;
