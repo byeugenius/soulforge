@@ -210,6 +210,7 @@ export const InputBox = memo(function InputBox({
   }, [fuzzyQuery, fuzzyMode, getHistoryDB]);
 
   const floatingTermOpen = useUIStore((s) => s.modals.floatingTerminal);
+  const lockIn = useUIStore((s) => s.lockIn);
   const focused = floatingTermOpen ? false : (isFocused ?? true);
 
   // Refresh history when input gains focus (covers tab switches, session restores)
@@ -829,7 +830,9 @@ export const InputBox = memo(function InputBox({
                     ? `${icon("rewind")} send a message to rewind to checkpoint #${String(viewingCheckpoint)}`
                     : showBusy && !showAutocomplete
                       ? "'/' for commands · or steer by sending a new message"
-                      : "speak to the forge..."
+                      : lockIn
+                        ? "speak to the forge... · /lock-in to see full narration"
+                        : "speak to the forge..."
                 }
                 placeholderColor={viewingCheckpoint != null ? t.warning : t.textMuted}
                 focused={focused}

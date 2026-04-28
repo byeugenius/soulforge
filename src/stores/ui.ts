@@ -132,7 +132,7 @@ export const useUIStore = create<UIState>()(
     reasoningExpanded: {},
     suspended: false,
     editorSplit: 60,
-    lockIn: false,
+    lockIn: true,
 
     openModal: (name) => set(() => ({ modals: { ...INITIAL_MODALS, [name]: true } })),
     closeModal: (name) => set((s) => ({ modals: { ...s.modals, [name]: false } })),
@@ -222,6 +222,6 @@ export function resetUIStore(): void {
     showReasoning: true,
     reasoningExpanded: {},
     suspended: false,
-    lockIn: false,
+    lockIn: true,
   });
 }
