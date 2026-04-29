@@ -2,6 +2,14 @@
 
 All notable changes to SoulForge are documented here.
 
+## [2.14.2] — 2026-04-29
+
+### Bug Fixes
+
+- **agents**: guard normalizePath against non-string + Windows separators
+### Documentation
+
+- note Windows is not natively supported, link #57
 ## [2.14.1] — 2026-04-28
 
 ### Bug Fixes
